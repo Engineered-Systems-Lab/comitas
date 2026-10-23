@@ -77,10 +77,10 @@ def explain_checks(resolved, policy, profiles):
     if resolved.profile == ac.BLOCKED:
         return ['  checks     none: the path is blocked and cannot be prepared']
     envelope = profiles['profiles'][resolved.profile]['checks']
+    replaceable = ac.replaceable_checks(resolved.profile, profiles['profiles'][resolved.profile])
     invariants = resolved.invariants
     mapped = invariants is not None and ac.SYMBOL_MAP not in invariants
-    narrow = resolved.profile in ac.NARROW_PROFILES
-    from_profile = [c['id'] for c in envelope if not (mapped and narrow and c['id'] in ac.REPLACEABLE)]
+    from_profile = [c['id'] for c in envelope if not (mapped and c['id'] in replaceable)]
     groups, pending, seen = [], list(invariants or []), set()
     while pending:
         name = pending.pop()

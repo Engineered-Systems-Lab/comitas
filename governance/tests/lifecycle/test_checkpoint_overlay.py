@@ -202,6 +202,163 @@ class WithProjectFilesTest(OverlayCheckpointTest):
         with self.assertRaisesRegex(ValueError, 'clash with the framework'):
             self.tool.data()
 
+    def project_invariant_files(self, invariants=None, narrowable=('wide-gate',)):
+        """A project that adds a command group, an impact invariant over it and a profile that opts in to narrowing."""
+        gate = lambda name: ['{python}', '-B', '-c', 'print("%s PASS")' % name]
+        self.write(c.PROJECT_POLICY, json.dumps({'version': 4, 'commands': {
+            'project-docs': PROJECT_POLICY['commands']['project-docs'], 'wide-gate': gate('wide'), 'docs-gate': gate('docs')}}))
+        checks = [{'id': name, 'argv': argv} for name, argv in (
+            ('continuity', POLICY['commands']['continuity']), ('project-docs', PROJECT_POLICY['commands']['project-docs']),
+            ('wide-gate', gate('wide')))]
+        profile = {'checks': checks, 'limitations': 'Project documents only.', 'narrowable': list(narrowable)}
+        self.write(c.PROJECT_PROFILES, json.dumps({'version': 4, 'profiles': {'project-docs': profile}, 'impact': {
+            'invariants': {'docs-only': {'groups': ['docs-gate']}} if invariants is None else invariants}}))
+        rows = table_text(PROJECT_ROWS).rstrip(chr(10)).split(chr(10))
+        rows.append('| `notes/readme.md` | record | project-docs | - | - | docs-only | - | - | - |')
+        self.write(c.PROJECT_TABLE, chr(10).join(rows) + chr(10))
+        self.write('notes/readme.md', 'old' + chr(10))
+
+    def ids(self, path):
+        self.write(path, 'new' + chr(10))
+        return sorted(check['id'] for check in self.selection([path])[1]['checks'])
+
+    def test_a_project_invariant_narrows_a_project_row_and_an_unmapped_path_keeps_the_envelope(self):
+        self.project_invariant_files()
+        self.assertEqual(self.ids('notes/readme.md'), ['continuity', 'docs-gate', 'project-docs'])
+        self.assertEqual(self.ids('notes/n.md'), ['continuity', 'project-docs', 'wide-gate'])
+
+    def test_a_profile_that_does_not_opt_in_is_not_narrowed(self):
+        self.project_invariant_files(narrowable=())
+        self.assertEqual(self.ids('notes/readme.md'), ['continuity', 'docs-gate', 'project-docs', 'wide-gate'])
+
+    def test_a_project_invariant_may_require_a_framework_or_project_invariant(self):
+        self.project_invariant_files({'base': {'groups': ['docs-gate']},
+                                      'docs-only': {'groups': [], 'requires': ['base']}})
+        self.assertEqual(self.ids('notes/readme.md'), ['continuity', 'docs-gate', 'project-docs'])
+
+    def test_a_project_invariant_that_clashes_with_a_framework_name_is_refused(self):
+        framework = json.loads((self.root / c.PROFILES).read_text(encoding='utf-8'))
+        framework['impact']['invariants']['shared'] = {'groups': []}
+        self.write(c.PROFILES, json.dumps(framework))
+        self.project_invariant_files({'shared': {'groups': ['docs-gate']}})
+        with self.assertRaisesRegex(ValueError, 'impact invariants clash with the framework: shared'):
+            self.tool.data()
+
+    def test_a_row_naming_an_unknown_invariant_is_still_refused(self):
+        self.project_invariant_files({})
+        policy, profiles = self.tool.data()
+        with self.assertRaisesRegex(ValueError, 'unknown invariant'):
+            self.tool.table(policy, profiles)
+
+    def test_a_project_invariant_with_a_bad_shape_group_or_requirement_is_refused(self):
+        for invariants, message in (({'x': {'groups': ['no-such-command']}}, 'unknown command group no-such-command'),
+                                    ({'x': {'groups': [], 'requires': ['no-such']}}, 'requires unknown invariant no-such'),
+                                    ({'x': {'groups': [], 'extra': 1}}, 'must be an object with groups'),
+                                    ({'x': {'requires': []}}, 'must be an object with groups'),
+                                    ({'x': {'groups': 'docs-gate'}}, 'groups must be a list of strings')):
+            with self.subTest(invariants=invariants):
+                self.project_invariant_files(invariants)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.tool.data()
+
+    def test_the_project_may_set_nothing_else_inside_impact(self):
+        for key in ('version', 'symbol_maps'):
+            with self.subTest(key=key):
+                self.write(c.PROJECT_PROFILES, json.dumps(dict(PROJECT_PROFILES, impact={key: 1})))
+                with self.assertRaisesRegex(ValueError, 'may add only impact.invariants'):
+                    self.tool.data()
+
+    def test_narrowable_names_only_checks_the_profile_holds_that_are_not_required(self):
+        for narrowable, message in ((['ghost'], 'does not hold: ghost'), (['continuity'], 'required check or runtime gate')):
+            with self.subTest(narrowable=narrowable):
+                self.project_invariant_files(narrowable=narrowable)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.tool.data()
+
+    def scenario(self, framework=None, project=None, rows=(), required=None, runtime=None, narrowable=('wide-gate',)):
+        """A fuller project: framework invariants `framework`, project invariants `project`, extra table `rows` (path,
+        invariants), project `required` checks and `runtime` gates; the command groups are named like the invariants."""
+        names = ['wide-gate', 'docs-gate', 'ext-gate', 'other-gate', 'req-gate', 'rt-gate']
+        gate = lambda name: ['{python}', '-B', '-c', 'print("%s PASS")' % name]
+        commands = {name: gate(name) for name in names}
+        commands['project-docs'] = PROJECT_POLICY['commands']['project-docs']
+        policy = {'version': 4, 'commands': commands}
+        if required:
+            policy['required_checks'] = list(required)
+        self.write(c.PROJECT_POLICY, json.dumps(policy))
+        framework_profiles = json.loads(json.dumps(PROFILES))
+        framework_profiles['impact']['invariants'] = framework or {}
+        self.write(c.PROFILES, json.dumps(framework_profiles))
+        held = ['project-docs', 'wide-gate'] + list(required or []) + list(runtime or [])
+        checks = [{'id': 'continuity', 'argv': POLICY['commands']['continuity']}]
+        checks += [{'id': name, 'argv': commands[name]} for name in held]
+        profile = {'checks': checks, 'limitations': 'Project documents only.', 'narrowable': list(narrowable)}
+        if runtime:
+            profile['runtime_checks'] = list(runtime)
+        self.write(c.PROJECT_PROFILES, json.dumps({'version': 4, 'profiles': {'project-docs': profile},
+                                                   'impact': {'invariants': project or {}}}))
+        lines = ['| `%s` | %s | %s | %s | - | - | - | - | %s |' % row for row in sorted(PROJECT_ROWS)]
+        for path, invariants in rows:
+            lines.append('| `%s` | record | project-docs | - | - | %s | - | - | - |' % (path, invariants))
+            self.write(path, 'old' + chr(10))
+        head = table_text([]).rstrip(chr(10)).split(chr(10))
+        self.write(c.PROJECT_TABLE, chr(10).join(head + sorted(lines)) + chr(10))
+
+    def manifest_ids(self, *paths):
+        for path in paths:
+            self.write(path, 'new' + chr(10))
+        return sorted(check['id'] for check in self.selection(list(paths))[1]['checks'])
+
+    def test_a_project_invariant_requiring_a_framework_invariant_selects_its_groups_too(self):
+        self.scenario(framework={'fw': {'groups': ['ext-gate']}},
+                      project={'docs-only': {'groups': ['docs-gate'], 'requires': ['fw']}},
+                      rows=[('notes/readme.md', 'docs-only')])
+        self.assertEqual(self.manifest_ids('notes/readme.md'), ['continuity', 'docs-gate', 'ext-gate', 'project-docs'])
+
+    def test_two_narrowed_project_paths_select_the_union_of_their_checks(self):
+        self.scenario(project={'docs-only': {'groups': ['docs-gate']}, 'other': {'groups': ['other-gate']}},
+                      rows=[('notes/a.md', 'docs-only'), ('notes/b.md', 'other')])
+        self.assertEqual(self.manifest_ids('notes/a.md'), ['continuity', 'docs-gate', 'project-docs'])
+        self.assertEqual(self.manifest_ids('notes/a.md', 'notes/b.md'),
+                         ['continuity', 'docs-gate', 'other-gate', 'project-docs'])
+        # One unmapped path in the manifest brings back the whole envelope.
+        self.assertEqual(self.manifest_ids('notes/a.md', 'notes/n.md'),
+                         ['continuity', 'docs-gate', 'project-docs', 'wide-gate'])
+
+    def test_a_project_required_check_stays_selected_for_a_narrowed_row(self):
+        self.scenario(project={'docs-only': {'groups': ['docs-gate']}}, rows=[('notes/readme.md', 'docs-only')],
+                      required=['req-gate'])
+        self.assertEqual(self.manifest_ids('notes/readme.md'), ['continuity', 'docs-gate', 'project-docs', 'req-gate'])
+
+    def test_runtime_gates_stay_selected_and_cannot_be_narrowed(self):
+        self.scenario(project={'docs-only': {'groups': ['docs-gate']}}, rows=[('notes/readme.md', 'docs-only')],
+                      runtime=['rt-gate'])
+        self.assertEqual(self.manifest_ids('notes/readme.md'), ['continuity', 'docs-gate', 'project-docs', 'rt-gate'])
+        self.scenario(project={'docs-only': {'groups': ['docs-gate']}}, rows=[('notes/readme.md', 'docs-only')],
+                      runtime=['rt-gate'], narrowable=('wide-gate', 'rt-gate'))
+        with self.assertRaisesRegex(ValueError, 'required check or runtime gate: rt-gate'):
+            self.tool.data()
+
+    def test_an_unmapped_row_keeps_the_whole_envelope(self):
+        self.scenario(project={'docs-only': {'groups': ['docs-gate']}}, rows=[('notes/readme.md', 'docs-only')])
+        self.assertEqual(self.manifest_ids('notes/n.md'), ['continuity', 'project-docs', 'wide-gate'])
+
+    def test_a_framework_invariant_with_an_unknown_group_still_makes_the_selection_broad(self):
+        self.scenario(framework={'fw': {'groups': ['no-such-command']}},
+                      project={'docs-only': {'groups': ['docs-gate'], 'requires': ['fw']}},
+                      rows=[('notes/readme.md', 'docs-only'), ('notes/fw.md', 'fw')])
+        self.assertEqual(self.manifest_ids('notes/fw.md'), ['continuity', 'project-docs', 'wide-gate'])
+        self.assertEqual(self.manifest_ids('notes/readme.md'), ['continuity', 'project-docs', 'wide-gate'])
+
+    def test_the_explainer_shows_the_narrowed_project_checks(self):
+        from governance.tools.continuity import show_classification as show
+        self.project_invariant_files()
+        policy, profiles = self.tool.data()
+        resolved = self.tool.table(policy, profiles).resolve('notes/readme.md')
+        text = chr(10).join(show.explain_checks(resolved, policy, profiles))
+        self.assertIn('from profile project-docs: continuity, project-docs', text)
+        self.assertIn('from invariants docs-only: docs-gate', text)
+
     def test_the_head_reader_says_none_for_a_file_head_does_not_hold(self):
         self.assertIsNone(self.tool.head_text('project-governance/nothing.json'))
         self.assertEqual(self.tool.head_text('a.txt'), 'old\n')

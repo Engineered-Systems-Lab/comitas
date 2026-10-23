@@ -126,9 +126,27 @@ class OverlayTest(unittest.TestCase):
             ac.parse_table((self.root / ac.TABLE).read_text(encoding='utf-8').replace(
                 '| `.gitattributes` | tooling | tooling', '| `.gitattributes` | tooling | project-docs'), self.framework_profiles)
 
-    def test_a_project_profiles_file_may_add_nothing_but_profiles(self):
-        self.write_json(ac.PROJECT_PROFILES, {'version': self.framework_profiles['version'], 'impact': {}})
-        with self.assertRaisesRegex(ValueError, 'may not set impact'):
+    def test_a_project_profiles_file_may_add_nothing_but_profiles_and_impact_invariants(self):
+        version = self.framework_profiles['version']
+        self.write_json(ac.PROJECT_PROFILES, {'version': version, 'commit_metadata': {}})
+        with self.assertRaisesRegex(ValueError, 'may not set commit_metadata'):
+            ac.load_profiles(self.root)
+        for key in ('version', 'symbol_maps'):
+            self.write_json(ac.PROJECT_PROFILES, {'version': version, 'impact': {key: 1}})
+            with self.assertRaisesRegex(ValueError, 'may add only impact.invariants'):
+                ac.load_profiles(self.root)
+
+    def test_a_project_impact_invariant_is_added_and_a_framework_one_is_never_shadowed(self):
+        version = self.framework_profiles['version']
+        self.write_json(ac.PROJECT_PROFILES, {'version': version, 'impact': {'invariants': {
+            'project-only': {'groups': [], 'requires': ['continuity']}}}})
+        merged = ac.load_profiles(self.root)
+        self.assertEqual(set(merged['impact']['invariants']),
+                         set(self.framework_profiles['impact']['invariants']) | {'project-only'})
+        self.assertEqual(merged['impact']['symbol_maps'], self.framework_profiles['impact']['symbol_maps'])
+        self.assertNotIn('project-only', self.framework_profiles['impact']['invariants'])
+        self.write_json(ac.PROJECT_PROFILES, {'version': version, 'impact': {'invariants': {'continuity': {'groups': []}}}})
+        with self.assertRaisesRegex(ValueError, 'impact invariants clash with the framework: continuity'):
             ac.load_profiles(self.root)
 
     def test_the_project_policy_adds_commands_and_never_replaces_one(self):

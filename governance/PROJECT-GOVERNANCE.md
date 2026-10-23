@@ -67,7 +67,7 @@ The starter files Comitas ships hold the values Comitas itself runs with, which 
 
 ## The policy and the profiles
 
-`config/checkpoint-policy.json` may add commands, required checks and prohibited components. `config/checkpoint-profiles.json` may add validation profiles. Both are `{"version": N, ...}` with the same `version` as the framework's file of that name; a different version is refused.
+`config/checkpoint-policy.json` may add commands, required checks and prohibited components. `config/checkpoint-profiles.json` may add validation profiles and, under `impact.invariants`, impact invariants (`{"groups": [...], "requires": [...]}`, new names only, every group a command of the merged policy); a project profile may list under `narrowable` the checks of its own that the groups of a row's invariants replace, never a required check or a runtime gate. A row of the project's table may name such an invariant. Both are `{"version": N, ...}` with the same `version` as the framework's file of that name; a different version is refused.
 
 | Key | In the file | Rule |
 | --- | --- | --- |

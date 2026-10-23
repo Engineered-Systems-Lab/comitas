@@ -78,6 +78,7 @@ class Selection:
         policy = artifact_classification.load_policy(self.root)
         profiles = artifact_classification.load_profiles(self.root)
         require(policy['version'] == profiles['version'] == 4, 'Unsupported policy/profile version')
+        artifact_classification.check_project_impact(artifact_classification.file_reader(self.root), policy)
         return policy, profiles
 
     def table(self, policy, profiles=None):
@@ -289,7 +290,6 @@ class Selection:
         # Only these broad regression buckets may be refined. All other envelope
         # gates, particularly component/runtime and mandatory continuity, survive.
         # Narrowing semantics are shared with the read-only explanation in show_classification.py.
-        replaceable = artifact_classification.REPLACEABLE
         def add(check):
             require(check['id'] not in checks or checks[check['id']] == check,
                     'Conflicting impact commands: ' + check['id'])
@@ -334,9 +334,9 @@ class Selection:
             if any(group not in policy['commands'] for group in groups):
                 fallback = True
             # Runtime/component envelopes cannot be narrowed by an impact rule.
-            narrow = profile['path_profiles'][path] in artifact_classification.NARROW_PROFILES
+            replaceable = artifact_classification.replaceable_checks(profile['path_profiles'][path], envelope)
             for check in self.check_commands(envelope, policy, False):
-                if fallback or not narrow or check['id'] not in replaceable:
+                if fallback or check['id'] not in replaceable:
                     add(check)
             if not fallback:
                 for group in sorted(groups):

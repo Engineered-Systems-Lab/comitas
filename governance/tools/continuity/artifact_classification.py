@@ -98,6 +98,14 @@ CITATION = re.compile(r'(?<![A-Za-z0-9._-])(' + LABEL_RE.pattern + r') commit `(
 # Selection semantics shared by the checkpoint selector and the read-only explanation.
 NARROW_PROFILES = ('governance', 'tooling', 'record-only')
 REPLACEABLE = frozenset({'governance-regressions', 'continuity-regressions'})
+
+
+def replaceable_checks(name, profile):
+    """The checks of validation profile `name` that an impact mapping may replace: the framework's broad regression buckets
+    in its narrow profiles, and in any other profile the checks it lists under `narrowable` (a project profile opts in)."""
+    if name in NARROW_PROFILES:
+        return REPLACEABLE
+    return frozenset(profile.get('narrowable', []))
 COLUMNS = ('Path', 'Class', 'Profile', 'Boundary', 'Bound', 'Invariants', 'Subclass', 'Reachable', 'Approval-sensitivity')
 HEADER = '| ' + ' | '.join(COLUMNS) + ' |'
 # Paths that no longer exist. They reconstruct the class and subclass of old commits, and a tracked deletion
@@ -600,7 +608,7 @@ def vocabulary_of(profiles):
 #   - the project's table may hold no path under `governance/` or `project-governance/`; the framework's own table
 #     classifies all of `governance/` and holds a `high` row for `project-governance/`, because those files decide
 #     what a go may carry, so a project cannot classify its own overlay;
-#   - a project profile or command may not reuse a framework name.
+#   - a project profile, command or impact invariant may not reuse a framework name.
 # These functions are stdlib-only: the integration guard loads this module on its own.
 # ----------------------------------------------------------------------------------------------------------------------
 FRAMEWORK_FOLDER = TOOLS.split('/')[0]
@@ -609,7 +617,11 @@ RESERVED_FOLDERS = (FRAMEWORK_FOLDER, PROJECT_GOVERNANCE)
 # binds them beside the framework's own (a file that is absent is bound as absent).
 OVERLAY_FILES = (PROJECT_TABLE, PROJECT_POLICY, PROJECT_PROFILES)
 # What a project file may add. Anything else in it is refused, so an overlay never changes a framework setting.
-PROFILES_OVERLAY_KEYS = ('version', 'profiles')
+PROFILES_OVERLAY_KEYS = ('version', 'profiles', 'impact')
+# Inside `impact` the project may add only invariants: new names, never a framework invariant changed or shadowed. The
+# version, the symbol maps and every framework invariant stay the framework's.
+IMPACT_OVERLAY_KEYS = ('invariants',)
+INVARIANT_KEYS = ('groups', 'requires')
 POLICY_OVERLAY_KEYS = ('version', 'commands', 'prohibited_components', 'required_checks')
 # The reconstruction contract: the framework's part names the bootstrap prompt, the framework files a fresh agent must
 # cite and the narrative sections; the project's part adds the facts read from the progress record, its own evidence and,
@@ -662,7 +674,49 @@ def merge_profiles(framework, project, relative=PROJECT_PROFILES):
     check_overlay_keys(relative, project, PROFILES_OVERLAY_KEYS, framework)
     merged = dict(framework)
     merged['profiles'] = add_names(relative, 'profiles', framework['profiles'], project.get('profiles', {}))
+    if 'impact' in project:
+        impact = project['impact']
+        require(isinstance(impact, dict), f'{relative}: impact must be an object')
+        unknown = sorted(set(impact) - set(IMPACT_OVERLAY_KEYS))
+        require(not unknown, f'{relative}: the project may not set impact.{", impact.".join(unknown)}; '
+                             f'it may add only impact.invariants')
+        invariants = add_names(relative, 'impact invariants', framework['impact']['invariants'], impact.get('invariants', {}))
+        known = set(invariants)
+        for name in impact.get('invariants', {}):
+            entry = invariants[name]
+            where = f'{relative}: impact invariant {name!r}'
+            require(isinstance(entry, dict) and set(entry) <= set(INVARIANT_KEYS) and 'groups' in entry,
+                    f'{where} must be an object with groups and optionally requires')
+            for key in INVARIANT_KEYS:
+                require(isinstance(entry.get(key, []), list) and all(isinstance(item, str) for item in entry.get(key, [])),
+                        f'{where}: {key} must be a list of strings')
+            unknown = sorted(set(entry.get('requires', [])) - known)
+            require(not unknown, f'{where}: requires unknown invariant {", ".join(unknown)}')
+        merged['impact'] = dict(framework['impact'], invariants=invariants)
     return merged
+
+
+def check_project_impact(read, policy):
+    """Refuse a project impact invariant whose group is no command of `policy` (the merged policy), and a project profile
+    whose `narrowable` list names a check it does not hold, a required check or a runtime gate. A framework invariant keeps
+    its older rule: an unknown group of it makes the selection broad."""
+    project = json_object(read, PROJECT_PROFILES) or {}
+    for name, profile in project.get('profiles', {}).items():
+        if 'narrowable' not in profile:
+            continue
+        narrowable = profile['narrowable']
+        where = f'{PROJECT_PROFILES}: profile {name!r}: narrowable'
+        require(isinstance(narrowable, list) and all(isinstance(item, str) for item in narrowable),
+                f'{where} must be a list of check ids')
+        fixed = set(policy['required_checks']) | set(profile.get('runtime_checks', []))
+        bad = sorted(set(narrowable) - {c['id'] for c in profile['checks']})
+        require(not bad, f'{where} names checks the profile does not hold: {", ".join(bad)}')
+        bad = sorted(set(narrowable) & fixed)
+        require(not bad, f'{where} may not name a required check or runtime gate: {", ".join(bad)}')
+    for name, entry in project.get('impact', {}).get('invariants', {}).items():
+        unknown = sorted(set(entry['groups']) - set(policy['commands']))
+        require(not unknown, f'{PROJECT_PROFILES}: impact invariant {name!r} names unknown command group '
+                             f'{", ".join(unknown)}; declare it in {PROJECT_POLICY} or use a framework command')
 
 
 def merge_policy(framework, project, relative=PROJECT_POLICY):
