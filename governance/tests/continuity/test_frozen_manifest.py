@@ -404,5 +404,111 @@ class FreezeCommandTest(FrozenCase):
             self.run_main('--refreeze', 'api.txt')
 
 
+class FrozenRowsNeedNoFactTest(unittest.TestCase):
+    """The comparison with the manifest runs whenever the table has frozen rows, whatever the reconstruction contract declares."""
+    SCOPE = lambda self, r: (fixtures.FIXTURE_FROZEN, fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)
+
+    def build(self, runtime=True):
+        directory = tempfile.TemporaryDirectory(prefix='frozen-no-fact-')
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name) / 'repo'
+        fixtures.build_fixture(root)
+        contract = json.loads((root / v.CONTRACT).read_text(encoding='utf-8'))
+        contract['facts'].pop(v.FROZEN_FACT)
+        if not runtime:
+            contract['facts'] = {k: val for k, val in contract['facts'].items() if k != 'implementation_checkpoint'
+                                 and k in ('service', 'manual_acceptance', 'next_authorized_action')}
+            contract.pop('completion_evidence_fact')
+        (root / v.CONTRACT).write_text(json.dumps(contract), encoding='utf-8')
+        patcher = patch.object(v, 'scope', self.SCOPE)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return root
+
+    def commit(self, root, message):
+        for args in (('add', '-A'), ('commit', '-q', '-m', message)):
+            subprocess.run(['git', '-C', str(root), *args], capture_output=True, env=ENV, check=True)
+
+    def test_an_untouched_project_passes_and_does_not_report_the_fact(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                _, facts = v.verify_repository(self.build(runtime))
+                self.assertNotIn(v.FROZEN_FACT, facts)
+
+    def test_a_changed_byte_in_the_working_tree_is_refused(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                (root / 'contracts' / 'c.txt').write_bytes(b'frozen contract changed\n')
+                with self.assertRaisesRegex(ValueError, 'Frozen content changed: contracts/c.txt'):
+                    v.verify_repository(root)
+
+    def test_a_committed_change_is_refused(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                (root / 'contracts' / 'c.txt').write_bytes(b'frozen contract changed\n')
+                self.commit(root, 'Change the frozen contract by hand')
+                with self.assertRaisesRegex(ValueError, 'Frozen content changed: contracts/c.txt'):
+                    v.verify_repository(root)
+
+    def test_a_frozen_file_with_no_entry_is_refused(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                (root / 'contracts' / 'new.txt').write_bytes(b'new\n')
+                with self.assertRaisesRegex(ValueError, 'no manifest entry for contracts/new.txt'):
+                    v.verify_repository(root)
+
+    def test_an_entry_without_a_frozen_file_is_refused(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                (root / 'contracts' / 'c.txt').unlink()
+                with self.assertRaisesRegex(ValueError, 'manifest entry without a frozen file: contracts/c.txt'):
+                    v.verify_repository(root)
+
+    def test_a_missing_manifest_is_refused_and_never_written(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                (root / ac.FROZEN_MANIFEST).unlink()
+                with self.assertRaisesRegex(ValueError, 'no manifest entry for contracts/c.txt'):
+                    v.verify_repository(root)
+                self.assertFalse((root / ac.FROZEN_MANIFEST).exists())
+
+    def test_verifying_never_changes_the_manifest(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                before = (root / ac.FROZEN_MANIFEST).read_bytes()
+                (root / 'contracts' / 'c.txt').write_bytes(b'changed\n')
+                with self.assertRaises(ValueError):
+                    v.verify_repository(root)
+                self.assertEqual((root / ac.FROZEN_MANIFEST).read_bytes(), before)
+
+    def test_a_project_without_frozen_rows_and_without_a_manifest_is_unaffected(self):
+        for runtime in (True, False):
+            with self.subTest(runtime=runtime):
+                root = self.build(runtime)
+                (root / ac.FROZEN_MANIFEST).unlink()
+                (root / 'contracts' / 'c.txt').write_bytes(b'anything\n')
+                with patch.object(v, 'scope', return_value=([], fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)):
+                    self.assertFalse(v.frozen_in_force(root))
+                    v.verify_repository(root)
+
+    def test_the_pass_line_names_only_the_checks_that_ran(self):
+        root = self.build()
+        _, facts = v.verify_repository(root)
+        self.assertEqual(v.pass_line(root, facts),
+                         'PASS: recovery documents, links, logs, checkpoint/evidence and frozen invariants.')
+        root = self.build(runtime=False)
+        _, facts = v.verify_repository(root)
+        self.assertEqual(v.pass_line(root, facts), 'PASS: recovery documents, links, logs and frozen invariants.')
+        with patch.object(v, 'scope', return_value=([], fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)):
+            (root / ac.FROZEN_MANIFEST).unlink()
+            self.assertEqual(v.pass_line(root, facts), 'PASS: recovery documents, links and logs.')
+
+
 if __name__ == '__main__':
     unittest.main()
