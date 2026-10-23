@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "name": "mission_control",
+  "folder": "governance/extensions/mission_control",
+  "tests": "governance/tests/extensions/mission_control",
+  "policy_commands": [
+    "mission-control-generator",
+    "mission-control-ui"
+  ],
+  "invariants": [
+    "mission-control-generator",
+    "mission-control-ui"
+  ],
+  "subclasses": [
+    "mission-control"
+  ],
+  "project_files": [
+    "project-governance/config/mission-control-inputs.json",
+    "project-governance/config/mission-control.json"
+  ],
+  "markers": [
+    "mission_control",
+    "mission-control"
+  ],
+  "prose": [
+    "Mission Control"
+  ]
+}

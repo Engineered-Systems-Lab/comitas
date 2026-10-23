@@ -1,0 +1,718 @@
+{
+  "version": 1,
+  "paths": {
+    "AGENTS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "agent entry point; governance and sealed into approvals",
+      "approval_sensitivity": "medium"
+    },
+    "governance/AGENT-ORIENTATION.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "framework entry every agent reads first; carries the precedence rule over the project AGENTS.md",
+      "approval_sensitivity": "medium"
+    },
+    "governance/ARTIFACT-CLASSIFICATION.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "classification"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "this table; governance, sealed, edits validate narrowly",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the tool contract and the switch recipe",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-WORKFLOW.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "checkpoint rules; governance and sealed",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CONSTRAINTS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "constraints"
+      ],
+      "reachable": true,
+      "why": "repository regulations; governance and sealed",
+      "approval_sensitivity": "medium"
+    },
+    "governance/DECISIONS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance",
+        "mission-control-generator"
+      ],
+      "subclass": [
+        "decisions"
+      ],
+      "reachable": true,
+      "why": "decision registry; governance and sealed",
+      "approval_sensitivity": "medium"
+    },
+    "governance/LOCAL-COORDINATION.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "carries the lifecycle delegation",
+      "approval_sensitivity": "medium"
+    },
+    "governance/PROJECT-GOVERNANCE.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [],
+      "reachable": true,
+      "why": "the framework document that lists every file a project owns in project-governance/; its defaults are pinned to the code by a conformance test",
+      "approval_sensitivity": "low"
+    },
+    "governance/PROJECT-LIFECYCLE.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [],
+      "reachable": true,
+      "why": "the framework page for the lead developer: the commands a person runs in each phase of a project, with a conformance test that every path it names exists",
+      "approval_sensitivity": "low"
+    },
+    "governance/RATIONALE.md": {
+      "class": "record",
+      "profile": "record-only",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "mission-control-generator"
+      ],
+      "subclass": [
+        "rationale"
+      ],
+      "reachable": true,
+      "why": "explanatory rationale is a record",
+      "approval_sensitivity": "low"
+    },
+    "governance/ROLE-COORDINATOR.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "Coordinator entry point; carries the delegation, release and takeover rules",
+      "approval_sensitivity": "medium"
+    },
+    "governance/ROLE-WORKER.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "worker entry point; carries the worktree rules and the preview waiver",
+      "approval_sensitivity": "medium"
+    },
+    "governance/WORKTREE-WORKFLOW.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [],
+      "reachable": true,
+      "why": "carries the integration rules",
+      "approval_sensitivity": "medium"
+    },
+    "governance/config/artifact-classification-golden.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "this oracle is tooling, so reclassifying a critical path needs two edits",
+      "approval_sensitivity": "medium"
+    },
+    "governance/config/checkpoint-policy.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "executable policy; tooling",
+      "approval_sensitivity": "high"
+    },
+    "governance/config/checkpoint-profiles.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "profiles, invariants and the symbol map that derive the check list",
+      "approval_sensitivity": "medium"
+    },
+    "governance/config/conformance/__init__.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": null,
+      "subclass": [],
+      "reachable": false,
+      "why": "removing the package marker silently drops every tooling test from discovery",
+      "approval_sensitivity": "medium"
+    },
+    "governance/extensions/mission_control/data_launcher.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "mission-control-generator"
+      ],
+      "subclass": [
+        "mission-control"
+      ],
+      "reachable": false,
+      "why": "data launcher must keep the Mission Control generator check",
+      "approval_sensitivity": "low"
+    },
+    "governance/extensions/mission_control/mission-control-data.sh": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "mission-control-generator"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "data launcher must keep the Mission Control generator check",
+      "approval_sensitivity": "low"
+    },
+    "governance/new-policy.md": {
+      "refused": true,
+      "boundary": [],
+      "why": "unknown governance documents fail closed"
+    },
+    "governance/tests/__init__.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": null,
+      "subclass": [],
+      "reachable": false,
+      "why": "removing the package marker silently drops every tooling test from discovery",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tests/lifecycle/test_checkpoint.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "approval"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "pins the checkpoint approval behavior",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tests/lifecycle/test_commit_history_conformance.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": null,
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "pins the commit-message convention on the history after the boundary commit",
+      "approval_sensitivity": "low"
+    },
+    "governance/tests/lifecycle/test_early_approval.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "early-approval"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "pins the early conditional approval",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tests/run_tests.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "test-runner"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the test runner (implementation behind the launcher)",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tests/support/test_run_tests.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "test-runner"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "pins the test runner",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tools/approval_words.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "approval-words"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the one matcher of the approval words",
+      "approval_sensitivity": "high"
+    },
+    "governance/tools/checkpoint.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "symbol-map"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "checkpoint tool; the changed symbols decide the checks",
+      "approval_sensitivity": "high"
+    },
+    "governance/tools/continuity/artifact_classification.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "parses the table that marks approval-critical paths",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tools/continuity/validate_continuity.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "continuity"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the continuity check every transaction runs (implementation behind the launcher)",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tools/lifecycle/approval_words.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "approval-words"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the approval words (implementation behind the launcher)",
+      "approval_sensitivity": "high"
+    },
+    "governance/tools/lifecycle/early_approval.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "early-approval"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the early conditional approval itself",
+      "approval_sensitivity": "high"
+    },
+    "governance/tools/lifecycle/review_render.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "review"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "renders what the lead developer approves",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tools/new_test.py": {
+      "refused": true,
+      "boundary": [],
+      "why": "unknown tooling files fail closed"
+    },
+    "governance/tools/run_tests.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "test-runner"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the test runner that produces the evidence of every test check",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tools/runtime_guard.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "governance-runtime"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the guard every launcher enters first: version check, GIT_* scrub, lifecycle gate and the interpreter fingerprint a transaction is pinned to",
+      "approval_sensitivity": "high"
+    },
+    "governance/tools/validate_continuity.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "continuity"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the continuity check every transaction runs",
+      "approval_sensitivity": "medium"
+    },
+    "governance/tools/worktree.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "worktrees"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the integration and removal guard",
+      "approval_sensitivity": "high"
+    },
+    "governance/tools/worktrees/guard.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "worktrees"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the integration and removal guard (implementation behind the launcher)",
+      "approval_sensitivity": "high"
+    },
+    "new.py": {
+      "refused": true,
+      "boundary": [],
+      "why": "unknown paths fail closed"
+    },
+    "project-governance/ARTIFACT-CLASSIFICATION.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the project's table; the project folder decides the fast track, so it is high and the project cannot classify it",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/CONSTRAINTS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the project's own rules; the project folder is high and the project cannot classify it",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/DECISIONS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the project's own decision registry (prefix D); the project folder is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/RATIONALE.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the rationale of the project's decisions; the project folder is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/config/checkpoint-features.toml": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the kill switch of the early conditional approval, now the project's file; the project folder is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/config/checkpoint-policy.json": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the project's policy; the project folder decides the fast track, so it is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/config/devlog.json": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the development log settings, now the project's file; the project folder is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/config/frozen-manifest.json": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the checksums of the project's frozen files (G054); a change of an entry is a change of what is frozen, and the project folder is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/config/reconstruction-contract.json": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "why": "the project's half of the reconstruction contract; the project folder is high",
+      "approval_sensitivity": "high"
+    }
+  }
+}

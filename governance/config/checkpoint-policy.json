@@ -1,0 +1,276 @@
+{
+  "version": 4,
+  "prohibited_components": [
+    ".git",
+    "work",
+    "tmp",
+    "temp",
+    ".cache",
+    "__pycache__",
+    "target",
+    "build",
+    "dist",
+    "out",
+    "node_modules",
+    ".venv",
+    "venv",
+    "logs",
+    "secrets",
+    ".secrets",
+    ".aws",
+    ".ssh",
+    "generated-output",
+    "build-output"
+  ],
+  "required_checks": [
+    "continuity"
+  ],
+  "commands": {
+    "continuity": [
+      "{python}",
+      "-B",
+      "governance/tools/validate_continuity.py"
+    ],
+    "python-regressions": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-s",
+      "governance/config",
+      "-p",
+      "test_*.py",
+      "-v"
+    ],
+    "governance-regressions": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-s",
+      "governance/config",
+      "-p",
+      "test_checkpoint*.py",
+      "-v"
+    ],
+    "continuity-regressions": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests/continuity",
+      "-s",
+      "governance/config",
+      "-p",
+      "test_*.py",
+      "-v"
+    ],
+    "checkpoint-selector": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/config",
+      "-p",
+      "test_checkpoint_scope.py",
+      "-v"
+    ],
+    "checkpoint-evidence": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint_evidence.py",
+      "-v"
+    ],
+    "checkpoint-reconcile": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint_reconcile.py",
+      "-v"
+    ],
+    "checkpoint-worktrees": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint_worktrees.py",
+      "-v"
+    ],
+    "checkpoint-invariants": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint.py",
+      "-v",
+      "-k",
+      "CheckpointTest"
+    ],
+    "mission-control-generator": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests/extensions/mission_control",
+      "-p",
+      "test_generate*.py",
+      "-v"
+    ],
+    "mission-control-ui": [
+      "{python}",
+      "-B",
+      "governance/tests/extensions/mission_control/check.py"
+    ],
+    "commit-metadata": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint_metadata.py",
+      "-v"
+    ],
+    "governance-runtime": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-s",
+      "governance/config",
+      "-p",
+      "test_runtime_guard*.py",
+      "-v"
+    ],
+    "classification-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-s",
+      "governance/config",
+      "-p",
+      "test_artifact_classification.py",
+      "-v"
+    ],
+    "checkpoint-abandon": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint_abandon.py",
+      "-v"
+    ],
+    "timing-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_timing_record.py",
+      "-v"
+    ],
+    "review-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_review_render.py",
+      "-v"
+    ],
+    "link-retarget-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_link_retarget.py",
+      "-v"
+    ],
+    "jobs-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_local_jobs*.py",
+      "-v"
+    ],
+    "approval-words-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_approval_words.py",
+      "-v"
+    ],
+    "early-approval-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_early_approval.py",
+      "-v"
+    ],
+    "interpreter-pin-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_checkpoint_interpreter_pin.py",
+      "-v"
+    ],
+    "test-runner-tests": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests",
+      "-p",
+      "test_run_tests.py",
+      "-v"
+    ]
+  },
+  "commit_metadata_required": true,
+  "link_retarget": {
+    "documents": [],
+    "moves": {}
+  },
+  "timing_record": {
+    "mode": "local",
+    "window": 20,
+    "min_samples": 3,
+    "slow_factor": 1.5,
+    "slow_margin_seconds": 10,
+    "fast_fraction": 0.4,
+    "fast_min_mean_seconds": 20
+  }
+}

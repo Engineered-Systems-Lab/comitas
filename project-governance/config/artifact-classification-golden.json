@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "paths": {
+    "devlog/2026-10-16T1303Z-example-event.md": {
+      "class": "record",
+      "profile": "record-only",
+      "boundary": [],
+      "bound": false,
+      "invariants": null,
+      "subclass": [
+        "devlog"
+      ],
+      "reachable": false,
+      "why": "a devlog entry is a record",
+      "approval_sensitivity": "low"
+    },
+    "devlog/CONVENTIONS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "guidance"
+      ],
+      "subclass": [],
+      "reachable": true,
+      "why": "devlog authoring rules; governance and sealed into approvals",
+      "approval_sensitivity": "low"
+    },
+    "devlog/README.md": {
+      "class": "record",
+      "profile": "record-only",
+      "boundary": [],
+      "bound": false,
+      "invariants": null,
+      "subclass": [
+        "devlog"
+      ],
+      "reachable": true,
+      "why": "non-normative log index; authoring rules live in CONVENTIONS.md",
+      "approval_sensitivity": "low"
+    },
+    "devlog/evil.sh": {
+      "refused": true,
+      "boundary": [],
+      "why": "only .md files are accepted under devlog; anything else fails closed"
+    },
+    "docs/PROGRESS.md": {
+      "class": "record",
+      "profile": "record-only",
+      "boundary": [],
+      "bound": true,
+      "invariants": null,
+      "subclass": [
+        "progress"
+      ],
+      "reachable": true,
+      "why": "current status; a record that is sealed into approvals",
+      "approval_sensitivity": "low"
+    },
+    "docs/timings/example.jsonl": {
+      "class": "record",
+      "profile": "record-only",
+      "boundary": [],
+      "bound": false,
+      "invariants": null,
+      "subclass": [],
+      "reachable": false,
+      "why": "a committed timing export is a record",
+      "approval_sensitivity": "low"
+    }
+  }
+}

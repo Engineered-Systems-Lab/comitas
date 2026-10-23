@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "facts": {
+    "service": {
+      "source": "docs/PROGRESS.md#recovery-facts",
+      "pattern": "^\\| service \\| ([^|]+?) \\|$",
+      "type": "string"
+    },
+    "manual_acceptance": {
+      "source": "docs/PROGRESS.md#recovery-facts",
+      "pattern": "^\\| manual_acceptance \\| ([^|]+?) \\|$",
+      "type": "string"
+    },
+    "next_authorized_action": {
+      "source": "docs/PROGRESS.md#recovery-facts",
+      "pattern": "^\\| next_authorized_action \\| ([^|]+?) \\|$",
+      "type": "string"
+    }
+  },
+  "governance_evidence": [
+    "AGENTS.md",
+    "docs/PLAN.md",
+    "devlog/README.md",
+    "project-governance/CONSTRAINTS.md",
+    "project-governance/DECISIONS.md"
+  ]
+}

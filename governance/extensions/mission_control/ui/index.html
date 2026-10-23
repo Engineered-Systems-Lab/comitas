@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Mission Control · Repository observatory</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <header class="masthead">
+    <div class="band-h" aria-hidden="true"></div><div class="band-v" aria-hidden="true"></div>
+    <div class="identity"><div><p class="eyebrow">REPOSITORY OBSERVATORY</p><h1 title="Mission Control v1: a local, read-only view of this repository and its work. It runs on this machine only. The only action is Refresh, which updates local, git-ignored copies of the data and changes no tracked file. The footer link opens the full description.">Mission Control</h1><p class="tagline">Governance template · replace with your project name</p></div></div>
+    <div class="actions"><span id="light" class="jq-light jq-light-unknown" role="status" aria-live="polite" title="Reading the execution status"><span class="jq-light-legend">Reading status…</span><span class="jq-light-dot"></span></span><button id="refresh" type="button" title="Updates the datasets at the current commit from what changed since the last refresh, into an ignored local folder shared by all worktrees, and rebuilds everything only when it must. It changes no tracked file. For a full update, run data_launcher.py refresh-local-full.">Refresh updates</button></div>
+  </header>
+  <div class="strip">
+    <div class="authority"><strong>Observation, with provenance.</strong> Derived snapshot — sources retain authority. Use the JSON to find the answer. Use the source to prove it.</div>
+    <p id="legend" class="legend"></p>
+  </div>
+  <div class="barrow"><nav id="primary" aria-label="Main navigation"></nav><nav id="breadcrumbs" aria-label="Visited trail" hidden></nav></div>
+  <main id="view" tabindex="-1"><p class="loading" role="status">Loading the five local datasets…</p></main>
+  <footer><a id="about" href="#detail/documents%3Agovernance%2Fextensions%2Fmission_control%2FREADME.md" data-record="documents:governance/extensions/mission_control/README.md">Mission Control v1 · Read only</a><span id="refresh-status" role="status"></span><span id="load-status" role="status"></span></footer>
+</body>
+</html>

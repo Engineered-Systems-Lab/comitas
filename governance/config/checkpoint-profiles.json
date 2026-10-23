@@ -1,0 +1,682 @@
+{
+  "version": 4,
+  "profiles": {
+    "record-only": {
+      "limitations": "Documentation/index and full continuity only; no runtime acceptance.",
+      "checks": [
+        {
+          "id": "continuity",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/validate_continuity.py"
+          ]
+        }
+      ]
+    },
+    "tooling": {
+      "limitations": "Focused checkpoint/continuity tooling regressions; no component or runtime acceptance.",
+      "checks": [
+        {
+          "id": "continuity",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/validate_continuity.py"
+          ]
+        },
+        {
+          "id": "governance-regressions",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/run_tests.py",
+            "-s",
+            "governance/tests",
+            "-s",
+            "governance/config",
+            "-p",
+            "test_checkpoint*.py",
+            "-v"
+          ]
+        },
+        {
+          "id": "continuity-regressions",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/run_tests.py",
+            "-s",
+            "governance/tests/continuity",
+            "-s",
+            "governance/config",
+            "-p",
+            "test_*.py",
+            "-v"
+          ]
+        }
+      ]
+    },
+    "governance": {
+      "limitations": "Focused governance/checkpoint-policy and continuity checks; no component or runtime acceptance.",
+      "checks": [
+        {
+          "id": "continuity",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/validate_continuity.py"
+          ]
+        },
+        {
+          "id": "governance-regressions",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/run_tests.py",
+            "-s",
+            "governance/tests",
+            "-s",
+            "governance/config",
+            "-p",
+            "test_checkpoint*.py",
+            "-v"
+          ]
+        },
+        {
+          "id": "continuity-regressions",
+          "argv": [
+            "{python}",
+            "-B",
+            "governance/tools/run_tests.py",
+            "-s",
+            "governance/tests/continuity",
+            "-s",
+            "governance/config",
+            "-p",
+            "test_*.py",
+            "-v"
+          ]
+        }
+      ]
+    }
+  },
+  "impact": {
+    "version": 1,
+    "invariants": {
+      "guidance": {
+        "groups": []
+      },
+      "selector": {
+        "groups": [
+          "checkpoint-selector",
+          "commit-metadata"
+        ],
+        "requires": [
+          "checkpoint-integrity",
+          "conformance"
+        ]
+      },
+      "checkpoint-integrity": {
+        "groups": [
+          "checkpoint-invariants"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "evidence": {
+        "groups": [
+          "checkpoint-evidence"
+        ],
+        "requires": [
+          "checkpoint-integrity",
+          "conformance"
+        ]
+      },
+      "worktrees": {
+        "groups": [
+          "checkpoint-worktrees"
+        ],
+        "requires": [
+          "reconcile",
+          "evidence",
+          "conformance"
+        ]
+      },
+      "reconcile": {
+        "groups": [
+          "checkpoint-reconcile"
+        ],
+        "requires": [
+          "evidence",
+          "conformance"
+        ]
+      },
+      "continuity": {
+        "groups": [
+          "continuity-regressions"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "conformance": {
+        "groups": [
+          "continuity-regressions"
+        ]
+      },
+      "approval": {
+        "groups": [],
+        "requires": [
+          "checkpoint-integrity",
+          "reconcile",
+          "conformance"
+        ]
+      },
+      "mission-control-generator": {
+        "groups": [
+          "mission-control-generator"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "mission-control-ui": {
+        "groups": [
+          "mission-control-ui"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "governance-runtime": {
+        "groups": [
+          "governance-runtime"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "classification": {
+        "groups": [
+          "classification-tests",
+          "checkpoint-selector"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "abandon": {
+        "groups": [
+          "checkpoint-abandon"
+        ],
+        "requires": [
+          "checkpoint-integrity",
+          "conformance"
+        ]
+      },
+      "timings": {
+        "groups": [
+          "timing-tests"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "review": {
+        "groups": [
+          "review-tests"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "link-retarget": {
+        "groups": [
+          "link-retarget-tests"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "jobs": {
+        "groups": [
+          "jobs-tests"
+        ]
+      },
+      "approval-words": {
+        "groups": [
+          "approval-words-tests"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      },
+      "early-approval": {
+        "groups": [
+          "early-approval-tests"
+        ],
+        "requires": [
+          "checkpoint-integrity",
+          "conformance"
+        ]
+      },
+      "interpreter-pin": {
+        "groups": [
+          "interpreter-pin-tests"
+        ],
+        "requires": [
+          "checkpoint-integrity",
+          "conformance"
+        ]
+      },
+      "test-runner": {
+        "groups": [
+          "test-runner-tests"
+        ],
+        "requires": [
+          "conformance"
+        ]
+      }
+    },
+    "symbol_maps": {
+      "governance/tools/checkpoint.py": {
+        "import:import early_approval": [
+          "approval",
+          "early-approval"
+        ],
+        "import:import review_render": [
+          "review"
+        ],
+        "import:import runtime_guard": [
+          "governance-runtime"
+        ],
+        "main": [
+          "approval",
+          "timings",
+          "review",
+          "early-approval"
+        ]
+      },
+      "governance/tools/lifecycle/checkpoint_evidence.py": {
+        "import:import artifact_classification": [
+          "selector",
+          "classification"
+        ],
+        "import:import early_approval": [
+          "approval",
+          "early-approval"
+        ],
+        "import:import timing_record": [
+          "timings"
+        ],
+        "assignment:IMPACT_REPLAYABLE": [
+          "evidence"
+        ],
+        "Evidence.validation_binding": [
+          "evidence"
+        ],
+        "Evidence.replayable": [
+          "evidence"
+        ],
+        "Evidence.timing": [
+          "timings"
+        ],
+        "Evidence.record_timings": [
+          "timings"
+        ],
+        "Evidence.sealed_estimate": [
+          "review",
+          "timings"
+        ],
+        "Evidence.estimate": [
+          "timings"
+        ],
+        "Evidence.validate_packet": [
+          "evidence",
+          "timings",
+          "early-approval"
+        ]
+      },
+      "governance/tools/lifecycle/checkpoint_lifecycle.py": {
+        "import:import approval_words": [
+          "approval",
+          "approval-words"
+        ],
+        "import:import early_approval": [
+          "approval",
+          "early-approval"
+        ],
+        "import:import local_jobs": [
+          "selector"
+        ],
+        "import:import review_render": [
+          "review"
+        ],
+        "assignment:ABANDONABLE": [
+          "abandon"
+        ],
+        "assignment:DECISION_CONTROLS": [
+          "approval"
+        ],
+        "assignment:DECISION_TOKENS": [
+          "approval"
+        ],
+        "assignment:DECISION_CHANNELS": [
+          "approval"
+        ],
+        "Lifecycle.abandon": [
+          "abandon"
+        ],
+        "Lifecycle.preparation_gate": [
+          "checkpoint-integrity",
+          "continuity"
+        ],
+        "Lifecycle.commit_identity": [
+          "approval"
+        ],
+        "Lifecycle.finish": [
+          "checkpoint-integrity",
+          "early-approval",
+          "worktrees"
+        ],
+        "Lifecycle.preview": [
+          "early-approval"
+        ],
+        "Lifecycle.landing_facts": [
+          "early-approval",
+          "interpreter-pin"
+        ],
+        "Lifecycle.landing": [
+          "early-approval"
+        ],
+        "Lifecycle.prepare": [
+          "selector",
+          "checkpoint-integrity",
+          "review",
+          "early-approval",
+          "interpreter-pin"
+        ],
+        "Lifecycle.present": [
+          "approval",
+          "review"
+        ],
+        "Lifecycle.consent_receipt": [
+          "approval",
+          "approval-words"
+        ],
+        "Lifecycle.assert_approval": [
+          "approval",
+          "early-approval"
+        ],
+        "Lifecycle.approve_consent": [
+          "approval",
+          "interpreter-pin"
+        ],
+        "Lifecycle.commit": [
+          "approval",
+          "early-approval",
+          "interpreter-pin"
+        ],
+        "Lifecycle.committed_checkpoint": [
+          "checkpoint-integrity",
+          "continuity"
+        ],
+        "Lifecycle.durable_continuity": [
+          "checkpoint-integrity",
+          "continuity"
+        ]
+      },
+      "governance/tools/lifecycle/checkpoint_selection.py": {
+        "import:import artifact_classification": [
+          "selector",
+          "classification"
+        ],
+        "import:import ast": [
+          "selector"
+        ],
+        "import:from commit_metadata import parse_metadata, refine_selection, validate_worker_context": [
+          "selector"
+        ],
+        "import:import link_retarget": [
+          "selector",
+          "link-retarget"
+        ],
+        "Selection.attach_classification": [
+          "selector",
+          "classification",
+          "link-retarget"
+        ],
+        "Selection.derive_selection": [
+          "selector",
+          "reconcile"
+        ],
+        "Selection.assert_selection_current": [
+          "selector",
+          "reconcile"
+        ],
+        "Selection.data": [
+          "selector"
+        ],
+        "Selection.table": [
+          "selector",
+          "classification"
+        ],
+        "Selection.bound_paths": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "Selection.paths": [
+          "selector",
+          "checkpoint-integrity"
+        ],
+        "Selection.select_profile": [
+          "selector",
+          "link-retarget"
+        ],
+        "Selection.deleted_scope": [
+          "selector",
+          "classification"
+        ],
+        "Selection.head_table": [
+          "selector",
+          "classification",
+          "early-approval"
+        ],
+        "Selection.link_retargets": [
+          "selector",
+          "link-retarget"
+        ],
+        "Selection.in_runtime": [
+          "selector"
+        ],
+        "Selection.changed_symbols": [
+          "selector"
+        ],
+        "Selection.select_impact": [
+          "selector",
+          "link-retarget"
+        ],
+        "Selection.check_commands": [
+          "selector",
+          "checkpoint-integrity"
+        ]
+      },
+      "governance/tools/lifecycle/checkpoint_state.py": {
+        "import:import artifact_classification": [
+          "selector",
+          "classification"
+        ],
+        "assignment:TABLE": [
+          "selector",
+          "classification"
+        ],
+        "assignment:EARLY_USES": [
+          "early-approval"
+        ],
+        "assignment:REF_POLICY_V1": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "assignment:REF_POLICY_V2": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "assignment:REF_POLICY": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "assignment:TRANSIENT_REF_PREFIXES": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "assignment:TOLERATED_REF_PREFIXES": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "assignment:TOLERATED_REF_NAMES": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "ref_tolerated": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "own_worktree_row": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "ref_projection": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "restamp": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "check_ref_context": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "RepoState.reconciliation_context": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "RepoState.ref_snapshot": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile",
+          "worktrees"
+        ],
+        "RepoState.snapshot": [
+          "checkpoint-integrity",
+          "evidence",
+          "reconcile"
+        ],
+        "RepoState.read_message": [
+          "early-approval"
+        ]
+      }
+    }
+  },
+  "commit_metadata": {
+    "version": 2,
+    "classes": [
+      "record",
+      "governance",
+      "tooling",
+      "runtime"
+    ],
+    "subclasses": [
+      {
+        "value": "checkpoint",
+        "classes": [
+          "governance",
+          "tooling"
+        ]
+      },
+      {
+        "value": "mission-control",
+        "classes": [
+          "governance",
+          "tooling"
+        ]
+      },
+      {
+        "value": "devlog",
+        "classes": [
+          "record"
+        ]
+      },
+      {
+        "value": "progress",
+        "classes": [
+          "record"
+        ]
+      },
+      {
+        "value": "agent-guidance",
+        "classes": [
+          "governance"
+        ]
+      },
+      {
+        "value": "decisions",
+        "classes": [
+          "governance"
+        ]
+      },
+      {
+        "value": "plan",
+        "classes": [
+          "record"
+        ]
+      },
+      {
+        "value": "constraints",
+        "classes": [
+          "governance"
+        ]
+      },
+      {
+        "value": "rationale",
+        "classes": [
+          "record"
+        ]
+      },
+      {
+        "value": "architecture",
+        "classes": [
+          "governance"
+        ]
+      }
+    ]
+  }
+}

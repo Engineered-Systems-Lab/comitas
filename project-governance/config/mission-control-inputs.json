@@ -1,0 +1,27 @@
+{
+  "datasets": {
+    "decisions": {
+      "paths": [
+        "project-governance/DECISIONS.md"
+      ]
+    },
+    "documents": {
+      "paths": [
+        "AGENTS.md",
+        "README.md",
+        "devlog/CONVENTIONS.md",
+        "devlog/README.md",
+        "docs/ARCHITECTURE.md",
+        "docs/PLAN.md",
+        "docs/PROGRESS.md",
+        "project-governance/CONSTRAINTS.md"
+      ]
+    },
+    "rationale": {
+      "paths": [
+        "project-governance/RATIONALE.md"
+      ]
+    }
+  },
+  "version": 1
+}

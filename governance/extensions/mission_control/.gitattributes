@@ -1,0 +1,9 @@
+# Mission Control's own sources keep LF bytes across checkouts; the generated datasets are never committed.
+*.json text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+ui/* text eol=lf
+
+# The Bash launchers require LF on Windows checkouts.
+*.sh text eol=lf

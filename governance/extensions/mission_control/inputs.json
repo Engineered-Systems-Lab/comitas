@@ -1,0 +1,42 @@
+{
+  "commitHistory": "reachable-from-declared-revision",
+  "datasets": {
+    "decisions": {
+      "markdownDirectories": [],
+      "paths": [
+        "governance/DECISIONS.md"
+      ]
+    },
+    "devlog": {
+      "excludePaths": [],
+      "markdownDirectories": [],
+      "paths": []
+    },
+    "documents": {
+      "markdownDirectories": [],
+      "paths": [
+        "governance/AGENT-ORIENTATION.md",
+        "governance/CHECKPOINT-TOOL.md",
+        "governance/CHECKPOINT-WORKFLOW.md",
+        "governance/COMMAND-CONTINUITY.md",
+        "governance/COMMAND-RECOVERY-PROMPT-v1.md",
+        "governance/CONSTRAINTS.md",
+        "governance/LOCAL-COORDINATION.md",
+        "governance/README.md",
+        "governance/ROLE-COORDINATOR.md",
+        "governance/ROLE-WORKER.md",
+        "governance/WORKTREE-WORKFLOW.md",
+        "governance/extensions/mission_control/MISSION-CONTROL-V1-DESIGN.md",
+        "governance/extensions/mission_control/README.md"
+      ]
+    },
+    "rationale": {
+      "markdownDirectories": [],
+      "paths": [
+        "governance/RATIONALE.md"
+      ]
+    }
+  },
+  "linkPolicy": "explicit-markdown-and-checkpoint",
+  "version": 1
+}

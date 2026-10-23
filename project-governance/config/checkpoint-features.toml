@@ -1,0 +1,52 @@
+# Feature switches of the checkpoint tool. The tool reads this file from main's current tip.
+# This file belongs to the project (project-governance/config/); the framework ships no copy of it, and an upgrade never
+# touches it. The values below are the starter a new project begins with. The framework's code supplies the fallbacks: every
+# key left out, and the whole file when it is missing or does not parse, means the feature is off.
+# Only the boolean true turns a feature on; a missing key, any other value or a file that does not
+# parse means the feature is off and the sealed Approve applies.
+#
+# To turn a feature off, change its value to false and commit that one change by hand in the main
+# checkout (the recipe is in governance/CHECKPOINT-TOOL.md, section Feature switches). Turning a
+# feature back on takes the normal sealed Approve, because this file is approval-critical.
+
+# early_approval_reach: how far a go at an eligible preview may approve the exact candidate the preview names
+# when the sealed result is identical and every check passes (G018 early conditional approval extension). The
+# value is one of three strings, each judged against the Approval-sensitivity column of the artifact
+# classification table (governance/ARTIFACT-CLASSIFICATION.md):
+#   "off"    never early: a go only stages and seals, and you approve at the sealed review as before.
+#   "low"    early only when every manifest path is low sensitivity (the hyphen in the column).
+#   "medium" early when every manifest path is low or medium sensitivity.
+# A path of high sensitivity (the approval machinery) and a path with no usable row never carry a go whatever the
+# value; a path on the runtime boundary is judged like any other. Anything else, "high" included, a missing key or
+# a file that does not parse means off. A path is judged by the higher of its row at HEAD and its row in the candidate's own table, so
+# a transaction never lowers its own sensitivity (governance/CHECKPOINT-TOOL.md, section Diff-bound approval). The
+# committed value is "medium": the fast track for low and medium paths. To turn it off, change the value to "off" and
+# commit that one change by hand in the main checkout (the recipe is in governance/CHECKPOINT-TOOL.md, section Feature
+# switches); to narrow it to low paths only, change it to "low".
+early_approval_reach = "medium"
+
+# diff_bound_approval: when true, an approval already given survives a moved main (G018 diff-bound approval
+# extension). A branch that is finished, committed and approved, whose base is no longer an ancestor of main, can be
+# carried onto the new main by `worktree.py carry`, which keeps the lead developer's approval only when every gate holds: the
+# merge is clean, the carried diff equals the approved diff (by patch id and by bytes, modulo the ids of the commits
+# carried before it), the message is unchanged, the selection derived on the new main equals the sealed one and every
+# selected check passes again on the carried tree. The same key lets `worktree.py carry-go` carry the go given at a preview, or at a
+# staged transaction, to a moved main under the same kind of gates. Any other case, and every refusal, takes a fresh Approve, or a
+# fresh preview and go, as before.
+# Only the boolean true turns it on; a missing key, any other value or a file that does not parse means off. The
+# switch is read from main's tip when the carry starts, again before it moves anything and again at integration.
+# To turn it off, change the value to false and commit that one change by hand in the main checkout (the recipe is
+# in governance/CHECKPOINT-TOOL.md, section Feature switches).
+diff_bound_approval = true
+
+# parallel_tests: when true, the tests inside each check run in parallel through the test runner
+# (governance/tools/run_tests.py), which fans one check's command out over worker processes; the tool
+# still runs its checks one after another. When false, a missing key, any other value or a file
+# that does not parse, the runner runs the tests sequentially, exactly as unittest discover does.
+# To turn it off, commit that one change by hand (the recipe is in governance/CHECKPOINT-TOOL.md).
+parallel_tests = true
+
+# test_workers: how many worker processes the test runner uses when parallel_tests is true. 0 means
+# one per core; a positive whole number caps the workers (for example while a container runtime runs).
+# Any other value fails safe: the runner runs the tests sequentially.
+test_workers = 0

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "bootstrap": "governance/COMMAND-RECOVERY-PROMPT-v1.md",
+  "facts": {},
+  "governance_evidence": [
+    "governance/CONSTRAINTS.md",
+    "governance/DECISIONS.md"
+  ],
+  "required_sections": [
+    "current_state",
+    "governing_constraints",
+    "validation_evidence",
+    "pending_work",
+    "next_action",
+    "limitations"
+  ]
+}

@@ -1,0 +1,18 @@
+# Every file is stored and checked out with LF line endings.
+* text=auto eol=lf
+
+governance/CONSTRAINTS.md text eol=lf
+governance/DECISIONS.md text eol=lf
+governance/README.md text eol=lf
+
+# The claims entry point is a Bash script and requires LF on Windows checkouts.
+governance/scripts/claims.sh text eol=lf
+
+# Structured commit snapshots bind these exact proposal bytes across checkouts.
+governance/config/checkpoint-policy.json text eol=lf
+governance/config/checkpoint-profiles.json text eol=lf
+governance/CHECKPOINT-WORKFLOW.md text eol=lf
+governance/CHECKPOINT-TOOL.md text eol=lf
+
+# Timing exports are committed by hand; keep their bytes identical in every checkout.
+docs/timings/*.jsonl text eol=lf
