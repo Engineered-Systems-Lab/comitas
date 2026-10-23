@@ -28,7 +28,7 @@ For a standalone rationale about a dated extension, use that extension's exact d
 
 ## CLI
 
-Replace `python` with a verified 3.13+ interpreter and `<full-sha>` with the reviewed 40-character source commit. The launcher writes the merged inventory into its scratch; these commands take the framework part alone, which is a valid inventory, and any file of the same shape can stand in for it. Run from the repository root:
+Replace `python` with a verified 3.13+ interpreter and `<full-sha>` with the reviewed 40-character source commit. The launcher writes the merged inventory into its scratch; these commands take the framework part alone, which is a valid inventory but holds no devlog and no project datasets, so a project that wants those uses the inventory Refresh assembles with `declared_inputs.load(root)` instead. Any file of the same shape can stand in for it. Run from the repository root:
 
 ```sh
 python -B governance/extensions/mission_control/generate.py full --repo . --revision '<full-sha>' --inventory governance/extensions/mission_control/inputs.json --output governance/extensions/mission_control/data

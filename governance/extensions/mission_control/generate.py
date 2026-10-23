@@ -291,10 +291,10 @@ class Generator:
         # Only the explicit checkpoint metadata supports this additional directed edge.
         for line in text.splitlines():
             if line.startswith('Repository checkpoint:'):
+                refusal = artifact_classification.checkpoint_line_refusal(line)
+                require(refusal is None, refusal)
                 cited = artifact_classification.split_citations(
                     line, artifact_classification.citation_labels(self.selection.root))
-                require(not cited.external and not cited.malformed,
-                        'A repository checkpoint is a commit of this repository, not a labeled one: ' + line)
                 for sha in [token for _, token in cited.local if len(token) == 40]:
                     require(git(self.selection.root, 'cat-file', '-t', sha).strip() == b'commit',
                             'Broken checkpoint commit: ' + sha)

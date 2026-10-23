@@ -143,8 +143,20 @@ class DevlogEntryTest(unittest.TestCase):
         path.write_text(text.replace('Repository checkpoint: `%s`' % self.checkpoint,
                                      'Repository checkpoint: upstream commit `%s`' % self.checkpoint), encoding='utf-8',
                         newline='\n')
-        with self.assertRaisesRegex(ValueError, 'Implementation checkpoint needs exactly one indexed log'):
+        with self.assertRaisesRegex(ValueError, 'not a labeled one'):
             self.validate()
+
+    def test_a_repository_checkpoint_line_that_is_not_one_backticked_full_id_fails(self):
+        self.declare('upstream')
+        path = self.root / self.entry
+        text = path.read_text(encoding='utf-8')
+        line = 'Repository checkpoint: `%s`' % self.checkpoint
+        for variant in ('Repository checkpoint: upstream commit %s' % self.checkpoint, 'Repository checkpoint: %s' % self.checkpoint,
+                        'Repository checkpoint: `%s` and more' % self.checkpoint, 'Repository checkpoint: `%s`' % SHORT):
+            with self.subTest(variant=variant):
+                path.write_text(text.replace(line, variant), encoding='utf-8', newline='\n')
+                with self.assertRaisesRegex(ValueError, 'not a labeled one'):
+                    self.validate()
 
 
 if __name__ == '__main__':

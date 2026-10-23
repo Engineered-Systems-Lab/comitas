@@ -723,9 +723,18 @@ class GeneratorTest(unittest.TestCase):
             with self.subTest(line=line):
                 with self.assertRaisesRegex(ValueError, 'not a labeled one'):
                     self.generate(proposal=self.proposal(name, head + line + '\n'))
-        # An undeclared label is a local id, so it still has to be a commit of the repository.
-        self.generate(proposal=self.proposal(name, head + 'other commit `' + self.revision + '`\n'))
-        self.assertEqual(self.items('devlog')[0]['links'][0]['target'], {'commit': self.revision})
+        # An undeclared label is no exception: the line holds one backticked full id and nothing else.
+        with self.assertRaisesRegex(ValueError, 'not a labeled one'):
+            self.generate(proposal=self.proposal(name, head + 'other commit `' + self.revision + '`\n'))
+
+    def test_a_repository_checkpoint_line_that_is_not_one_backticked_full_id_is_refused(self):
+        name = 'devlog/2026-10-02T0843Z-event.md'
+        head = '# Log\n\nStatus: Historical / non-normative\nRepository checkpoint: '
+        self.write(ac.CITATIONS, json.dumps({'version': 1, 'external_repositories': ['upstream']}))
+        for line in ('upstream commit ' + self.revision, self.revision, '`' + self.revision + '` and more', '`' + self.revision[:7] + '`'):
+            with self.subTest(line=line):
+                with self.assertRaisesRegex(ValueError, 'not a labeled one'):
+                    self.generate(proposal=self.proposal(name, head + line + '\n'))
 
     def test_unsupported_link_syntax_fails_instead_of_silent_drop(self):
         with self.assertRaisesRegex(ValueError, 'Unsupported inline'):

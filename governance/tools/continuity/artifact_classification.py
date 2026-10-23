@@ -243,6 +243,19 @@ def split_citations(text, labels):
     return Citations(local, external, malformed)
 
 
+CHECKPOINT_LINE = re.compile(r'Repository checkpoint: `[0-9a-f]{40}`')
+
+
+def checkpoint_line_refusal(line):
+    """The one message for a `Repository checkpoint:` line that is not exactly one backticked full id, else None.
+
+    A repository checkpoint is a commit of this repository, so a labeled id, a short id, an id without backticks or any other
+    text on the line is refused. The continuity check and the Mission Control generator both read the line through this."""
+    if CHECKPOINT_LINE.fullmatch(line.rstrip('\r')):
+        return None
+    return 'A repository checkpoint is a commit of this repository, not a labeled one: ' + line
+
+
 class Row:
     def __init__(self, line, path, cells):
         self.line = line

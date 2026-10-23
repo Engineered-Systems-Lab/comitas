@@ -207,6 +207,10 @@ def validate_docs(root):
         except ValueError:
             dt = None
         require(dt is not None and dt.strftime(pattern) == found[1], f'Invalid date: {p}')
+        for line in text.splitlines():
+            if line.startswith('Repository checkpoint:'):
+                refusal = artifact_classification.checkpoint_line_refusal(line)
+                require(refusal is None, refusal)
         cited = artifact_classification.split_citations(text, labels)
         require(not cited.malformed, f'Log has a label without a valid id: {p}')
         refs = [token for _, token in cited.local if len(token) == 40]
