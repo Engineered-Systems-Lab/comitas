@@ -158,3 +158,7 @@ The Comitas version is in [VERSION](VERSION), and each release is described in t
 3. Check the mode of the shell scripts: `git ls-files -s '*.sh'` must show `100755` for each. A Windows checkout has no permission bits, so a script that was re-created is staged as `100644`; set the bit with `git update-index --chmod=+x <path>` ([H19](WORKER-HAZARDS.md#h19-a-scripts-mode-lives-in-the-index-not-in-the-working-tree)).
 4. Read the Migration notes of every changelog entry newer than your version. An entry has them only when something you must change by hand moved. Edit your files accordingly.
 5. Run the checks of [phase 2](#2-set-up), continuity and the test suite, and commit the result.
+
+### Releasing Comitas
+
+This is how Comitas itself makes a release, so an adopter knows what a version names. Each change that an adopter must know about adds its entry under `## Unreleased` in the [Changelog](CHANGELOG.md), and entries collect there until the lead developer cuts a release. A cut is one governed change: it sets [VERSION](VERSION), turns the `## Unreleased` heading into `## <version> (YYYY-MM-DD)` with the date it lands, and adds a Migration note under any entry that needs one. No `## Unreleased` heading stays behind; the next change that lands creates it again. After the cut has landed, the Coordinator gives the release commit an annotated tag `v<version>` on the lead developer's word, and the lead developer pushes it. A project upgrading may name a release by its tag or by its commit.
