@@ -59,7 +59,8 @@ def refuse_unless_first_commit(root):
             % root)
     head = git(root, 'rev-parse', '--verify', '-q', 'HEAD', check=False)
     require(head.returncode != 0,
-            'HEAD exists (%s): the helper runs once, before the first commit, and never in a repository that already has one'
+            'HEAD exists (%s): the helper runs once, before the first commit, and never in a repository that already has one '
+            '(a repository made with "Use this template" on GitHub needs no adoption step)'
             % head.stdout.decode('utf-8').strip()[:12])
 
 

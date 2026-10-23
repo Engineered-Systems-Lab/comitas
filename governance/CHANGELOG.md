@@ -2,6 +2,10 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`.
 
+## 0.3.1 (2026-10-23)
+
+**Documentation and one message; nothing to do but take the upgrade.** GitHub's "Use this template" is enabled on the Comitas repository, and a repository it generates needs no adoption helper: its shell scripts already carry the executable bit and `project-governance/config/citations.json` already declares the label `template`. The README and the [project lifecycle](PROJECT-LIFECYCLE.md#1-adopt) now describe both routes, the template and the manual export, and the adoption helper's refusal after the first commit says that a repository made with "Use this template" needs no adoption step. The helper's behaviour is unchanged.
+
 ## 0.3.0 (2026-10-23)
 
 **The framework is named Comitas; nothing to do but take the upgrade.** Comitas is Latin for courtesy and friendliness, the spirit in which people and AI agents work together here. Only names changed: the README title, subtitle and tagline, the identity line of Mission Control, the `NOTICE`, and the documents and messages that called the framework "the template" or "the governance template" now say Comitas. No folder, file name, configuration key or tool name changed, and an upgrade stays "replace everything under `governance/`". The citation label `template` stays, with every `template commit` citation: it now names the private archive that holds the framework's history before Comitas, a project made from Comitas declares it with the adoption helper as before, and the helper still writes that label.

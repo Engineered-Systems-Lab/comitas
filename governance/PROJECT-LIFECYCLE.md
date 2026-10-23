@@ -8,7 +8,7 @@ Commands run from the root of the repository. `python` means any Python 3.13 or 
 
 | Phase | You are | You run |
 | --- | --- | --- |
-| [1. Adopt](#1-adopt) | starting a repository from Comitas | `git archive`, `git init`, `git add -A`, `adopt.py`, the first commit |
+| [1. Adopt](#1-adopt) | starting a repository from Comitas | "Use this template" on GitHub and a clone; or `git archive`, `git init`, `git add -A`, `adopt.py`, the first commit |
 | [2. Set up](#2-set-up) | making the copy your project | `runtime_guard.py --check`, `validate_continuity.py`, `run_tests.py`, `claim-coordinator` |
 | [3. Run](#3-run) | directing the work | `claims.sh status` and `watch`, `mission-control.sh`, the data refresh, your goes and Approves, `git push` |
 | [4. Repair](#4-repair) | something stopped or was left behind | `claims.sh clear` and `doctor`, removing a stale lock |
@@ -16,6 +16,14 @@ Commands run from the root of the repository. `python` means any Python 3.13 or 
 | [6. Upgrade](#6-upgrade) | taking a new release of the framework | replace `governance/`, read the Migration notes, run the checks |
 
 ## 1. Adopt
+
+There are two routes. Take one.
+
+### Route A: "Use this template" on GitHub
+
+On the Comitas repository page on GitHub, click "Use this template" and create the new repository; leave "Include all branches" off. Then clone it. GitHub gives the new repository one commit with the tracked files of `main`, so it needs no adoption helper: the shell scripts already carry the executable bit, and `project-governance/config/citations.json` already declares the label `template`. Do not run `adopt.py`; it refuses, because a commit exists. Go on to [phase 2](#2-set-up): run the checks, then claim the Coordinator role.
+
+### Route B: export the tracked files
 
 You start a project by exporting Comitas into a new, empty folder. Do not copy Comitas's folder: a copy also takes its `.git` history and its git-ignored `.local/`. Export only the tracked files of `main`.
 
