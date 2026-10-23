@@ -6,7 +6,7 @@ Progress records what is verified now, with no task lists and no history; histor
 
 ## Current state
 
-The governance template has been adopted and no project work has landed yet.
+Comitas has been adopted and no project work has landed yet.
 
 ## Recovery facts
 

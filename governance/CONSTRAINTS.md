@@ -2,7 +2,7 @@
 
 Active MUST/MUST-NOT constraints. Read with [Architecture](../docs/ARCHITECTURE.md), [Decisions](DECISIONS.md) and the relevant frozen component specification; historical devlog entries cannot override them.
 
-This is the framework's own rule set. A project that adopts the template keeps its own rules in `project-governance/CONSTRAINTS.md`, beside this file and never in it, and records the decisions behind them in `project-governance/DECISIONS.md` with their rationale (G050); an upgrade replaces this file and never touches the project's. The project's rules add to these and never override them.
+This is the framework's own rule set. A project that adopts Comitas keeps its own rules in `project-governance/CONSTRAINTS.md`, beside this file and never in it, and records the decisions behind them in `project-governance/DECISIONS.md` with their rationale (G050); an upgrade replaces this file and never touches the project's. The project's rules add to these and never override them.
 
 ## First Duty / Historical Truth
 
@@ -41,11 +41,11 @@ Change classification MUST describe the changed artifact separately from its val
 
 ## Licensing and provenance
 
-Every copy of the framework's material, whole or in part, MUST keep the license terms or their URL and every `Required Notice:` line ([G052](DECISIONS.md#g052---notices-travel-with-the-framework-and-contributions-are-recorded-in-files-2026-10-20-accepted)): the root `LICENSE` with a copy of the whole template, and [NOTICE](NOTICE) with a copy of `governance/` or of any part of it, an extension copied on its own included. No contributor, tool or adopting project may remove or alter them in retained material; maintaining a project does not change the terms of what it retains from the template. The `LICENSE` text beneath its Required Notice line MUST stay the canonical PolyForm Noncommercial License 1.0.0, byte for byte.
+Every copy of the framework's material, whole or in part, MUST keep the license terms or their URL and every `Required Notice:` line ([G052](DECISIONS.md#g052---notices-travel-with-the-framework-and-contributions-are-recorded-in-files-2026-10-20-accepted)): the root `LICENSE` with a copy of the whole framework, and [NOTICE](NOTICE) with a copy of `governance/` or of any part of it, an extension copied on its own included. No contributor, tool or adopting project may remove or alter them in retained material; maintaining a project does not change the terms of what it retains from Comitas. The `LICENSE` text beneath its Required Notice line MUST stay the canonical PolyForm Noncommercial License 1.0.0, byte for byte.
 
 Third-party material MUST enter with its license and notice in the same commit, kept beside it unchanged, and with an entry in the [contribution register](CONTRIBUTION-REGISTER.md). Material whose license is unknown, or does not allow it to be distributed with the framework, MUST NOT enter.
 
-In the template's repository, contributions are recorded in files, never in a commit trailer ([contribution process](CONTRIBUTING.md)): the frozen [contribution record](CONTRIBUTION-RECORD.md), which later work MUST NOT edit, and the append-only register, which changes only when a new contributor, AI tool, kind of account, provider agreement or third-party material enters. Existing commits MUST NOT be rewritten to add or correct provenance. Neither record, nor the approval of a commit, establishes ownership, authorship or freedom from third-party rights.
+In Comitas's repository, contributions are recorded in files, never in a commit trailer ([contribution process](CONTRIBUTING.md)): the frozen [contribution record](CONTRIBUTION-RECORD.md), which later work MUST NOT edit, and the append-only register, which changes only when a new contributor, AI tool, kind of account, provider agreement or third-party material enters. Existing commits MUST NOT be rewritten to add or correct provenance. Neither record, nor the approval of a commit, establishes ownership, authorship or freedom from third-party rights.
 
 ## Extensions
 

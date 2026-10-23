@@ -252,7 +252,7 @@ test('log titles show the entry title once followed by its date', () => {
 
 test('header carries the repository identity placeholder and one display legend', async () => {
   const html = await readFile(new URL('../../../extensions/mission_control/ui/index.html',import.meta.url),'utf8');
-  assert.ok(html.includes('>Mission Control</h1><p class="tagline">Governance template · replace with your project name</p>'));
+  assert.ok(html.includes('>Mission Control</h1><p class="tagline">Comitas · replace with your project name</p>'));
   assert.ok(html.includes('<p class="eyebrow">REPOSITORY OBSERVATORY</p><h1 title="'));
   assert.ok(html.includes('<p id="legend" class="legend"></p>'));
   assert.ok(!html.includes('mailto:'));

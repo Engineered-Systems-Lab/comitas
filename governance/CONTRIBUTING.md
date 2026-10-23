@@ -1,6 +1,6 @@
 # Contributing to the framework
 
-This document is about contributions to the framework itself, in the template's own repository: how a contribution is disclosed and recorded, and why the license alone does not settle what the licensor may do with it. A project that adopts the template keeps its own contribution rules, if it has any, in `project-governance/`; nothing here binds a project's own work. The binding lines are in [Constraints](CONSTRAINTS.md#licensing-and-provenance) and the decision is [G052](DECISIONS.md#g052---notices-travel-with-the-framework-and-contributions-are-recorded-in-files-2026-10-20-accepted). Nothing in this document is legal advice, and no statement in it has been reviewed by a lawyer.
+This document is about contributions to the framework itself, in Comitas's own repository: how a contribution is disclosed and recorded, and why the license alone does not settle what the licensor may do with it. A project that adopts Comitas keeps its own contribution rules, if it has any, in `project-governance/`; nothing here binds a project's own work. The binding lines are in [Constraints](CONSTRAINTS.md#licensing-and-provenance) and the decision is [G052](DECISIONS.md#g052---notices-travel-with-the-framework-and-contributions-are-recorded-in-files-2026-10-20-accepted). Nothing in this document is legal advice, and no statement in it has been reviewed by a lawyer.
 
 **The licensor** below is the person named in the `Required Notice:` line of the repository's [LICENSE](../LICENSE) and of [NOTICE](NOTICE).
 

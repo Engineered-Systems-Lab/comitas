@@ -31,7 +31,7 @@ Negative tests cover wrong facts and types, wrong version, missing evidence, bro
 
 ## Adopting the recovery chain
 
-The template ships the project's part of the contract, which declares three facts (`service`, `manual_acceptance`, `next_authorized_action`), all read from the Recovery facts table of [Progress](../docs/PROGRESS.md). That is enough for a project with no runtime boundary. A project that does have one adds, in one change:
+Comitas ships the project's part of the contract, which declares three facts (`service`, `manual_acceptance`, `next_authorized_action`), all read from the Recovery facts table of [Progress](../docs/PROGRESS.md). That is enough for a project with no runtime boundary. A project that does have one adds, in one change:
 
 1. rows marked `runtime` (and, where it freezes artifacts, `frozen`) in the Boundary column of the project's classification table, `project-governance/ARTIFACT-CLASSIFICATION.md`, which the tools read together with the framework's [table](ARTIFACT-CLASSIFICATION.md);
 2. an `implementation_checkpoint` row in Progress (a full Git SHA of the latest commit that touched runtime paths) and the matching fact in the project's part of the contract, `project-governance/config/reconstruction-contract.json` ([its keys](PROJECT-GOVERNANCE.md#the-reconstruction-contract)), with the same pattern as the other rows;

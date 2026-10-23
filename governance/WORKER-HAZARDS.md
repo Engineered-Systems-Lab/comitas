@@ -143,7 +143,7 @@ Each entry names who it concerns (worker, Coordinator or both), what happens, wh
 ## H19. A script's mode lives in the index, not in the working tree
 
 - **Concerns:** both.
-- **What happens:** `core.filemode` is `false` on Windows, so a checkout shows no permission bits and a newly added script is staged as `100644`. The template pins its committed `.sh` files at `100755` in the index, and a conformance test fails when one is not.
+- **What happens:** `core.filemode` is `false` on Windows, so a checkout shows no permission bits and a newly added script is staged as `100644`. Comitas pins its committed `.sh` files at `100755` in the index, and a conformance test fails when one is not.
 - **Do:** the checkpoint tool's `prepare` and `preview` stage the manifest's `*.sh` files as executable themselves, so a script that goes through the governed workflow needs nothing. Outside it (the adoption helper does this once, before the first commit), set the bit with `git update-index --chmod=+x <path>` (never by editing `core.filemode`), and check a mode with `git ls-files -s <path>` before you state it. Run a script as `bash script.sh` when in doubt.
 - **Taught by:** a measurement with `git ls-files -s '*.sh'` that corrected a first claim that every script had one mode.
 

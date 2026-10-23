@@ -6,7 +6,7 @@ Evidence baseline: main as inspected on October 2, 2026 (America/New_York) for G
 
 Governance here serves one purpose: preserve what was actually agreed and tested, without letting summaries, generated output or temporary tool state become substitutes for evidence.
 
-This copy of the guide ships with the governance template. It keeps the explanations of the framework's own decisions (the gaps in the numbering are numbers retired before release). A project's own entries go in `project-governance/RATIONALE.md` and follow the convention in [Constraints](CONSTRAINTS.md#decision-records).
+This copy of the guide ships with Comitas. It keeps the explanations of the framework's own decisions (the gaps in the numbering are numbers retired before release). A project's own entries go in `project-governance/RATIONALE.md` and follow the convention in [Constraints](CONSTRAINTS.md#decision-records).
 
 ## Freezing is always allowed: G054
 

@@ -2,7 +2,7 @@
 
 This document is the one place that says what a project keeps in `project-governance/`: every file the tools read there, its keys, what it means when it is missing, how the tools combine it with the framework's, and what they refuse. It is framework-owned, so an upgrade replaces it; the files it describes are the project's and an upgrade never touches them. It states no rule of its own: the reasons are in [G045](DECISIONS.md#g045---the-project-overlay-is-read-by-every-tool-and-the-settings-override-code-defaults-2026-10-18-accepted) and [G050](DECISIONS.md#g050---the-project-keeps-its-own-rules-decisions-and-half-of-the-reconstruction-contract-2026-10-19-accepted), the loading mechanics in [the project overlay](CHECKPOINT-TOOL.md#the-project-overlay), and a conformance test pins the defaults below to the code.
 
-`governance/` is the framework and is never edited by a project. `project-governance/` is the project's. A project starts from the files the template ships there (a minimal valid starter of each) and from then on owns them. Owning a file here means maintaining it; the starters remain licensed material of the template like the rest ([licensing and provenance](CONSTRAINTS.md#licensing-and-provenance)). Every file in the folder is graded `high` in the [framework's classification table](ARTIFACT-CLASSIFICATION.md), because these files decide which checks a change needs and what a go may carry: a change to one takes the sealed Approve, and a project cannot classify its own folder.
+`governance/` is the framework and is never edited by a project. `project-governance/` is the project's. A project starts from the files Comitas ships there (a minimal valid starter of each) and from then on owns them. Owning a file here means maintaining it; the starters remain licensed material of Comitas like the rest ([licensing and provenance](CONSTRAINTS.md#licensing-and-provenance)). Every file in the folder is graded `high` in the [framework's classification table](ARTIFACT-CLASSIFICATION.md), because these files decide which checks a change needs and what a go may carry: a change to one takes the sealed Approve, and a project cannot classify its own folder.
 
 ## How the tools combine the two sides
 
@@ -17,7 +17,7 @@ With every project file absent, the tools behave exactly as with the framework a
 | File (in `project-governance/`) | Kind | Missing means |
 | --- | --- | --- |
 | `ARTIFACT-CLASSIFICATION.md` | overlay of the framework's table | no project rows, so every tracked file outside `governance/` is unclassified and blocked |
-| `config/artifact-classification-golden.json` | the independent pin of the project's rows | no pin for the project's rows (the conformance tests of the template expect one) |
+| `config/artifact-classification-golden.json` | the independent pin of the project's rows | no pin for the project's rows (the conformance tests of Comitas expect one) |
 | `config/checkpoint-policy.json` | overlay of the framework's policy | the framework's policy alone |
 | `config/checkpoint-profiles.json` | overlay of the framework's profiles | the framework's profiles alone |
 | `config/checkpoint-features.toml` | override of code defaults | every feature off |
@@ -47,7 +47,7 @@ The code supplies these. The table is read by a conformance test that compares e
 | `config/checkpoint-features.toml` | `test_workers` | `0` |
 | `config/mission-control.json` | `port` | `8765` |
 
-The starter files the template ships hold the values the template itself runs with, which are not always the defaults (for example `early_approval_reach` is `"medium"` and `parallel_tests` is `true` there). A project keeps the values it wants. An upgrade that adds an optional key announces it in the [changelog](CHANGELOG.md), and the default in the code keeps old project files working.
+The starter files Comitas ships hold the values Comitas itself runs with, which are not always the defaults (for example `early_approval_reach` is `"medium"` and `parallel_tests` is `true` there). A project keeps the values it wants. An upgrade that adds an optional key announces it in the [changelog](CHANGELOG.md), and the default in the code keeps old project files working.
 
 ## The project's classification table
 
@@ -56,14 +56,14 @@ The starter files the template ships hold the values the template itself runs wi
 - It may classify no path under `governance/` or under `project-governance/`, and not a historical path there either: the framework's table classifies all of both. A project row for a path the framework's table also names is a duplicate. The loader refuses the table at once.
 - A row may name a profile of the framework or one the project added in `config/checkpoint-profiles.json`.
 - Every file Git tracks needs a row in one of the two tables, and a new file needs its row in the commit that adds it. Continuity fails with the list of paths no row covers.
-- Because the framework's table classifies the root files the tools own (`AGENTS.md`, `.gitignore`, `.gitattributes`), a project does not repeat them. A project that commits an export of the timing record (`docs/timings/<label>.jsonl`) adds that row; the template ships it.
+- Because the framework's table classifies the root files the tools own (`AGENTS.md`, `.gitignore`, `.gitattributes`), a project does not repeat them. A project that commits an export of the timing record (`docs/timings/<label>.jsonl`) adds that row; Comitas ships it.
 - Change class, validation profile, boundary and the other columns mean what the framework's document says. A project with a runtime boundary marks its runtime and frozen paths in the Boundary column here.
 
 `python -B governance/tools/show_classification.py <path> --checks` shows how any path resolves across the two tables and which checks it would select.
 
 ## The golden pin
 
-`config/artifact-classification-golden.json` pins rows of the project's table independently of the document, so that a table edit alone cannot reclassify a path the project cares about. It is `{"version": 1, "paths": {...}}` with the keys of `paths` sorted by ASCII ordinal. Each entry is either the resolved row, with the keys `class`, `profile`, `boundary`, `bound`, `invariants`, `subclass`, `reachable`, `approval_sensitivity` and a `why`, or a refused path, `{"refused": true, "boundary": [...], "why": "..."}`, for a path that must stay unclassified or blocked. A path is pinned on one side only: a path the framework's golden pins is not pinned here. The conformance test of the template, which reads this file against the union of the tables, wants at least five entries. Change the pin in the same transaction as the row it pins; a project's own conformance tests may add lists of sensitive paths beside it.
+`config/artifact-classification-golden.json` pins rows of the project's table independently of the document, so that a table edit alone cannot reclassify a path the project cares about. It is `{"version": 1, "paths": {...}}` with the keys of `paths` sorted by ASCII ordinal. Each entry is either the resolved row, with the keys `class`, `profile`, `boundary`, `bound`, `invariants`, `subclass`, `reachable`, `approval_sensitivity` and a `why`, or a refused path, `{"refused": true, "boundary": [...], "why": "..."}`, for a path that must stay unclassified or blocked. A path is pinned on one side only: a path the framework's golden pins is not pinned here. The conformance test of Comitas, which reads this file against the union of the tables, wants at least five entries. Change the pin in the same transaction as the row it pins; a project's own conformance tests may add lists of sensitive paths beside it.
 
 ## The policy and the profiles
 
@@ -126,7 +126,7 @@ The check also requires the index and the conventions to resolve their links lik
 `config/citations.json` is optional and so is every key in it: `{"version": 1, "external_repositories": []}` is the same as no file. A file that is missing, unreadable or not a JSON object means no label. A key that is set must hold a good value, or the tools stop; a key they do not know is refused too.
 
 - `version`: `1` when present.
-- `external_repositories`: a list of distinct labels, each one word of letters, digits, dots, underscores and hyphens. A label names another repository whose commits this project cites. The template declares none, because it knows no other repository; the [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) writes the label `template` into the file of a project made from it, and a project adds its own labels beside it.
+- `external_repositories`: a list of distinct labels, each one word of letters, digits, dots, underscores and hyphens. A label names another repository whose commits this project cites. Comitas declares none, because it knows no other repository; the [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) writes the label `template` into the file of a project made from it, and a project adds its own labels beside it.
 
 A commit of another repository is cited as the label, one space, the lowercase word `commit`, one space and the id in backticks, on one source line (a table row works): ``template commit `<id>` ``. The id is 7 to 40 lowercase hexadecimal characters and the label is matched exactly as declared. The rule has no special case:
 
@@ -135,7 +135,7 @@ A commit of another repository is cited as the label, one space, the lowercase w
 - a labeled id whose label is not declared is checked like a local one: it must resolve in this repository, as must a bare id;
 - a labeled commit counts as a citation of a devlog entry, but an implementation checkpoint entry still needs the ``Repository checkpoint: `<full hash>` `` line of a commit of this repository, and the Mission Control generator refuses a labeled id on that line.
 
-The framework writes its own commit citations as ``template commit `<id>` `` and a conformance test requires it. A project made from the template declares `template`, which the adoption helper writes before the project's first commit, so those citations are only checked for their form in the project. See [G051](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted).
+The framework writes its own commit citations as ``template commit `<id>` `` and a conformance test requires it. A project made from Comitas declares `template` (the label of the archive that holds the framework's history before Comitas), which the adoption helper writes before the project's first commit, so those citations are only checked for their form in the project. See [G051](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted).
 
 ## The frozen manifest
 
@@ -157,7 +157,7 @@ These two files belong to the optional Mission Control [extension](extensions/RE
 
 `DECISIONS.md` is the project's decision registry. Its decisions take the prefix D and any free three-digit number, and need no relation to the framework's G-series ([G049](DECISIONS.md#g049---the-framework-numbers-its-decisions-with-g-and-a-project-numbers-its-own-with-d-2026-10-19-accepted)). A registry takes only its own prefix: a G decision in the project's file, or a D decision in the framework's, is refused with one message naming the file and the numbers. `RATIONALE.md` explains the decisions, with one audit row and one section per decision, whose heading names it after a colon (for example `## Checkpoints: D001`).
 
-Each of the three is optional; a present one is read by the continuity check like any document, so its links must resolve and it must be reachable by links from `AGENTS.md`. A project that keeps them makes sure `AGENTS.md` points to them, as the template's does.
+Each of the three is optional; a present one is read by the continuity check like any document, so its links must resolve and it must be reachable by links from `AGENTS.md`. A project that keeps them makes sure `AGENTS.md` points to them, as Comitas's does.
 
 ## The reconstruction contract
 

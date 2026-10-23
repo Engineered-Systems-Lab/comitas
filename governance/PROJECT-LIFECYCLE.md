@@ -8,7 +8,7 @@ Commands run from the root of the repository. `python` means any Python 3.13 or 
 
 | Phase | You are | You run |
 | --- | --- | --- |
-| [1. Adopt](#1-adopt) | starting a repository from the template | `git archive`, `git init`, `git add -A`, `adopt.py`, the first commit |
+| [1. Adopt](#1-adopt) | starting a repository from Comitas | `git archive`, `git init`, `git add -A`, `adopt.py`, the first commit |
 | [2. Set up](#2-set-up) | making the copy your project | `runtime_guard.py --check`, `validate_continuity.py`, `run_tests.py`, `claim-coordinator` |
 | [3. Run](#3-run) | directing the work | `claims.sh status` and `watch`, `mission-control.sh`, the data refresh, your goes and Approves, `git push` |
 | [4. Repair](#4-repair) | something stopped or was left behind | `claims.sh clear` and `doctor`, removing a stale lock |
@@ -17,15 +17,15 @@ Commands run from the root of the repository. `python` means any Python 3.13 or 
 
 ## 1. Adopt
 
-You start a project by exporting the template into a new, empty folder. Do not copy the template's folder: a copy also takes its `.git` history and its git-ignored `.local/`. Export only the tracked files of `main`.
+You start a project by exporting Comitas into a new, empty folder. Do not copy Comitas's folder: a copy also takes its `.git` history and its git-ignored `.local/`. Export only the tracked files of `main`.
 
-In Git Bash, from the template repository:
+In Git Bash, from the Comitas repository:
 
 ```sh
 git archive --format=tar main | tar -x -C <new-folder>
 ```
 
-In PowerShell, from the template repository:
+In PowerShell, from the Comitas repository:
 
 ```powershell
 git archive --format=zip -o <new-folder>.zip main
@@ -38,10 +38,10 @@ Then, in the new folder, in Git Bash:
 git init -b main
 git add -A
 python -B governance/tools/adopt.py
-git commit -m 'Adopt the governance template'
+git commit -m 'Adopt Comitas'
 ```
 
-The [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) is run once, after `git add -A` and before the first commit. It makes the new project pass the checks the template passes: it sets the executable bit of the staged shell scripts in the index (a Windows checkout has no permission bits, so `git add` stages them as `100644` and a conformance test fails) and it declares the label `template` in `project-governance/config/citations.json` (the framework cites its own commits as `template commit`, and a copy has none of the template's history), then stages that file. It writes no Git configuration, changes nothing a second time before the first commit, and refuses where a commit exists, so it never runs in the template or in a project that is already going. The reasons are in [G053](DECISIONS.md#g053---a-new-project-runs-one-adoption-helper-and-its-first-coordinator-claims-the-role-by-command-2026-10-20-accepted).
+The [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) is run once, after `git add -A` and before the first commit. It makes the new project pass the checks Comitas passes: it sets the executable bit of the staged shell scripts in the index (a Windows checkout has no permission bits, so `git add` stages them as `100644` and a conformance test fails) and it declares the label `template` in `project-governance/config/citations.json` (the framework cites its own commits as `template commit`, and a copy has none of Comitas's history), then stages that file. It writes no Git configuration, changes nothing a second time before the first commit, and refuses where a commit exists, so it never runs in Comitas or in a project that is already going. The reasons are in [G053](DECISIONS.md#g053---a-new-project-runs-one-adoption-helper-and-its-first-coordinator-claims-the-role-by-command-2026-10-20-accepted).
 
 The first commit comes before any governed work, because the tools read the feature switches from the tip of `main`. The export carries `LICENSE` and `governance/NOTICE`; keep both ([License](../README.md#license)).
 
@@ -49,9 +49,9 @@ The first commit comes before any governed work, because the tools read the feat
 
 Make the copy yours, then check that it works.
 
-1. **Rewrite your own files.** Rewrite `docs/ARCHITECTURE.md`, `docs/PLAN.md` and `docs/PROGRESS.md`, and the root `README.md`. Edit `AGENTS.md` to say what your project is and to map your own documents; the pointer line at its top stays. Keep `LICENSE`. If your project licenses its own work under other terms, keep the template's license and its Required Notice line for the material you retain from the template and say which files each license covers. Never remove a notice from retained material ([licensing and provenance](CONSTRAINTS.md#licensing-and-provenance)). Remove an extension you do not want as in [phase 5](#5-change).
-2. **Fill `project-governance/`.** [Project governance files](PROJECT-GOVERNANCE.md) is the one source for every file in it: its keys, its defaults and what the tools refuse. The template ships a starter of each. The minimum a project does:
-   - `ARTIFACT-CLASSIFICATION.md` and `config/artifact-classification-golden.json`: one row per path of your project, with its pin. The template ships the rows of its own documents: replace them. Every tracked file needs a row in one of the two tables, and a new file needs its row in the commit that adds it. `python -B governance/tools/show_classification.py <path> --checks` shows how any path resolves and which checks it would select.
+1. **Rewrite your own files.** Rewrite `docs/ARCHITECTURE.md`, `docs/PLAN.md` and `docs/PROGRESS.md`, and the root `README.md`. Edit `AGENTS.md` to say what your project is and to map your own documents; the pointer line at its top stays. Keep `LICENSE`. If your project licenses its own work under other terms, keep Comitas's license and its Required Notice line for the material you retain from Comitas and say which files each license covers. Never remove a notice from retained material ([licensing and provenance](CONSTRAINTS.md#licensing-and-provenance)). Remove an extension you do not want as in [phase 5](#5-change).
+2. **Fill `project-governance/`.** [Project governance files](PROJECT-GOVERNANCE.md) is the one source for every file in it: its keys, its defaults and what the tools refuse. Comitas ships a starter of each. The minimum a project does:
+   - `ARTIFACT-CLASSIFICATION.md` and `config/artifact-classification-golden.json`: one row per path of your project, with its pin. Comitas ships the rows of its own documents: replace them. Every tracked file needs a row in one of the two tables, and a new file needs its row in the commit that adds it. `python -B governance/tools/show_classification.py <path> --checks` shows how any path resolves and which checks it would select.
    - `CONSTRAINTS.md`: your own rules, next to the framework's, which they never override.
    - `DECISIONS.md` and `RATIONALE.md`: your own decisions, numbered with the prefix D from any free number (the framework's are G), and the reasons for them.
    - `config/mission-control.json`: your own Mission Control port, `{"version": 1, "port": <port>}`, because several projects on one host would otherwise collide on the default.
@@ -143,10 +143,10 @@ The script deletes the extension's folder and tests, its rows and pins, its poli
 
 ## 6. Upgrade
 
-The template version is in [VERSION](VERSION), and each release is described in the [Changelog](CHANGELOG.md). To take a release:
+The Comitas version is in [VERSION](VERSION), and each release is described in the [Changelog](CHANGELOG.md). To take a release:
 
 1. Export the new release into a scratch folder as in [phase 1](#1-adopt), outside your repository.
-2. Replace everything under `governance/` with the template's copy, and leave `project-governance/` alone. The new `governance/` brings its own `NOTICE`; keep it, and keep your root `LICENSE`. Root files such as `AGENTS.md` and the root `README.md` are yours and are not replaced.
+2. Replace everything under `governance/` with Comitas's copy, and leave `project-governance/` alone. The new `governance/` brings its own `NOTICE`; keep it, and keep your root `LICENSE`. Root files such as `AGENTS.md` and the root `README.md` are yours and are not replaced.
 3. Check the mode of the shell scripts: `git ls-files -s '*.sh'` must show `100755` for each. A Windows checkout has no permission bits, so a script that was re-created is staged as `100644`; set the bit with `git update-index --chmod=+x <path>` ([H19](WORKER-HAZARDS.md#h19-a-scripts-mode-lives-in-the-index-not-in-the-working-tree)).
 4. Read the Migration notes of every changelog entry newer than your version. An entry has them only when something you must change by hand moved. Edit your files accordingly.
 5. Run the checks of [phase 2](#2-set-up), continuity and the test suite, and commit the result.

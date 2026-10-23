@@ -6,5 +6,5 @@ The plan holds phases, acceptance gates and open choices, with no task lists: th
 
 ## Phases
 
-1. Adopt the governance template: fill the adopter configuration, replace the placeholder documents and make the first checkpoint.
+1. Adopt Comitas: fill the adopter configuration, replace the placeholder documents and make the first checkpoint.
 2. Describe your project here.
