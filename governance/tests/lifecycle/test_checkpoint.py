@@ -32,6 +32,9 @@ FIXTURE_ROWS = [  # (path, class, profile, boundary), sorted by path
 FIXTURE_ROWS.sort()  # the table parser requires ASCII ordinal order
 
 
+CONTRACT_WITH_FACT = '{"version": 1, "facts": {"implementation_checkpoint": {}}}\n'
+
+
 def fixture_table(rows=None):
     lines = ['# Fixture classification', '', ac.HEADER, ac.SEPARATOR]
     lines += ['| `%s` | %s | %s | %s | - | - | - | - | - |' % row for row in (rows or FIXTURE_ROWS)]
@@ -1222,6 +1225,71 @@ class RequiredContinuityCheckpointTest(unittest.TestCase):
                     self.tool.preparation_gate(['a.txt'])
                 self.assertEqual(self.tool.head(), head)
                 self.assertEqual(self.tool.inventory(), [])
+
+    def adoption_fixture(self, devlog=True):
+        """HEAD holds a progress record without the row; the working tree holds the adopting change."""
+        self.checkpoint_gate.stop()
+        (self.root / 'docs').mkdir()
+        (self.root / rp.PROGRESS).write_text('# Progress\n\nNo checkpoint row yet.\n')
+        settings = self.root / ac.DEVLOG
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{"enabled": true}\n')
+        self.git('add', '--', rp.PROGRESS, ac.DEVLOG)
+        self.git('commit', '-m', 'Runtime rows without a checkpoint row')
+        latest = self.git('log', '-1', '--format=%H', 'HEAD', '--', 'runtime.txt').strip()
+        (self.root / rp.PROGRESS).write_text('| implementation_checkpoint | ' + latest + ' |\n')
+        (self.root / ac.PROJECT_CONTRACT).write_text(CONTRACT_WITH_FACT)
+        (self.root / 'devlog').mkdir()
+        (self.root / 'devlog/20261016-entry.md').write_text('Repository checkpoint: `' + latest + '`\n')
+        return latest, [rp.PROGRESS, ac.PROJECT_CONTRACT, 'devlog/20261016-entry.md', 'devlog/README.md']
+
+    def test_the_change_that_adds_the_first_checkpoint_row_passes_the_gate(self):
+        latest, manifest = self.adoption_fixture()
+        self.tool.preparation_gate(manifest)
+
+    def test_the_adopting_change_of_a_project_without_a_devlog_needs_no_entry(self):
+        latest, manifest = self.adoption_fixture()
+        (self.root / ac.DEVLOG).write_text('{"enabled": false}\n')
+        self.tool.preparation_gate([n for n in manifest if not n.startswith('devlog/')])
+
+    def test_an_adoption_short_of_the_row_the_fact_or_the_entry_is_refused(self):
+        latest, manifest = self.adoption_fixture()
+        progress, contract = self.root / rp.PROGRESS, self.root / ac.PROJECT_CONTRACT
+        row = progress.read_text()
+        without = lambda name: [n for n in manifest if not n.startswith(name)]
+        cases = (
+            ('no row', lambda: progress.write_text('No row\n'), manifest, 'exactly one row'),
+            ('two rows', lambda: progress.write_text(row + row), manifest, 'exactly one row'),
+            ('not the latest runtime commit', lambda: progress.write_text(
+                '| implementation_checkpoint | ' + 'a' * 40 + ' |\n'), manifest, 'latest runtime commit'),
+            ('no contract fact', lambda: contract.write_text('{"facts": {}}\n'), manifest, 'the fact'),
+            ('contract not in the change', lambda: None, without(ac.PROJECT_CONTRACT), 'the fact'),
+            ('no devlog entry', lambda: None, without('devlog/'), 'devlog entry'),
+            ('touches a runtime path', lambda: None, manifest + ['runtime.txt'], 'runtime paths'),
+        )
+        for label, damage, names, message in cases:
+            with self.subTest(label):
+                damage()
+                with self.assertRaisesRegex(ValueError, 'Adopting implementation_checkpoint: .*' + message):
+                    self.tool.preparation_gate(names)
+                progress.write_text(row)
+                contract.write_text(CONTRACT_WITH_FACT)
+        with self.subTest('progress record not in the change'):
+            with self.assertRaisesRegex(ValueError, 'Committed implementation_checkpoint'):
+                self.tool.preparation_gate(manifest[1:])
+        self.assertEqual(self.tool.inventory(), [])
+
+    def test_a_project_with_a_committed_row_keeps_the_committed_row_rule(self):
+        latest, manifest = self.adoption_fixture()
+        self.git('add', '--', rp.PROGRESS)
+        self.git('commit', '-m', 'Add the checkpoint row')
+        self.tool.preparation_gate(['a.txt'])  # The row names the latest runtime commit: any change is allowed.
+        (self.root / 'runtime.txt').write_text('new runtime history\n')
+        self.git('add', '--', 'runtime.txt')
+        self.git('commit', '-m', 'Runtime moves past the committed row')
+        with self.assertRaisesRegex(ValueError, 'only continuity records'):
+            self.tool.preparation_gate(['a.txt', *manifest])  # What adopts without a row is no exemption with one.
+        self.tool.preparation_gate([rp.PROGRESS, 'devlog/20261016-entry.md'])
 
     def test_missing_committed_progress_is_not_replaced_by_working_repair(self):
         self.checkpoint_gate.stop()

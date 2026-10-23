@@ -70,7 +70,9 @@ class Lifecycle:
         # Committed continuity owns the obligation even if local scratch is lost.
         from governance.tools.continuity import validate_continuity as continuity
         runtime_paths = continuity.scope(self.root)[1]
-        if runtime_paths:  # A project with no runtime boundary has no runtime checkpoint to keep current.
+        # A project with no runtime boundary has no runtime checkpoint to keep current. The change that adopts the
+        # recovery chain adds the first checkpoint row, so it cannot find one at HEAD.
+        if runtime_paths and not self.adopts_checkpoint(manifest, runtime_paths):
             checkpoint = self.committed_checkpoint()
             latest = self.git('log', '-1', '--format=%H', 'HEAD', '--', *runtime_paths).decode().strip()
             require(latest, 'Runtime history unavailable for committed continuity')
@@ -84,6 +86,43 @@ class Lifecycle:
             require(self.head() == previous['result_sha'], 'Pending runtime HEAD changed')
             require(all(self.continuity_record(n) for n in manifest),
                     'Pending runtime permits only continuity records')
+
+    def adopts_checkpoint(self, manifest, runtime_paths):
+        """Whether the manifest is the change that adds the first implementation_checkpoint row.
+
+        Only when HEAD's progress record holds no such row and the manifest holds the progress record. The change then
+        MUST touch no runtime path, so that the latest runtime commit at HEAD is the checkpoint; add exactly one row
+        naming it; add the fact to the project's part of the reconstruction contract; and, when the project keeps a
+        devlog, add the entry that carries the pointer. Anything short of that is refused here, not left to the
+        committed-row rule. A HEAD that holds a row, malformed or not, is never adopting."""
+        try:
+            committed = self.git('show', 'HEAD:docs/PROGRESS.md').decode('utf-8')
+        except ValueError:  # No committed progress record: the committed-row rule reports it.
+            return False
+        if 'docs/PROGRESS.md' not in manifest or any(line.startswith('| implementation_checkpoint |')
+                                                      for line in committed.splitlines()):
+            return False
+        reason = 'Adopting implementation_checkpoint: '
+        require(not [n for n in manifest if any(n == p or n.startswith(p + '/') for p in runtime_paths)],
+                reason + 'the change must not touch runtime paths')
+        latest = self.git('log', '-1', '--format=%H', 'HEAD', '--', *runtime_paths).decode().strip()
+        require(latest, 'Runtime history unavailable for committed continuity')
+        rows = [line for line in (self.root / 'docs/PROGRESS.md').read_text(encoding='utf-8').splitlines()
+                if line.startswith('| implementation_checkpoint |')]
+        cells = rows[0].split('|') if len(rows) == 1 else []
+        require(len(cells) == 4 and cells[2].strip() == latest,
+                reason + 'the progress record must hold exactly one row naming the latest runtime commit ' + latest)
+        contract = artifact_classification.PROJECT_CONTRACT
+        facts = {}
+        if contract in manifest and (self.root / contract).is_file():
+            facts = json.loads((self.root / contract).read_text(encoding='utf-8')).get('facts', {})
+        require('implementation_checkpoint' in facts, reason + 'the change must add the fact to ' + contract)
+        settings = artifact_classification.devlog_settings(self.root)
+        if settings['enabled']:
+            entries = [n for n in manifest if n.startswith(settings['folder'] + '/') and (self.root / n).is_file()
+                       and f'Repository checkpoint: `{latest}`' in (self.root / n).read_text(encoding='utf-8')]
+            require(entries, reason + 'the change must add a devlog entry whose Repository checkpoint is ' + latest)
+        return True
 
     def continuity_record(self, name):
         """Whether a path is a continuity record: the progress record, or an entry of the devlog folder when the

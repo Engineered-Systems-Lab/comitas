@@ -373,6 +373,10 @@
           "checkpoint-integrity",
           "continuity"
         ],
+        "Lifecycle.adopts_checkpoint": [
+          "checkpoint-integrity",
+          "continuity"
+        ],
         "Lifecycle.commit_identity": [
           "approval"
         ],

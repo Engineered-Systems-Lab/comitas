@@ -3,7 +3,8 @@
 The copy is the tracked tree in a temporary directory (a file that is new and not yet added to Git is not in it). In it the
 removal script of `governance/extensions/` deletes the extensions and the extension layer, with their rows, golden entries,
 policy commands, profile entries and links; then no file other than a document may still name an extension; then the copy
-becomes a Git repository (the identity comes from the environment, no Git configuration is read or written) and the tests
+becomes a Git repository whose one commit sits on the checkout's HEAD (the identity comes from the environment, no Git
+configuration is read or written; the checkout's objects are an alternate, so a commit that a record cites resolves) and the tests
 of the areas most likely to depend on an extension run in it, each through the repository's own runner:
 
 - the classification table, its golden pin and the real rows (every tracked file needs a row, the names in a row exist);
@@ -61,10 +62,10 @@ def run(command, cwd, check=True):
     return done.returncode, text
 
 
-def indexed():
+def indexed(root=REPO):
     """[(mode, path)] of the repository's index, or None when this is not a usable Git checkout."""
     try:
-        out = subprocess.run(['git', '-C', str(REPO), 'ls-files', '-s', '-z'], capture_output=True, check=True,
+        out = subprocess.run(['git', '-C', str(root), 'ls-files', '-s', '-z'], capture_output=True, check=True,
                              env=environment()).stdout.decode('utf-8')
     except (OSError, subprocess.CalledProcessError):
         return None
@@ -74,6 +75,27 @@ def indexed():
 def forget_read_only(function, path, error):
     os.chmod(path, stat.S_IWRITE)
     function(path)
+
+
+def make_repository(source, root, entries):
+    """Turn the copy in `root` into a Git repository on main, keeping the executable bits of the index.
+
+    The copy's one commit sits on the source's HEAD, whose objects the copy reaches through an alternate object store,
+    so a commit that a record cites (a devlog entry, the implementation checkpoint) still resolves and still precedes
+    the copy's HEAD. A source without a commit gives a repository with the one commit alone."""
+    run(['git', 'init', '-q', '-b', 'main'], root)
+    code, head = run(['git', 'rev-parse', '--verify', '-q', 'HEAD^{commit}'], source, check=False)
+    if code == 0:
+        code, objects = run(['git', 'rev-parse', '--path-format=absolute', '--git-path', 'objects'], source)
+        alternates = root / '.git/objects/info/alternates'
+        alternates.parent.mkdir(parents=True, exist_ok=True)
+        alternates.write_text(objects.strip() + '\n', encoding='utf-8', newline='\n')
+        run(['git', 'reset', '-q', '--soft', head.strip()], root)
+    run(['git', 'add', '-A'], root)
+    executable = [path for mode, path in entries if mode == '100755' and (root / path).is_file()]
+    for start in range(0, len(executable), 50):
+        run(['git', 'update-index', '--chmod=+x', '--', *executable[start:start + 50]], root)
+    run(['git', 'commit', '-q', '-m', 'Scratch copy'], root)
 
 
 class RemovalTest(unittest.TestCase):
@@ -96,13 +118,7 @@ class RemovalTest(unittest.TestCase):
                 shutil.copyfile(REPO / path, self.root / path)
 
     def repository(self):
-        """Turn the copy into a Git repository on main with one commit, keeping the executable bits of the index."""
-        run(['git', 'init', '-q', '-b', 'main'], self.root)
-        run(['git', 'add', '-A'], self.root)
-        executable = [path for mode, path in self.entries if mode == '100755' and (self.root / path).is_file()]
-        for start in range(0, len(executable), 50):
-            run(['git', 'update-index', '--chmod=+x', '--', *executable[start:start + 50]], self.root)
-        run(['git', 'commit', '-q', '-m', 'Scratch copy'], self.root)
+        make_repository(REPO, self.root, self.entries)
 
     def core_tests(self, patterns):
         for pattern, starts in patterns:
@@ -146,6 +162,43 @@ class RemovalTest(unittest.TestCase):
         self.repository()
         run([sys.executable, '-B', 'governance/tools/validate_continuity.py'], self.root)
         self.core_tests(AREAS[:1])
+
+
+class ScratchRepositoryTest(unittest.TestCase):
+    """The scratch copy keeps every commit of the checkout resolvable (generic fixtures, no project names)."""
+
+    def test_a_commit_cited_by_a_record_resolves_in_the_copy_and_precedes_its_head(self):
+        parent = Path(tempfile.mkdtemp(prefix='scratch-repository-'))
+        self.addCleanup(shutil.rmtree, parent, onexc=forget_read_only)
+        source, copy = parent / 'source', parent / 'copy'
+        source.mkdir()
+        run(['git', 'init', '-q', '-b', 'main'], source)
+        (source / 'tool.sh').write_text('#!/bin/sh\n')
+        run(['git', 'add', '-A'], source)
+        run(['git', 'update-index', '--chmod=+x', 'tool.sh'], source)
+        run(['git', 'commit', '-q', '-m', 'Cited'], source)
+        cited = run(['git', 'rev-parse', 'HEAD'], source)[1].strip()
+        entries = indexed(source)
+        (copy / 'record').mkdir(parents=True)
+        (copy / 'record/entry.md').write_text('Repository checkpoint: `' + cited + '`\n')
+        shutil.copyfile(source / 'tool.sh', copy / 'tool.sh')
+        make_repository(source, copy, entries + [('100644', 'record/entry.md')])
+        run(['git', 'cat-file', '-e', cited + '^{commit}'], copy)
+        run(['git', 'merge-base', '--is-ancestor', cited, 'HEAD'], copy)
+        self.assertEqual(run(['git', 'rev-list', '--count', 'HEAD'], copy)[1].strip(), '2')
+        self.assertIn('100755', run(['git', 'ls-files', '-s', 'tool.sh'], copy)[1])
+        self.assertEqual(run(['git', 'status', '--porcelain'], copy)[1], '')
+
+    def test_a_source_without_a_commit_gives_a_repository_with_the_copy_alone(self):
+        parent = Path(tempfile.mkdtemp(prefix='scratch-repository-'))
+        self.addCleanup(shutil.rmtree, parent, onexc=forget_read_only)
+        source, copy = parent / 'source', parent / 'copy'
+        source.mkdir()
+        copy.mkdir()
+        run(['git', 'init', '-q', '-b', 'main'], source)
+        (copy / 'a.txt').write_text('a\n')
+        make_repository(source, copy, [('100644', 'a.txt')])
+        self.assertEqual(run(['git', 'rev-list', '--count', 'HEAD'], copy)[1].strip(), '1')
 
 
 if __name__ == '__main__':
