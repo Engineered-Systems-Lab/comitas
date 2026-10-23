@@ -734,6 +734,94 @@ class LocalJobsTest(JobsFixture):
         j.git(self.root, 'branch', '-d', 'tx/left-behind')
         j.complete(self.primary, self.root, 'sample_job', [tip], owners=('left-behind',))
 
+    def test_another_jobs_fresh_branch_at_the_same_commit_does_not_block_the_close(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        # named by a window or a landing event of another Job: never taken for this one
+        self.fake_status([{'owner': 'next-mission', 'job_handle': 'another_job', 'scope': 'prepare', 'since': 'x'}])
+        j.complete(self.primary, self.root, 'sample_job', [tip])
+        self.assertEqual(j.read(self.primary / 'sample_job.json')['status'], 'COMPLETE')
+
+    def test_a_landing_event_of_another_job_keeps_its_branch_out_of_the_match(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        self.fake_status(landings=[{'owner': 'next-mission', 'detail': {'job_handle': 'another_job'}}])
+        j.complete(self.primary, self.root, 'sample_job', [tip])
+
+    def test_owner_decides_and_the_branch_at_the_commit_is_not_looked_at(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        self.fake_status()
+        with self.assertRaisesRegex(ValueError, r'step 3 of 5.*branch tx/next-mission still exists'):
+            j.complete(self.primary, self.root, 'sample_job', [tip])
+        j.complete(self.primary, self.root, 'sample_job', [tip], owners=('real-mission',))
+        self.assertEqual(j.read(self.primary / 'sample_job.json')['status'], 'COMPLETE')
+
+    def test_own_evidence_names_the_mission_before_any_branch_is_looked_at(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        j.git(self.root, 'branch', 'tx/own-mission', tip)
+        self.fake_status(landings=[{'owner': 'own-mission', 'detail': {'job_handle': 'sample_job'}}])
+        with self.assertRaisesRegex(ValueError, r'step 3 of 5.*branch tx/own-mission still exists'):
+            j.complete(self.primary, self.root, 'sample_job', [tip])
+        j.git(self.root, 'branch', '-d', 'tx/own-mission')
+        j.complete(self.primary, self.root, 'sample_job', [tip])
+
+    def declare(self, owner, job_handle):
+        from governance.tools.worktrees import claims
+        common = Path(j.git(self.root, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
+        claims.open_window(common, owner, 'prepare', 'validated', job_handle)
+        return common
+
+    def test_another_jobs_branch_known_only_from_the_claims_database_is_left_out_of_the_match(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        self.fake_status()
+        self.declare('next-mission', 'another_job')
+        j.complete(self.primary, self.root, 'sample_job', [tip])
+        self.assertEqual(j.read(self.primary / 'sample_job.json')['status'], 'COMPLETE')
+
+    def test_a_branch_whose_claim_names_no_job_is_not_adopted(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        self.fake_status()
+        self.declare('next-mission', None)
+        j.complete(self.primary, self.root, 'sample_job', [tip])
+
+    def test_a_branch_whose_claims_name_two_jobs_is_not_adopted(self):
+        self.job()
+        tip = self.land()
+        j.git(self.root, 'branch', 'tx/next-mission', tip)
+        self.fake_status()
+        self.declare('next-mission', 'another_job')
+        self.declare('next-mission', 'sample_job')
+        j.complete(self.primary, self.root, 'sample_job', [tip])
+
+    def test_a_job_identified_through_claims_alone_still_refuses_while_its_branch_exists(self):
+        self.job()
+        j.git(self.root, 'branch', 'tx/own-mission', 'HEAD')  # not at the commit being closed: only the claim names it
+        tip = self.land()
+        self.fake_status()
+        self.declare('own-mission', 'sample_job')
+        with self.assertRaisesRegex(ValueError, r'step 3 of 5.*branch tx/own-mission still exists'):
+            j.complete(self.primary, self.root, 'sample_job', [tip])
+        self.assertEqual(j.read(self.primary / 'sample_job.json')['status'], 'WIP')
+
+    def test_claims_alone_close_nothing_when_the_mission_is_gone_but_the_other_checks_fail(self):
+        self.job()
+        tip = self.land()
+        self.fake_status()
+        self.declare('gone-mission', 'sample_job')
+        (self.root / 'stray.txt').write_text('uncommitted\n')
+        with self.assertRaisesRegex(ValueError, r'step 2 of 5'):
+            j.complete(self.primary, self.root, 'sample_job', [tip])
+
     def test_a_leftover_folder_refuses_unless_named_and_then_becomes_a_rider_in_the_coordinator_record(self):
         self.job()
         j.put(self.primary, {'version': 1, 'worker': 'Coordinator', 'updated_at': record()['updated_at'],
@@ -1102,7 +1190,7 @@ class BriefTest(unittest.TestCase):
         self.assertIn('"Coordinator"', shown)
         self.assertIn('remove your owned worktree and branch and any superseded ones', shown)
         self.assertTrue(shown.index('READ FIRST') < shown.index(j.COORDINATION_TITLE) < shown.index('IF MAIN MOVES')
-                        < shown.index('RULES THAT STAY') < shown.index('JOB-SPECIFIC SCOPE'))
+                        < shown.index('RULES THAT STAY') < shown.index('\nSCOPE\n'))
 
     def test_changing_the_document_changes_the_brief(self):
         self.assertIn(self.OLD, j.brief(self.root, 'sample_job'))
@@ -1148,17 +1236,24 @@ class BriefTest(unittest.TestCase):
         self.assertNotIn('no record exists', j.brief(self.root, 'sample_job'))
         self.assertIn('--primary pointer sample_job', j.brief(self.root, 'sample_job'))
 
-    def test_stagger_adds_its_paragraph_and_extra_file_replaces_the_placeholder_verbatim(self):
+    def test_the_brief_names_the_coordinator_for_both_setups_and_has_no_literal_wait_on_a_name(self):
+        shown = j.brief(self.root, 'sample_job')
+        self.assertIn('the session named "Coordinator" or, where a session started you, that session', shown)
+        self.assertIn('end-of-turn report', shown)
+        self.assertNotIn('messaging name is', shown)
+
+    def test_stagger_adds_its_paragraph_and_extra_file_is_printed_verbatim_under_the_pointer(self):
         plain = j.brief(self.root, 'sample_job')
         self.assertNotIn('STAGGERED LANDING', plain)
-        self.assertIn('pastes the Job-specific scope here', plain)
+        self.assertIn('SCOPE\nThe scope lives in your Job record', plain)
+        self.assertNotIn('pastes', plain)
         self.assertIn('start your PREPARE only after the Coordinator says the other landing is done',
                       j.brief(self.root, 'sample_job', stagger=True))
         scope = Path(self.temp.name) / 'scope.txt'
         scope.write_bytes(b'\xef\xbb\xbf\r\nWHAT: caf\xc3\xa9 \xe2\x80\x94 one\r\n  indented\r\n\r\nlast\r\n\r\n')
         shown = j.brief(self.root, 'sample_job', extra_file=scope)
-        self.assertIn('JOB-SPECIFIC SCOPE\nWHAT: café — one\n  indented\n\nlast\n\nThis brief reads only', shown)
-        self.assertNotIn('pastes the Job-specific scope here', shown)
+        self.assertIn('SCOPE\nThe scope lives in your Job record', shown)
+        self.assertIn('the record wins):\nWHAT: café — one\n  indented\n\nlast\n\nThis brief reads only', shown)
         self.assertNotIn('\r', shown)
         scope.write_bytes(b' \r\n\r\n')
         with self.assertRaisesRegex(ValueError, 'empty'):

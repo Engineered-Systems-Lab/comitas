@@ -38,6 +38,8 @@ LINKED_VENDORS = ('claude', 'codex')
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 # The brief takes the COORDINATION block from this document, found by its first line; the tool keeps no copy of it.
 COORDINATION_DOCUMENT = Path('governance/LOCAL-COORDINATION.md')
+SCOPE_POINTER = ('The scope lives in your Job record, which you read above; this prompt holds no plan of its own. '
+                 'Read every entry of the record: it holds the scope, the riders and any routed handoff.')
 COORDINATION_TITLE = 'COORDINATION (governance/LOCAL-COORDINATION.md, Execution status)'
 BRIEF_READING = ('AGENTS.md', 'governance/AGENT-ORIENTATION.md', 'governance/ROLE-WORKER.md',
                  'governance/CONSTRAINTS.md', 'governance/CHECKPOINT-WORKFLOW.md',
@@ -636,8 +638,9 @@ def brief(primary, name, stagger=False, extra_file=None):
     for placeholder in ('<primary-checkout>', '<your handle>'):
         require(placeholder in block, 'COORDINATION block lacks %s; no brief printed' % placeholder)
     block = block.replace('<primary-checkout>', where).replace('<primary>', where).replace('<your handle>', name)
-    scope = extra_text(extra_file) if extra_file else \
-        '>>> The Coordinator pastes the Job-specific scope here and deletes this line. <<<'
+    scope = SCOPE_POINTER
+    if extra_file:
+        scope += '\n\nNOTE FROM THE COORDINATOR (where it differs from the record, the record wins):\n' + extra_text(extra_file)
     launcher = "python -B governance/tools/local_jobs.py --repo '%s' --primary " % where
     lines = ['BRIEF FOR JOB ' + name,
              'Printed by local_jobs.py brief from the live governance/LOCAL-COORDINATION.md in the primary checkout.',
@@ -679,7 +682,7 @@ def brief(primary, name, stagger=False, extra_file=None):
         lines += ['STAGGERED LANDING',
                   '- Another landing runs ahead of yours. Build and preview in parallel with it, and start your PREPARE '
                   'only after the Coordinator says the other landing is done. One landing at a time.', '']
-    lines += ['JOB-SPECIFIC SCOPE', scope, '',
+    lines += ['SCOPE', scope, '',
               'This brief reads only: it writes no record, contacts no worker and gives no approval or authority.']
     return '\n'.join(lines) + '\n'
 
@@ -721,20 +724,58 @@ def same_job(value, name):
     return isinstance(value, str) and value.split('--')[-1] == name
 
 
-def transaction_owners(primary, name, commits, named, status):
-    """Mission ids that belong to this Job: named by the caller, by its claims and windows, by its landing event, or
-    by a `tx/` branch that still points at one of its commits."""
+def claim_handles(primary):
+    """{mission id: Job handles of its claims and windows in the claims database, open or closed; None stands for a
+    claim without a handle}. A database that does not exist yet names no mission; one that cannot be read refuses,
+    because then nobody can tell whose a branch is."""
+    from governance.tools.worktrees import claims
+    common = Path(git(primary, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
+    try:
+        con = claims.open_database(common, False)
+    except claims.ClaimsError as error:
+        if error.state == 'missing':
+            return {}
+        raise ValueError('The claims database cannot be read (%s: %s); no one can tell whose branches these are' % (
+            error.state, error.message))
+    try:
+        found = {}
+        for row in con.execute('SELECT owner, job_handle FROM claims WHERE owner IS NOT NULL').fetchall():
+            found.setdefault(row['owner'], set()).add(row['job_handle'])
+        return found
+    except Exception as error:
+        failure = claims.classify(error)
+        raise ValueError('The claims database cannot be read (%s: %s); no one can tell whose branches these are' % (
+            failure.state, failure.message))
+    finally:
+        con.close()
+
+
+def transaction_owners(primary, name, commits, named, status, claimed=None):
+    """Mission ids that belong to this Job: named by the caller, by its claims (the claims database, open or closed)
+    and windows, or by its landing event. A mission whose claims name this Job and no other counts; one whose claims
+    name another Job, name two Jobs or name none is never this Job's by claims. Only when none of those names a
+    mission is a `tx/` branch that points at one of its commits taken for it, and never a branch whose claims,
+    windows or landing event name another Job or leave its owner unclear."""
     level, windows, landings = status
+    claimed = claim_handles(primary) if claimed is None else claimed
     owners = set(named)
     owners.update(w['owner'] for w in windows if w.get('owner') and same_job(w.get('job_handle'), name))
+    owners.update(owner for owner, handles in claimed.items() if handles and all(same_job(h, name) for h in handles))
     for event in landings:
         if event.get('owner') and same_job(event['detail'].get('job_handle'), name):
             owners.add(event['owner'])
+    if owners:
+        return sorted(owners)
+    others = {w['owner'] for w in windows if w.get('owner') and w.get('job_handle') and not same_job(w['job_handle'], name)}
+    others.update(e['owner'] for e in landings
+                  if e.get('owner') and e['detail'].get('job_handle') and not same_job(e['detail']['job_handle'], name))
+    others.update(owner for owner, handles in claimed.items() if not all(same_job(h, name) for h in handles))
     heads = run_git(primary, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads/tx/').stdout.decode()
     for line in heads.splitlines():
         ref, tip = line.split(' ')
-        if tip in commits:
-            owners.add(ref.removeprefix('refs/heads/tx/'))
+        mission = ref.removeprefix('refs/heads/tx/')
+        if tip in commits and mission not in others:
+            owners.add(mission)
     return sorted(owners)
 
 
@@ -1097,7 +1138,7 @@ def main():
     guide = sub.add_parser('brief', help='Print the standard worker brief for a Job; reads only, writes no record')
     guide.add_argument('name')
     guide.add_argument('--stagger', action='store_true', help='Add the staggered-landing paragraph')
-    guide.add_argument('--extra-file', help='UTF-8 file with the Job-specific scope, inserted in place of the placeholder')
+    guide.add_argument('--extra-file', help='UTF-8 file with a short note, printed under the pointer to the Job record (the record wins)')
     place = sub.add_parser('dispose', help='Give one pending entry of a Job its checked disposition (primary storage)')
     place.add_argument('name')
     place.add_argument('entry', type=int, help='The pending entry, counted from 1')
