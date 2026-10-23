@@ -98,7 +98,7 @@ class RealTableTest(unittest.TestCase):
 
     def test_live_file_rows_exist_and_historical_paths_do_not(self):
         for row in self.table.rows:
-            if row.kind == 'file':
+            if row.kind == 'file' and not row.path.startswith(ac.PROJECT_GOVERNANCE + '/'):
                 self.assertTrue((ROOT / row.path).is_file(), row.path)
         for path in self.table.historical:
             self.assertFalse((ROOT / path).exists(), path)
@@ -192,6 +192,8 @@ APPROVAL_HIGH = (
     'governance/tools/checkpoint.py', 'governance/tools/lifecycle/checkpoint_evidence.py', 'governance/tools/lifecycle/checkpoint_lifecycle.py',
     'governance/tools/lifecycle/checkpoint_selection.py', 'governance/tools/lifecycle/checkpoint_state.py', 'governance/tools/lifecycle/early_approval.py', 'governance/tools/worktree.py', 'governance/tools/worktrees/guard.py',
     'governance/tools/worktrees/worktree_carry.py', 'governance/tools/worktrees/worktree_support.py', 'governance/tools/runtime_guard.py',
+    'project-governance/config/artifact-classification-golden.json', 'project-governance/config/checkpoint-features.toml',
+    'project-governance/config/checkpoint-policy.json', 'project-governance/config/checkpoint-profiles.json',
 )
 APPROVAL_MEDIUM = (
     'AGENTS.md', '.gitattributes', '.gitignore',

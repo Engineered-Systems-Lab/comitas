@@ -207,6 +207,17 @@ class OverlayTest(unittest.TestCase):
         (self.root / ac.PROJECT_TABLE).unlink()
         self.assertIsNone(v.classification(self.root).resolve('notes/a.md'))
 
+    def test_the_overlay_files_the_framework_labels_may_be_absent_and_any_other_row_may_not(self):
+        table = self.load()
+        for name in (ac.PROJECT_POLICY, ac.PROJECT_PROFILES):
+            self.assertEqual(table.resolve(name).subclasses, ['checkpoint'])
+            self.assertIn(name, table.exact_paths())
+        self.assertEqual(v.missing_row_files(self.root, table), sorted(
+            p for p in table.exact_paths() if not p.startswith('project-governance/') and not (self.root / p).is_file()))
+        self.assertFalse([p for p in v.missing_row_files(self.root, table) if p.startswith('project-governance/')])
+        self.write(ac.PROJECT_POLICY, '{"version": 1}')
+        self.assertEqual(self.load().resolve(ac.PROJECT_POLICY).subclasses, ['checkpoint'])
+
     def test_the_explainer_reads_the_union(self):
         self.write(ac.PROJECT_TABLE, project_table('notes/a.md'))
         shown = sc.show(self.root, ['notes/a.md', 'project-governance/config/devlog.json'], checks=True)

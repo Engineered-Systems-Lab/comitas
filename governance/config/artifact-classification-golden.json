@@ -634,6 +634,24 @@
       "why": "the rationale of the project's decisions; the project folder is high",
       "approval_sensitivity": "high"
     },
+    "project-governance/config/artifact-classification-golden.json": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the independent pin of the project's table rows; it labels like the framework's golden, and the project folder is high",
+      "approval_sensitivity": "high"
+    },
     "project-governance/config/checkpoint-features.toml": {
       "class": "governance",
       "profile": "governance",
@@ -645,9 +663,11 @@
         "early-approval",
         "selector"
       ],
-      "subclass": [],
+      "subclass": [
+        "checkpoint"
+      ],
       "reachable": false,
-      "why": "the kill switch of the early conditional approval, now the project's file; the project folder is high",
+      "why": "the kill switch of the early conditional approval, now the project's file; a checkpoint-tool setting, and the project folder is high",
       "approval_sensitivity": "high"
     },
     "project-governance/config/checkpoint-policy.json": {
@@ -661,9 +681,29 @@
         "early-approval",
         "selector"
       ],
-      "subclass": [],
+      "subclass": [
+        "checkpoint"
+      ],
       "reachable": false,
-      "why": "the project's policy; the project folder decides the fast track, so it is high",
+      "why": "the project's policy; it labels like the framework's policy, so an overlay commit can carry the checkpoint subclass, and the project folder is high",
+      "approval_sensitivity": "high"
+    },
+    "project-governance/config/checkpoint-profiles.json": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "classification",
+        "continuity",
+        "early-approval",
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the project's profiles and impact invariants; it labels like the framework's profiles, so an overlay commit can carry the checkpoint subclass, and the project folder is high",
       "approval_sensitivity": "high"
     },
     "project-governance/config/devlog.json": {

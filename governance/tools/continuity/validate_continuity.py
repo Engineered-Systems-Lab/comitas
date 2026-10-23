@@ -140,6 +140,14 @@ def validate_coverage(root, table):
             'add a row for each:\n  ' + '\n  '.join(uncovered))
 
 
+def missing_row_files(root, table):
+    """The live exact-file rows whose file is absent. A row under `project-governance/` classifies a file the project may
+    leave out (an optional overlay or setting), so it is not one."""
+    folder = artifact_classification.PROJECT_GOVERNANCE + '/'
+    return [row.path for row in table.rows
+            if row.kind == 'file' and not row.path.startswith(folder) and not (root / row.path).is_file()]
+
+
 def validate_docs(root):
     current = governance_layout(root)
     table = classification(root)
@@ -148,10 +156,8 @@ def validate_docs(root):
         read(root, path)
     if table is not None:
         # Rows are never dirt: a live file row names a file that exists; a deleted file's row lives under Historical paths.
-        for row in table.rows:
-            if row.kind == 'file':
-                require((root / row.path).is_file(),
-                        f'Classification row names a missing file; move it to Historical paths: {row.path}')
+        missing = missing_row_files(root, table)
+        require(not missing, f'Classification row names a missing file; move it to Historical paths: {missing[0] if missing else ""}')
         for path in table.historical:
             require(not (root / path).exists(), f'Historical classification path still exists: {path}')
         validate_coverage(root, table)

@@ -29,7 +29,7 @@ This document is the single authored source of what every path in the repository
 5. A single hyphen is a deliberate no-value and clears an inherited value. Only Boundary, Bound, Invariants, Subclass, Reachable and Approval-sensitivity may be a hyphen; Class and Profile never.
 6. A list cell is replaced and never merged. A child row may not clear `frozen`.
 7. The whole document is ASCII. The Path is one backtick-quoted path. The table is the only one with the exact header below, apart from the optional historical table described next.
-8. Continuity requires every exact-file row to name a file that exists. When a file is deleted, its row moves to Historical paths in the same transaction, and that transaction validates the deletion as [Historical paths](#historical-paths) describes.
+8. Continuity requires every exact-file row to name a file that exists, except a row under `project-governance/`: those rows label files the project owns and may leave out, such as its policy and profiles overlay. When a file is deleted, its row moves to Historical paths in the same transaction, and that transaction validates the deletion as [Historical paths](#historical-paths) describes.
 9. Continuity requires every file Git tracks to resolve to a row of the framework's table or the project's, and fails with the list of paths no row covers. A `blocked` row is a row. A new file therefore needs its row in the transaction that adds it.
 10. The project's table may classify no path under `governance/` or `project-governance/`, and a path it repeats from this table is a duplicate. This table classifies `project-governance/` as `high`. The loader refuses a clash and never resolves one, so a project row can never lower a framework path.
 
@@ -209,3 +209,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/tools/worktrees/worktree_carry.py` | tooling | tooling | - | - | worktrees | - | - | high |
 | `governance/tools/worktrees/worktree_support.py` | tooling | tooling | - | - | worktrees | - | - | high |
 | `project-governance/` | governance | governance | - | - | classification, continuity, early-approval, selector | - | - | high |
+| `project-governance/config/artifact-classification-golden.json` | governance | governance | - | - | classification, continuity, early-approval, selector | checkpoint | - | high |
+| `project-governance/config/checkpoint-features.toml` | governance | governance | - | - | classification, continuity, early-approval, selector | checkpoint | - | high |
+| `project-governance/config/checkpoint-policy.json` | governance | governance | - | - | classification, continuity, early-approval, selector | checkpoint | - | high |
+| `project-governance/config/checkpoint-profiles.json` | governance | governance | - | - | classification, continuity, early-approval, selector | checkpoint | - | high |
