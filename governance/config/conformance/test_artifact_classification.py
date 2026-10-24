@@ -108,8 +108,29 @@ class RealTableTest(unittest.TestCase):
         self.assertEqual(table.classify('docs/WORKTREE-WORKFLOW.md'), ('governance', []))
         self.assertIsNone(table.resolve('docs/WORKTREE-WORKFLOW.md'))
         self.assertIsNone(table.classify('docs/never-existed.md'))
-        # The shipped template starts with no deleted paths, except the one notes file it removed before release.
-        self.assertEqual(set(self.table.historical), {'REFACTORING-NOTES.md'})
+        # Only the framework's own table is pinned: the Historical paths of the project's table are the project's, which
+        # rule 8 requires it to extend whenever it deletes or renames a file.
+        framework = ac.parse_table((ROOT / c.TABLE).read_text(encoding='ascii'), self.profiles)
+        self.assertEqual(set(framework.historical), set())
+        self.assertLessEqual(set(framework.historical), set(self.table.historical))
+
+    def test_a_project_historical_row_is_read_and_classifies_old_commits(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in (c.TABLE, ac.PROFILES, ac.POLICY):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_bytes((ROOT / name).read_bytes())
+            project = chr(10).join(['# Project table', '', ac.HEADER, ac.SEPARATOR,
+                                    '| `notes.md` | record | record-only | - | - | - | - | - | - |', '',
+                                    '## Historical paths', '', '| Path | Class | Subclass |', '| --- | --- | --- |',
+                                    '| `old/removed.sh` | tooling | - |']) + chr(10)
+            (root / ac.PROJECT_TABLE).parent.mkdir(parents=True, exist_ok=True)
+            (root / ac.PROJECT_TABLE).write_text(project, encoding='ascii', newline=chr(10))
+            _, _, table = real_data(root)
+            self.assertEqual(set(table.historical), {'old/removed.sh'})
+            self.assertEqual(table.classify('old/removed.sh'), ('tooling', []))
+            self.assertIsNone(table.resolve('old/removed.sh'))
+            self.assertEqual(table.resolve('notes.md').klass, 'record')
 
 
 class ProjectProfileTest(unittest.TestCase):
