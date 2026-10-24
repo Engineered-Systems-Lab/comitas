@@ -631,7 +631,7 @@ class EarlyApprovalTest(unittest.TestCase):
         envelope, text = self.readable(['a.txt', 'h.txt'])
         self.assertFalse(envelope['body']['eligible'])
         self.assertIn('Not eligible:', text)
-        self.assertIn('- paths above the early approval reach (low) or unclassified: h.txt', text)
+        self.assertIn('- paths graded high, which no reach admits: h.txt', text)
         self.assertIn('| `h.txt` | tooling | - | high |', text)
         self.assertIn('so the go only stages and seals', text)
         self.assertNotIn('to approve this exact candidate', text)
@@ -712,6 +712,98 @@ class EarlyApprovalTest(unittest.TestCase):
             self.assertEqual(c.main(), 1)
         self.assertIn('must not end in .md', err.getvalue())
         self.assertFalse((Path(self.temp.name) / 'preview.md').exists())
+
+
+class StubRow:
+    def __init__(self, profile='test'):
+        self.profile = profile
+
+
+class StubTable:
+    """Just enough of a table: the sensitivity grades per path and which paths have a row."""
+    def __init__(self, grades, blocked=()):
+        self.grades, self.blocked = grades, set(blocked)
+
+    def sensitivity(self, path, head):
+        return self.grades[path]
+
+    def resolve(self, path):
+        return StubRow('blocked' if path in self.blocked else 'test') if self.grades[path]['candidate'] != 'none' else None
+
+    def ineligible_paths(self, paths, reach, head):
+        return sorted(p for p in paths if self.grades[p]['level'] not in ea.artifact_classification.REACH_ALLOWS.get(reach, ()))
+
+
+def grade(head, candidate, level):
+    return {'head': head, 'candidate': candidate, 'level': level}
+
+
+class ReasonCasesTest(unittest.TestCase):
+    """The refusal names the case that occurs, one line per case with its paths; who is eligible is unchanged."""
+    GRADES = {
+        'docs/a.md': grade('medium', 'medium', 'medium'),
+        'new/one.py': grade('none', 'low', 'high'),
+        'new/two.py': grade('none', 'medium', 'high'),
+        'gov/rule.md': grade('high', 'high', 'high'),
+        'gone/x.md': grade('none', 'none', 'high'),
+        'blocked.bin': grade('high', 'high', 'high'),
+        'ok.txt': grade('low', 'low', 'low'),
+    }
+
+    def reasons(self, manifest, reach='low'):
+        table = StubTable(self.GRADES, blocked=['blocked.bin'])
+        return ea.reasons_not_eligible(table, table, manifest, reach, 'why')
+
+    def test_each_case_is_named_with_its_paths_on_one_line(self):
+        reasons = self.reasons(sorted(set(self.GRADES) - {'ok.txt'}))
+        self.assertEqual(reasons, [
+            'paths above the early approval reach (low), effective sensitivity medium: docs/a.md',
+            'paths with no row at HEAD (' + ea.NO_ROW_HINT + '): new/one.py, new/two.py',
+            'paths graded high, which no reach admits: gov/rule.md',
+            'paths unclassified or blocked (no usable row, an unknown value or a blocked profile): blocked.bin, gone/x.md'])
+
+    def test_an_empty_case_is_not_printed_and_an_eligible_manifest_has_no_reason(self):
+        self.assertEqual(self.reasons(['ok.txt']), [])
+        self.assertEqual(self.reasons(['docs/a.md'], 'medium'), [])
+        self.assertEqual(self.reasons(['new/one.py', 'ok.txt']),
+                         ['paths with no row at HEAD (' + ea.NO_ROW_HINT + '): new/one.py'])
+
+    def test_the_new_path_hint_says_how_to_avoid_it(self):
+        self.assertIn('a folder or pattern row on main, added once, makes later files here eligible', ea.NO_ROW_HINT)
+        self.assertIn('counted high', ea.NO_ROW_HINT)
+
+    def test_a_head_table_that_cannot_be_read_is_unclassified_not_a_missing_row(self):
+        table = StubTable(self.GRADES)
+        reasons = ea.reasons_not_eligible(table, None, ['new/one.py'], 'low', 'why')
+        self.assertEqual(len(reasons), 1)
+        self.assertTrue(reasons[0].startswith('paths unclassified or blocked'), reasons)
+
+    def sealed(self, entries):
+        return {'manifest': sorted(entries), 'profile_data': {'artifact_classification': entries}}
+
+    def test_the_sealed_review_names_the_same_cases(self):
+        def entry(head, candidate, level, **more):
+            return dict(resolved=True, approval_sensitivity=level, head_sensitivity=head,
+                        candidate_sensitivity=candidate, profile='test', **more)
+        packet = self.sealed({
+            'docs/a.md': entry('medium', 'medium', 'medium'), 'new/one.py': entry('none', 'low', 'high'),
+            'gov/rule.md': entry('high', 'high', 'high'), 'blocked.bin': entry('high', 'high', 'high', ) | {'profile': 'blocked'},
+            'unknown.txt': {'resolved': False}, 'norecord.txt': {'resolved': True, 'approval_sensitivity': 'low'},
+            'ok.txt': entry('low', 'low', 'low')})
+        self.assertEqual(ea.sealed_reasons(packet, 'low'), [
+            'paths above the early approval reach (low), effective sensitivity medium: docs/a.md',
+            'paths with no row at HEAD (' + ea.NO_ROW_HINT + '): new/one.py',
+            'paths graded high, which no reach admits: gov/rule.md',
+            'paths unclassified or blocked (no usable row, an unknown value or a blocked profile): '
+            'blocked.bin, norecord.txt, unknown.txt'])
+        self.assertEqual(ea.sealed_reasons(packet, 'medium')[0].split(':')[0],
+                         'paths with no row at HEAD (' + ea.NO_ROW_HINT + ')')
+        self.assertEqual(ea.sealed_reasons(self.sealed({'ok.txt': entry('low', 'low', 'low')}), 'low'), [])
+
+    def test_an_unknown_reach_refuses_every_path_and_stays_a_reason(self):
+        packet = self.sealed({'ok.txt': dict(resolved=True, approval_sensitivity='low', head_sensitivity='low',
+                                             candidate_sensitivity='low', profile='test')})
+        self.assertTrue(ea.sealed_reasons(packet, 'bogus'))
 
 
 class TestSettingsTest(unittest.TestCase):

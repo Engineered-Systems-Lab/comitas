@@ -149,17 +149,68 @@ def candidate_tree(tool, manifest):
         return git('write-tree').decode().strip()
 
 
+ABOVE, NO_ROW, UNCLASSIFIED, HIGH = 'above', 'no-row', 'unclassified', 'high'
+KNOWN_LEVELS = ('low', 'medium', 'high')
+NO_ROW_HINT = 'counted high; a folder or pattern row on main, added once, makes later files here eligible'
+
+
+def refusal_case(resolved, blocked, head_level, candidate_level, level, allowed):
+    """Why one path is not admitted, as (case, effective sensitivity), or None when it is admitted.
+
+    The cases are the ones that occur: `above` (a row at HEAD, graded above the reach but not high), `no-row` (a path with
+    no row at HEAD whose row exists only in the candidate, counted high because a change may not grade itself),
+    `unclassified` (no usable row, an unknown value or a blocked profile) and `high` (graded high, never admitted at any
+    reach). Anything that is not clearly one of the first, second and fourth is unclassified, so the test stays fail-closed."""
+    if resolved is True and not blocked and head_level in allowed and level in allowed:
+        return None
+    if resolved is not True or blocked or head_level is None:
+        return UNCLASSIFIED, level
+    if head_level == 'none':
+        return (NO_ROW, level) if candidate_level in KNOWN_LEVELS else (UNCLASSIFIED, level)
+    if head_level not in KNOWN_LEVELS or level not in KNOWN_LEVELS:
+        return UNCLASSIFIED, level
+    return (HIGH if level == 'high' else ABOVE), level
+
+
+def case_reasons(reach, found):
+    """One line per non-empty case from {path: (case, level)}, each with its paths."""
+    reasons = []
+    above = {}
+    for path, (case, level) in found.items():
+        if case == ABOVE:
+            above.setdefault(level, []).append(path)
+    for level in sorted(above, key=KNOWN_LEVELS.index):
+        reasons.append('paths above the early approval reach (%s), effective sensitivity %s: %s'
+                       % (reach, level, ', '.join(sorted(above[level]))))
+    lines = ((NO_ROW, 'paths with no row at HEAD (%s)' % NO_ROW_HINT),
+             (HIGH, 'paths graded high, which no reach admits'),
+             (UNCLASSIFIED, 'paths unclassified or blocked (no usable row, an unknown value or a blocked profile)'))
+    for case, label in lines:
+        paths = sorted(p for p, (c, _) in found.items() if c == case)
+        if paths:
+            reasons.append('%s: %s' % (label, ', '.join(paths)))
+    return reasons
+
+
 def reasons_not_eligible(table, head, manifest, reach, why):
     """Why a manifest cannot carry an early approval; empty means eligible. Unknown values fail closed.
 
     Each path counts as the higher of its row in `head`, the table at HEAD, and its row in `table`, the candidate's.
-    A manifest on the runtime continuity boundary is eligible like any other: it keeps the follow-up of its records."""
+    A manifest on the runtime continuity boundary is eligible like any other: it keeps the follow-up of its records.
+    The paths the reach refuses are named by case, one reason per case (`refusal_case`); the paths are the same ones."""
     reasons = []
     if reach == OFF:
         reasons.append('the early conditional approval switch is off: ' + why)
     refused = table.ineligible_paths(manifest, reach, head)
     if refused:
-        reasons.append('paths above the early approval reach (%s) or unclassified: ' % reach + ', '.join(refused))
+        found = {}
+        for path in refused:
+            grades = table.sensitivity(path, head)
+            rows = [None if t is None else t.resolve(path) for t in (head, table)]
+            blocked = any(r is not None and r.profile == artifact_classification.BLOCKED for r in rows)
+            found[path] = refusal_case(True, blocked, None if head is None else grades['head'], grades['candidate'],
+                                       grades['level'], ())
+        reasons += case_reasons(reach, found)
     return reasons
 
 
@@ -167,15 +218,18 @@ def sealed_reasons(packet, reach):
     """The eligibility reasons recomputed from the sealed classification view; any missing fact is a reason.
 
     A sensitivity the reach does not allow, `high` at any reach, a missing or unknown value and an unknown reach are
-    all reasons, and so is an entry that does not record the HEAD row's sensitivity beside the effective one."""
+    all reasons, and so is an entry that does not record the HEAD row's sensitivity beside the effective one. They are
+    named by the same cases as the preview's, one reason per case."""
     view = (packet.get('profile_data') or {}).get('artifact_classification') or {}
     allowed = artifact_classification.REACH_ALLOWS.get(reach, ())
-    reasons = []
+    found = {}
     for path in packet['manifest']:
         entry = view.get(path) or {}
-        if entry.get('resolved') is not True or entry.get('approval_sensitivity') not in allowed or                 entry.get('head_sensitivity') not in allowed or entry.get('profile') == 'blocked':
-            reasons.append('path above the early approval reach (%s) or unclassified: %s' % (reach, path))
-    return reasons
+        case = refusal_case(entry.get('resolved'), entry.get('profile') == 'blocked', entry.get('head_sensitivity'),
+                            entry.get('candidate_sensitivity'), entry.get('approval_sensitivity'), allowed)
+        if case:
+            found[path] = case
+    return case_reasons(reach, found)
 
 
 def preview_facts(tool, manifest, message, profile, table, head, expected_head, expected_branch):
