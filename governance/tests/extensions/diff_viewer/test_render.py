@@ -96,7 +96,7 @@ class RenderTest(Fixture):
         self.assertIn('a&amp;b &#x27;x&#x27;.txt', text)
         self.assertEqual(text.count('<script'), 1)  # the divider script alone: the file's own markup is escaped
 
-    def test_the_only_script_is_the_divider_and_the_policy_pins_it_by_hash(self):
+    def test_the_only_script_moves_the_divider_and_focuses_the_open_file_and_the_policy_pins_it_by_hash(self):
         text = self.build()
         script = text.split('<script>', 1)[1].split('</script>', 1)[0]
         self.assertEqual(script, render.SCRIPT)
@@ -106,6 +106,11 @@ class RenderTest(Fixture):
 
     def test_the_divider_and_visible_links_are_there(self):
         text = self.build()
+        self.assertIn('.scroll{overflow:auto;max-height:calc(100vh - 7.5em);overscroll-behavior:contain}', text)  # the file scrolls in its own area, scroll bars in reach
+        self.assertIn('table.side th.pane{position:sticky;top:0;', text)
+        self.assertIn('body:has(section:target) .facts{display:none}', text)  # an open file takes the room of the identity fields
+        self.assertIn('@media (min-width:901px){html,body{height:100%}body{display:flex;flex-direction:column;overflow:hidden}', text)  # on a wide window the file fills the screen below the header
+        self.assertIn('.fine{color:var(--mute);margin:2px 0 0;font-size:11px;line-height:1.25}', text)  # the closing note takes little height
         self.assertIn('class="grip"', text)
         self.assertIn('--split', text)
         self.assertIn('a,a:visited{color:var(--link)}', text)
@@ -134,6 +139,144 @@ class RenderTest(Fixture):
         record = dict(self.record(), tree=self.parent)
         with self.assertRaises(render.ViewerError):
             self.build(record=record)
+
+
+def section_of(text, name):
+    """The html of the file section whose heading names the file."""
+    found = [part for part in text.split('<section ')[1:] if name in part.split('</h3>', 1)[0]]
+    assert len(found) == 1, name
+    return found[0].split('</section>', 1)[0]
+
+
+def views_of(section):
+    """(collapsed view, complete view) of a section that holds both."""
+    collapsed, complete = section.split('<div class="hunkview">', 1)[1].split('<div class="fullview">', 1)
+    return collapsed, complete
+
+
+class CompactHeaderTest(Fixture):
+    def test_the_header_is_a_narrow_bar_that_names_the_kind_in_its_own_colour(self):
+        preview, sealed = self.build(), self.build(render.SEALED)
+        self.assertIn('<div class="label preview"><strong>PREVIEW (no approval)</strong>', preview)
+        self.assertIn('<div class="label sealed"><strong>SEALED REVIEW</strong>', sealed)
+        self.assertNotIn('clamp(', preview)  # no more title sized by the window
+        self.assertIn('.label.preview{background:var(--preview)}.label.sealed{background:var(--sealed)}', preview)
+        self.assertNotEqual(re.search(r'--preview:(#\w+)', preview).group(1), re.search(r'--sealed:(#\w+)', preview).group(1))
+
+    def test_the_identity_fields_are_in_two_columns_and_the_manifest_spans_both(self):
+        text = render.build(self.root, render.PREVIEW, self.record(), 'demo_job', [('Manifest', 'a.txt, b.txt')])
+        facts = text.split('<div class="facts">', 1)[1].split('<div class="layout">', 1)[0]
+        columns = facts.split('<div class="fact wide">', 1)[0].split('</div></div><div>')
+        self.assertEqual(len(columns), 2)
+        for name in ('Kind', 'Job', 'Mission', 'Branch'):
+            self.assertIn('<span class="k">%s</span>' % name, columns[0])
+        for name in ('Parent commit', 'Candidate tree', 'Preview id', 'Totals'):
+            self.assertIn('<span class="k">%s</span>' % name, columns[1])
+        self.assertIn('<div class="fact wide"><span class="k">Manifest</span><span class="v">a.txt, b.txt</span>', facts)
+        self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))', text)
+        self.assertIn('@media (max-width:700px){.facts{grid-template-columns:minmax(0,1fr)}}', text)  # one column on a narrow window
+
+    def test_every_identity_field_is_still_shown_and_escaped(self):
+        record = dict(self.record(), branch='refs/heads/tx/<b>x')
+        text = render.build(self.root, render.SEALED, record, 'a<i>', [('Seal (prepared_sha256)', 's' * 64)])
+        for name in ('Kind', 'Job', 'Mission', 'Branch', 'Parent commit', 'Candidate tree', 'Transaction id', 'Seal (prepared_sha256)', 'Totals'):
+            self.assertIn('<span class="k">%s</span>' % name, text)
+        self.assertNotIn('<b>x', text)
+        self.assertNotIn('a<i>', text)
+        self.assertIn('a&lt;i&gt;', text)
+
+
+class FolderTreeTest(Fixture):
+    def test_the_folders_open_and_close_and_start_open_with_buttons_for_all(self):
+        text = self.build()
+        nav = text.split('<nav>', 1)[1].split('</nav>', 1)[0]
+        self.assertIn('<button type="button" data-fold="open">Expand all</button><button type="button" data-fold="close">Collapse all</button>', nav)
+        self.assertEqual(nav.count('<details'), 0)  # the fixture has no folder: the files sit at the top
+        sub = render.tree([dict(path='dir/<b>/x.txt', status='M'), dict(path='dir/y.txt', status='M')], 2)
+        self.assertEqual(sub.count('<details open>'), 2)  # every folder starts open
+        self.assertIn('<summary>dir/</summary>', sub)
+        self.assertIn('<summary>&lt;b&gt;/</summary>', sub)
+        self.assertNotIn('<b>', sub)
+        self.assertIn("getAttribute('data-fold')", render.SCRIPT)  # the buttons are wired by the pinned script
+
+
+class ChangeButtonsTest(Fixture):
+    def test_the_first_row_of_every_run_of_changes_is_marked_in_both_views(self):
+        old = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        new = ['a', 'B', 'C', 'd', 'e', 'f', 'g', 'H', 'i']
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        everything = render.full_rows(matcher, old, new)
+        self.assertEqual(render.side_table(everything, self.parent, self.tree).count('<tr data-c>'), 2)  # b and c are one run, h and i another
+        collapsed = [row for hidden, rows in render.side_rows(matcher, old, new) for row in ([(hidden, 'gap')] if hidden else []) + rows]
+        self.assertEqual(render.side_table(collapsed, self.parent, self.tree).count('<tr data-c>'), 2)
+
+    def test_a_file_with_two_views_has_the_buttons_after_the_checkbox_and_the_first_starts_disabled(self):
+        text = self.build()
+        modified, added = section_of(text, 'a.txt'), section_of(text, 'new.txt')
+        self.assertIn('Collapse unchanged fragments</label><span class="nav"><button type="button" data-nav="prev" title="Previous change" aria-label="Previous change" disabled>', modified)
+        self.assertIn('<button type="button" data-nav="next" title="Next change" aria-label="Next change">', modified)
+        self.assertNotIn('data-nav', added)  # one change in one table: nothing to jump to
+        self.assertEqual(modified.count('<tr data-c>'), 2)  # the one change, in each view
+        self.assertIn("data-nav", render.SCRIPT)
+
+
+class CollapseToggleTest(Fixture):
+    def test_the_checkbox_is_named_like_the_ide_checked_by_default_and_on_the_heading_row_without_a_script(self):
+        text = self.build()
+        modified, added = section_of(text, 'a.txt'), section_of(text, 'new.txt')
+        self.assertIn('<label class="toggle"><input type="checkbox" class="collapse" checked> Collapse unchanged fragments</label><span class="nav">', modified)
+        self.assertRegex(modified, r'^id="f\d+"><div class="bar"><a class="back" href="#">&larr; All files</a><h3>.*</h3><label class="toggle">')  # one row: back link, heading, checkbox
+        self.assertNotIn('Collapse unchanged', added)  # one table only: nothing to switch
+        self.assertIn('section:has(.collapse:checked) .fullview,section:has(.collapse:not(:checked)) .hunkview{display:none}', text)
+        self.assertEqual(text.count('<script'), 1)  # still the divider alone
+
+    def test_a_modified_file_holds_the_changes_with_context_and_the_complete_file(self):
+        collapsed, complete = views_of(section_of(self.build(), 'a.txt'))
+        self.assertIn('unchanged line', collapsed)
+        self.assertNotIn('<span class="n">1</span>one', collapsed)  # the first line is left out of the collapsed view
+        self.assertNotIn('unchanged line', complete)
+        for number, word in enumerate('one two three four five six seven eight nine'.split(), 1):
+            self.assertEqual(complete.count('<td class="old same"><span class="n">%d</span>%s</td>' % (number, word)), 1)
+            self.assertEqual(complete.count('<td class="new same"><span class="n">%d</span>%s</td>' % (number, word)), 1)
+        self.assertIn('<td class="old change"><span class="n">10</span>ten</td>', complete)
+        self.assertIn('<td class="new change"><span class="n">10</span>ten &lt;script&gt;alert(&quot;&amp;&quot;)&lt;/script&gt;</td>', complete)
+        self.assertEqual(complete.count('<td class="old same">') + complete.count('<td class="old change">'), 10)
+
+    def test_added_and_deleted_files_have_one_table_with_one_side_and_a_binary_has_none(self):
+        text = self.build()
+        added, deleted, binary = section_of(text, 'new.txt'), section_of(text, 'gone.txt'), section_of(text, 'bin.dat')
+        self.assertIn('<td class="new added"><span class="n">1</span>brand new</td>', added)
+        self.assertIn('<td class="old removed"><span class="n">1</span>bye</td>', deleted)
+        for part in (added, deleted):
+            self.assertIn('<div class="allview">', part)
+            self.assertNotIn('hunkview', part)
+            self.assertEqual(part.count('<table class="side">'), 1)
+        self.assertNotIn('<table', binary)
+        self.assertNotIn('view">', binary)
+
+
+class LargeFileTest(unittest.TestCase):
+    def test_the_complete_view_keeps_the_large_file_limit_and_the_escaping(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            git(root, 'init', '-q', '-b', 'main')
+            lines = ['<img src=x onerror=1>'] + ['line %d' % n for n in range(2, render.MAX_LINES + 101)]
+            write(root, 'big.txt', '\n'.join(lines) + '\n')
+            git(root, 'add', '-A')
+            git(root, 'commit', '-q', '-m', 'base')
+            parent = git(root, 'rev-parse', 'HEAD')
+            write(root, 'big.txt', '\n'.join(lines[:5] + ['changed'] + lines[6:]) + '\n')
+            git(root, 'add', '-A')
+            git(root, 'commit', '-q', '-m', 'candidate')
+            tree = git(root, 'rev-parse', 'HEAD^{tree}')
+            record = {'id': 'q' * 32, 'branch': 'refs/heads/tx/demo', 'parent': parent, 'tree': tree, 'manifest': ['big.txt']}
+            text = render.build(root, render.PREVIEW, record, 'demo_job', [])
+        collapsed, complete = views_of(section_of(text, 'big.txt'))
+        self.assertIn('Large file: only the first %d lines of each side is shown' % render.MAX_LINES, text)
+        self.assertEqual(complete.count('<td class="old'), render.MAX_LINES)
+        self.assertIn('&lt;img src=x onerror=1&gt;', complete)
+        self.assertNotIn('<img', text)
+        self.assertLess(collapsed.count('<td class="old'), 20)
 
 
 class ReviewFolderTest(unittest.TestCase):

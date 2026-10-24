@@ -2,7 +2,7 @@
 
 Run it as `python -B governance/extensions/diff_viewer/render.py preview --preview <preview.json>` or `... sealed`. The page is
 built only from the recorded parent commit and candidate tree object, read from Git objects, never from the working tree.
-It holds one inline script that only moves the divider, no external resource and no approval control, and it changes nothing the checkpoint tool records."""
+It holds one inline script that only moves the divider and focuses the open file so the mouse wheel scrolls it, no external resource and no approval control, and it changes nothing the checkpoint tool records."""
 import argparse
 import base64
 import difflib
@@ -26,8 +26,8 @@ MODE_NAMES = {'100644': 'file', '100755': 'executable', '120000': 'symbolic link
 PICTURES = {code: chr(0x2400 + code) for code in range(32) if code not in (9, 10)}  # control characters shown, not sent raw
 
 
-# The one inline script, pinned by hash in the content security policy: it only moves the divider.
-SCRIPT = "(function(){var r=document.documentElement,d=null;document.addEventListener('pointerdown',function(e){if(e.target.classList&&e.target.classList.contains('grip')){d=e.target.parentNode;e.target.setPointerCapture(e.pointerId);e.preventDefault()}});document.addEventListener('pointermove',function(e){if(!d)return;var b=d.getBoundingClientRect(),m=parseFloat(getComputedStyle(d).fontSize);r.style.setProperty('--split',Math.min(.85,Math.max(.15,(e.clientX-b.left)/b.width)))});document.addEventListener('pointerup',function(){d=null});document.addEventListener('dblclick',function(e){if(e.target.classList&&e.target.classList.contains('grip'))r.style.setProperty('--split',.5)})})();"
+# The one inline script, pinned by hash in the content security policy: it moves the divider, focuses the open file so the wheel scrolls it, and opens or closes every folder of the tree and jumps between the changes of a file.
+SCRIPT = "(function(){var r=document.documentElement,d=null;function v(s){var l=s.querySelectorAll('.scroll');for(var i=0;i<l.length;i++)if(l[i].offsetParent)return l[i];return null}function tp(c,t){for(var i=0;i<1&&t.previousElementSibling&&t.previousElementSibling.firstElementChild.tagName==='TD';i++)t=t.previousElementSibling;return t.getBoundingClientRect().top-c.getBoundingClientRect().top+c.scrollTop}function hd(c){var h=c.querySelector('th.pane');return(h?h.offsetHeight:0)+4}function cu(s,c){if(s._t!=null&&Math.abs(c.scrollTop-s._p)<2)return s._t;s._t=null;var l=c.querySelectorAll('tr[data-c]'),n=-1;for(var i=0;i<l.length;i++)if(tp(c,l[i])<=c.scrollTop+hd(c))n=i;return n}function u(s){var c=v(s);if(!c)return;var n=c.querySelectorAll('tr[data-c]').length,k=cu(s,c),b=s.querySelectorAll('[data-nav]');for(var i=0;i<b.length;i++)b[i].disabled=b[i].getAttribute('data-nav')==='prev'?k<=0:k>=n-1}function f(){var s=document.querySelector('section:target');if(!s)return;var c=v(s);if(c)c.focus({preventScroll:true});u(s)}addEventListener('hashchange',f);addEventListener('load',f);addEventListener('change',function(e){var s=e.target.closest&&e.target.closest('section');if(s)s._t=null;f()});document.addEventListener('scroll',function(e){var c=e.target;if(c.classList&&c.classList.contains('scroll'))u(c.closest('section'))},true);document.addEventListener('click',function(e){var a=e.target.getAttribute&&e.target.getAttribute('data-nav');if(!a)return;var s=e.target.closest('section'),c=v(s),l=c.querySelectorAll('tr[data-c]'),k=cu(s,c)+(a==='next'?1:-1);if(k<0||k>=l.length)return;c.scrollTop=tp(c,l[k])-hd(c);s._t=k;s._p=c.scrollTop;c.focus({preventScroll:true});u(s)});document.addEventListener('click',function(e){var m=e.target.getAttribute&&e.target.getAttribute('data-fold');if(m){var l=document.querySelectorAll('nav details');for(var i=0;i<l.length;i++)l[i].open=m==='open'}});document.addEventListener('pointerdown',function(e){if(e.target.classList&&e.target.classList.contains('grip')){d=e.target.parentNode;e.target.setPointerCapture(e.pointerId);e.preventDefault()}});document.addEventListener('pointermove',function(e){if(!d)return;var b=d.getBoundingClientRect(),m=parseFloat(getComputedStyle(d).fontSize);r.style.setProperty('--split',Math.min(.85,Math.max(.15,(e.clientX-b.left)/b.width)))});document.addEventListener('pointerup',function(){d=null});document.addEventListener('dblclick',function(e){if(e.target.classList&&e.target.classList.contains('grip'))r.style.setProperty('--split',.5)})})();"
 
 
 class ViewerError(ValueError):
@@ -181,20 +181,30 @@ def mode_text(item):
     return 'mode %s to %s' % (item['old_mode'], item['new_mode'])
 
 
-def side_rows(old, new):
-    """Hunks of aligned rows: (old number, old line, new number, new line, class), grouped with a few lines of context."""
-    matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
+def opcode_rows(old, new, opcodes):
+    """Aligned rows (old number, old line, new number, new line, class) for the given opcodes."""
+    rows = []
+    for tag, a0, a1, b0, b1 in opcodes:
+        if tag == 'equal':
+            rows += [(a0 + i + 1, old[a0 + i], b0 + i + 1, new[b0 + i], 'same') for i in range(a1 - a0)]
+        else:
+            for i, j in itertools.zip_longest(range(a0, a1), range(b0, b1)):
+                rows.append((None if i is None else i + 1, None if i is None else old[i],
+                             None if j is None else j + 1, None if j is None else new[j],
+                             'change' if i is not None and j is not None else 'removed' if i is not None else 'added'))
+    return rows
+
+
+def full_rows(matcher, old, new):
+    """Every line of both sides as aligned rows, the changes marked."""
+    return opcode_rows(old, new, matcher.get_opcodes())
+
+
+def side_rows(matcher, old, new):
+    """Hunks of aligned rows, grouped with a few lines of context; with each hunk the lines of the old side skipped before it."""
     hunks, shown = [], 0
     for group in matcher.get_grouped_opcodes(CONTEXT):
-        rows = []
-        for tag, a0, a1, b0, b1 in group:
-            if tag == 'equal':
-                rows += [(a0 + i + 1, old[a0 + i], b0 + i + 1, new[b0 + i], 'same') for i in range(a1 - a0)]
-            else:
-                for i, j in itertools.zip_longest(range(a0, a1), range(b0, b1)):
-                    rows.append((None if i is None else i + 1, None if i is None else old[i],
-                                 None if j is None else j + 1, None if j is None else new[j],
-                                 'change' if i is not None and j is not None else 'removed' if i is not None else 'added'))
+        rows = opcode_rows(old, new, group)
         hunks.append((group[0][1] - shown, rows))  # lines of the old side skipped since the last hunk
         shown = group[-1][2]
     if hunks and len(old) > shown:
@@ -208,14 +218,33 @@ def cell(number, line, css):
     return '<td class="%s"><span class="n">%d</span>%s</td>' % (css, number, show(line))
 
 
+NAV = '<span class="nav"><button type="button" data-nav="prev" title="Previous change" aria-label="Previous change" disabled>&uarr;</button><button type="button" data-nav="next" title="Next change" aria-label="Next change">&darr;</button></span>'
+
+
+def side_table(rows, parent, tree):
+    """One side-by-side table of aligned rows (a gap row is a (hidden line count, 'gap') pair), with its movable divider."""
+    lines, before = '', 'same'  # the first row of every run of changed rows is marked, for the buttons that jump between changes
+    for row in rows:
+        if len(row) == 2:
+            lines += '<tr>%s</tr>' % (2 * ('<th class="gap">... %d unchanged line%s</th>' % (row[0], '' if row[0] == 1 else 's')))
+            before = 'same'
+        else:
+            lines += '<tr%s>%s%s</tr>' % (' data-c' if row[4] != 'same' and before == 'same' else '', cell(row[0], row[1], 'old ' + row[4]), cell(row[2], row[3], 'new ' + row[4]))
+            before = row[4]
+    panes = '<tr><th class="pane">Parent %s</th><th class="pane">Candidate %s</th></tr>' % (show(parent[:8]), show(tree[:8]))
+    return ('<div class="scroll" tabindex="0"><div class="frame"><table class="side"><colgroup><col class="l"><col class="r"></colgroup>%s%s</table>'
+            '<div class="grip" title="Drag to move the divider; double-click to centre"></div></div></div>') % (panes, lines)
+
+
 def file_section(repo, item, number, parent, tree):
-    """(html, summary) of one file: a notice for binaries and submodules, side-by-side hunks for text."""
+    """(html, summary) of one file: a notice for binaries and submodules, side-by-side hunks and the complete file for text."""
     kind = kind_of(item)
     notes = [mode_text(item)] if mode_text(item) else []
     old_data, old_size = blob(repo, item['old_mode'], item['old_id'])
     new_data, new_size = blob(repo, item['new_mode'], item['new_id'])
     sizes = '%s bytes before, %s bytes after' % ('no' if old_size is None else old_size, 'no' if new_size is None else new_size)
-    head = '<p class="back"><a href="#">&larr; All files</a></p><h3><span class="kind %s">%s</span> %s</h3>' % (kind.replace(' ', '-'), kind, show(item['path']))
+    head = '<a class="back" href="#">&larr; All files</a><h3><span class="kind %s">%s</span> %s</h3>' % (kind.replace(' ', '-'), kind, show(item['path']))
+    toggle = ''  # the checkbox of the file, at the right end of the heading row, for a file that has two views
     body = ''.join('<p class="note">%s</p>' % html.escape(note) for note in notes)
     if '160000' in (item['old_mode'], item['new_mode']):
         body += '<p class="note">Submodule: the recorded commit changed from %s to %s.</p>' % (
@@ -227,43 +256,54 @@ def file_section(repo, item, number, parent, tree):
         new, cut_new = lines_of(new_data or b'')
         if cut_old or cut_new:
             body += '<p class="note">Large file: only the first %s of each side is shown (%s).</p>' % (' and '.join(sorted(set(cut_old + cut_new))), sizes)
-        hunks = side_rows(old, new)
+        matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
+        everything = full_rows(matcher, old, new)  # first: get_grouped_opcodes trims the matcher's cached opcodes in place
+        hunks = side_rows(matcher, old, new)
         if not hunks and not (cut_old or cut_new):
             body += '<p class="note">No content change.</p>'
-        if hunks:
-            lines = ''.join(('<tr>%s</tr>' % (2 * ('<th class="gap">%s %d unchanged line%s</th>' % ('...', hidden, '' if hidden == 1 else 's'))) if hidden else '') +
-                            ''.join('<tr>%s%s</tr>' % (cell(a, b, 'old ' + css), cell(c, d, 'new ' + css)) for a, b, c, d, css in rows)
-                            for hidden, rows in hunks)
-            panes = '<tr><th class="pane">Parent %s</th><th class="pane">Candidate %s</th></tr>' % (show(parent[:8]), show(tree[:8]))
-            body += ('<div class="scroll"><div class="frame"><table class="side"><colgroup><col class="l"><col class="r"></colgroup>%s%s</table>'
-                     '<div class="grip" title="Drag to move the divider; double-click to centre"></div></div></div>') % (panes, lines)
-    return '<section id="f%d">%s%s</section>' % (number, head, body)
+        collapsed = [row for hidden, rows in hunks for row in ([(hidden, 'gap')] if hidden else []) + rows]
+        if collapsed == everything:  # nothing is left out, so one table serves both states of the checkbox
+            if sum(1 for n, row in enumerate(everything) if row[4] != 'same' and (n == 0 or everything[n - 1][4] == 'same')) > 1:
+                toggle = NAV  # several changes in a short file: the buttons only
+            body += '<div class="allview">%s</div>' % side_table(everything, parent, tree) if everything else ''
+        else:
+            toggle = '<label class="toggle"><input type="checkbox" class="collapse" checked> Collapse unchanged fragments</label>' + NAV
+            body += '<div class="hunkview">%s</div><div class="fullview">%s</div>' % (
+                side_table(collapsed, parent, tree) if collapsed else '', side_table(everything, parent, tree))
+    return '<section id="f%d"><div class="bar">%s%s</div>%s</section>' % (number, head, toggle, body)
 
 
-STYLE = """:root{--bg:#fff;--fg:#1d2129;--mute:#5b6472;--line:#d5d9e0;--panel:#f4f6f9;--del:#fde8e8;--add:#e3f6e6;--chg:#fff3d6;--banner:#8a1f11;--bannerfg:#fff;--link:#0b5cad;--split:.5}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--fg:#e3e6eb;--mute:#9aa3b0;--line:#323844;--panel:#1c2027;--del:#4a1f22;--add:#1b3d26;--chg:#4a3d17;--banner:#b8321f;--link:#8ab4f8}}
+STYLE = """:root{--bg:#fff;--fg:#1d2129;--mute:#5b6472;--line:#d5d9e0;--panel:#f4f6f9;--del:#fde8e8;--add:#e3f6e6;--chg:#fff3d6;--preview:#8a1f11;--sealed:#1b4f8f;--bannerfg:#fff;--link:#0b5cad;--split:.5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--fg:#e3e6eb;--mute:#9aa3b0;--line:#323844;--panel:#1c2027;--del:#4a1f22;--add:#1b3d26;--chg:#4a3d17;--preview:#b8321f;--sealed:#2f6dbd;--link:#8ab4f8}}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
-main{padding:0 16px 48px}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:start}
-nav{position:sticky;top:0;max-height:100vh;overflow:auto;padding:12px 0;font-size:13px}nav ul{list-style:none;margin:0;padding-left:14px}nav>ul{padding-left:0}nav a{color:inherit;text-decoration:none;display:block;padding:1px 4px;border-radius:3px;word-break:break-all}nav a:hover{background:var(--panel)}nav .dir{color:var(--mute);padding:1px 4px}
+main{padding:0 16px 6px}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:start}
+nav{position:sticky;top:0;max-height:100vh;overflow:auto;padding:12px 0;font-size:13px}nav ul{list-style:none;margin:0;padding-left:14px}nav>ul{padding-left:0}nav a{color:inherit;text-decoration:none;display:block;padding:1px 4px;border-radius:3px;word-break:break-all}nav a:hover{background:var(--panel)}nav summary{color:var(--mute);padding:1px 4px;cursor:pointer}nav details>ul{padding-left:14px}.treebar{display:flex;gap:6px;margin:0 0 6px}.treebar button{font:12px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 8px;cursor:pointer}
 nav .a{border-left:3px solid #3a9b4f}nav .d{border-left:3px solid #c2433b}nav .m{border-left:3px solid #c99a2e}
 @media (max-width:900px){.layout{display:block}nav{position:static;max-height:none}}
-.label{background:var(--banner);color:var(--bannerfg);font-size:clamp(28px,6vw,52px);font-weight:800;letter-spacing:.04em;padding:18px 16px;text-align:center}
-.label small{display:block;font-size:15px;font-weight:400;letter-spacing:0;margin-top:6px}
+.label{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;color:var(--bannerfg);padding:5px 16px;font-size:12px}
+.label.preview{background:var(--preview)}.label.sealed{background:var(--sealed)}
+.label strong{font-size:15px;font-weight:800;letter-spacing:.04em}
 table{border-collapse:collapse}th,td{vertical-align:top}
-table.facts{margin:16px 0}table.facts th{text-align:left;padding:2px 14px 2px 0;color:var(--mute);font-weight:600;white-space:nowrap}
-table.facts td{padding:2px 0;word-break:break-all}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 32px;margin:8px 0 10px;font-size:13px;line-height:1.35}
+.facts .fact{display:grid;grid-template-columns:8.5em minmax(0,1fr);padding:1px 0}.facts .wide{grid-column:1/-1}
+.facts .k{color:var(--mute);font-weight:600}.facts .v{word-break:break-all}
+@media (max-width:700px){.facts{grid-template-columns:minmax(0,1fr)}}
 table.files{width:100%;margin:8px 0 24px}table.files td,table.files th{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left}
 .kind{display:inline-block;padding:0 8px;border-radius:10px;font-size:12px;font-weight:700;background:var(--panel);border:1px solid var(--line)}
 .kind.added{background:var(--add)}.kind.deleted{background:var(--del)}.kind.modified,.kind.type-changed{background:var(--chg)}
-section{display:none;margin:0 0 28px}section:target{display:block}.view:has(section:target) .overview{display:none}.back{margin:0 0 8px}h3{font-size:16px;margin:0 0 8px;word-break:break-all}
+section{display:none;margin:0}section:target{display:block}.view:has(section:target) .overview{display:none}.bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin:0 0 8px}.bar h3{margin:0;flex:1 1 auto}h3{font-size:16px;word-break:break-all}
 .note{margin:6px 0;color:var(--mute)}
-a,a:visited{color:var(--link)}nav a,nav a:visited{color:inherit}.frame{position:relative;min-width:70em}.grip{position:absolute;top:0;bottom:0;width:19px;margin-left:-10px;left:calc(100%*var(--split));cursor:col-resize;touch-action:none;background:linear-gradient(to right,transparent 7px,var(--mute) 7px,var(--mute) 12px,transparent 12px);opacity:.7}.grip:hover{opacity:1;background:linear-gradient(to right,rgba(128,128,128,.18) 0,rgba(128,128,128,.18) 100%),linear-gradient(to right,transparent 7px,var(--fg) 7px,var(--fg) 12px,transparent 12px)}table.side col.l{width:calc(var(--split)*100%)}table.side col.r{width:calc((1 - var(--split))*100%)}table.side{width:100%;table-layout:fixed;margin:8px 0;border:1px solid var(--line);font:13px/1.45 ui-monospace,Consolas,monospace}.scroll{overflow-x:auto}
-table.side th.pane{background:var(--panel);text-align:left;padding:3px 8px;font-weight:600}table.side th.gap{background:var(--panel);text-align:center;padding:2px 8px;color:var(--mute);font-weight:400;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
+a,a:visited{color:var(--link)}nav a,nav a:visited{color:inherit}.frame{position:relative;min-width:70em}.grip{position:absolute;top:0;bottom:0;width:19px;margin-left:-10px;left:calc(100%*var(--split));cursor:col-resize;touch-action:none;background:linear-gradient(to right,transparent 7px,var(--mute) 7px,var(--mute) 12px,transparent 12px);opacity:.7}.grip:hover{opacity:1;background:linear-gradient(to right,rgba(128,128,128,.18) 0,rgba(128,128,128,.18) 100%),linear-gradient(to right,transparent 7px,var(--fg) 7px,var(--fg) 12px,transparent 12px)}table.side col.l{width:calc(var(--split)*100%)}table.side col.r{width:calc((1 - var(--split))*100%)}table.side{width:100%;table-layout:fixed;margin:8px 0;border:1px solid var(--line);font:13px/1.45 ui-monospace,Consolas,monospace}.scroll{overflow:auto;max-height:calc(100vh - 7.5em);overscroll-behavior:contain}.scroll:focus{outline:none}
+table.side th.pane{position:sticky;top:0;z-index:2;background:var(--panel);text-align:left;padding:3px 8px;font-weight:600}table.side th.gap{background:var(--panel);text-align:center;padding:2px 8px;color:var(--mute);font-weight:400;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
 table.side td{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 6px}
 span.n{display:inline-block;width:3.2em;margin:0 8px 0 -6px;padding-right:6px;text-align:right;color:var(--mute);background:var(--panel);user-select:none}
 td.old.removed{background:var(--del)}td.new.added,td.new.change{background:var(--add)}td.old.change{background:var(--del)}td.new.removed{background:var(--panel)}
 td.empty{background:var(--panel)}
-.fine{color:var(--mute);margin-top:32px;font-size:13px}
+label.toggle{margin-left:auto;cursor:pointer;user-select:none;white-space:nowrap}.nav{display:inline-flex;gap:4px;margin-left:auto}.toggle+.nav{margin-left:0}.nav button{font:13px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 9px;cursor:pointer}.nav button:disabled{opacity:.35;cursor:default}
+section:has(.collapse:checked) .fullview,section:has(.collapse:not(:checked)) .hunkview{display:none}
+.fine{color:var(--mute);margin:2px 0 0;font-size:11px;line-height:1.25}
+body:has(section:target) .facts{display:none}
+@media (min-width:901px){html,body{height:100%}body{display:flex;flex-direction:column;overflow:hidden}main{flex:1;min-height:0;display:flex;flex-direction:column}.layout{flex:1;min-height:0;grid-template-rows:minmax(0,1fr);align-items:stretch}nav{position:static;max-height:none;min-height:0}.view{min-height:0;overflow:auto;display:flex;flex-direction:column}section:target{flex:1;min-height:0;display:flex;flex-direction:column}.hunkview,.allview,.fullview{flex:1;min-height:0;display:flex;flex-direction:column}.scroll{flex:1;max-height:none;min-height:0}}
 @media (max-width:700px){table.side{font-size:11px}span.n{width:2.4em}}"""
 
 
@@ -282,7 +322,7 @@ def tree(items, shown):
         for name in sorted(node, key=lambda k: (not isinstance(node[k], dict), k)):
             value = node[name]
             if isinstance(value, dict):
-                out += '<li><div class="dir">%s</div><ul>%s</ul></li>' % (show(name), walk(value))
+                out += '<li><details open><summary>%s</summary><ul>%s</ul></details></li>' % (show(name), walk(value))
             else:
                 n, item = value
                 css = {'added': 'a', 'deleted': 'd'}.get(kind_of(item), 'm')
@@ -298,19 +338,24 @@ def page(*arguments):
 
 
 def build_page(kind, facts, items, sections, omitted):
-    rows = ''.join('<tr><th>%s</th><td>%s</td></tr>' % (html.escape(name), show(str(value))) for name, value in facts)
+    def fact(name, value, wide=False):
+        return '<div class="fact%s"><span class="k">%s</span><span class="v">%s</span></div>' % (' wide' if wide else '', html.escape(name), show(str(value)))
+    short = [f for f in facts if f[0] != 'Manifest']  # the manifest can be long and spans both columns
+    half = (len(short) + 1) // 2
+    rows = ''.join(['<div>%s</div>' % ''.join(fact(*f) for f in part) for part in (short[:half], short[half:])] +
+                   [fact(name, value, True) for name, value in facts if name == 'Manifest'])
     listing = ''.join('<tr><td><span class="kind %s">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>' % (
         kind_of(i).replace(' ', '-'), kind_of(i), '<a href="#f%d">%s</a>' % (n, show(i['path'])) if n <= len(sections) else show(i['path']),
         show(mode_text(i)), 'binary' if i['binary'] else '+%d -%d' % i['counts']) for n, i in enumerate(items, 1))
     more = '<p class="note">The first %d files are shown side by side; the list above has every file.</p>' % MAX_FILES if omitted else ''
     return ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n'
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'sha256-@@HASH@@\'">\n'
-            '<title>%s</title><style>%s</style></head><body>\n<div class="label">%s<small>%s</small></div>\n<main>\n'
-            '<table class="facts">%s</table>\n<div class="layout"><nav>%s</nav><div class="view">\n<div class="overview"><h2>Files (%d)</h2>\n<table class="files"><tr><th>Change</th><th>Path</th><th>Mode</th><th>Lines</th></tr>%s</table>\n<p class="note">Choose a file in the list or in the tree to read its changes.</p></div>\n'
-            '%s%s\n<p class="fine">Built from the recorded parent commit and candidate tree object only, never from the working tree. '
-            'This page is a reading aid: it grants no approval and changes nothing the checkpoint tool records; the decision is taken in the conversation.</p>\n'
+            '<title>%s</title><style>%s</style></head><body>\n<div class="label %s"><strong>%s</strong><span>%s</span></div>\n<main>\n'
+            '<div class="facts">%s</div>\n<div class="layout"><nav><div class="treebar"><button type="button" data-fold="open">Expand all</button><button type="button" data-fold="close">Collapse all</button></div>%s</nav><div class="view">\n<div class="overview"><h2>Files (%d)</h2>\n<table class="files"><tr><th>Change</th><th>Path</th><th>Mode</th><th>Lines</th></tr>%s</table>\n<p class="note">Choose a file in the list or in the tree to read its changes.</p></div>\n'
+            '%s%s\n<p class="fine">Built from the recorded parent commit and candidate tree only, never the working tree. '
+            'A reading aid: it grants no approval and records nothing; the decision is taken in the conversation.</p>\n'
             '</div></div></main><script>@@SCRIPT@@</script></body></html>\n') % (
-        'Diff ' + kind, STYLE, html.escape(LABELS[kind]),
+        'Diff ' + kind, STYLE, kind, html.escape(LABELS[kind]),
         'Read-only view of the exact candidate; not an approval.' if kind == PREVIEW else 'Read-only view of the exact sealed candidate; the decision is taken in the conversation.',
         rows, tree(items, len(sections)), len(items), listing, ''.join(sections), more)
 
