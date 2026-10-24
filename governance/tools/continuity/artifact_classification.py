@@ -6,6 +6,7 @@ rows are complete; an exact-file row may leave cells empty to inherit them, cell
 most specific enclosing complete row. A single hyphen is a deliberate no-value. Anything the
 parser does not understand fails loudly: classification fails closed.
 """
+import os
 from pathlib import Path
 import re
 
@@ -89,6 +90,11 @@ DEVLOG_DEFAULTS = {'folder': 'devlog', 'date_format': '%Y-%m-%dT%H:%MZ', 'enable
 # must resolve here. The code default is no label, and a missing file or one that does not parse means the default.
 CITATIONS = PROJECT_CONFIG + '/citations.json'
 CITATIONS_DEFAULTS = {'external_repositories': []}
+# The project's expectations of which checks its paths select (G056). One optional file in the project's configuration folder,
+# with no framework copy: {"version": 1, "expectations": [{"paths": <git pathspec>, "selects": [<checks>], "never": [<checks>]}]}.
+# The conformance test of the framework reads it against every tracked file a pathspec matches. Unlike the settings above, a
+# file that is present must be good: a guard that is silently off guards nothing.
+SELECTOR_EXPECTATIONS = PROJECT_CONFIG + '/selector-expectations.json'
 LABEL_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
 CITED_ID = re.compile(r'[0-9a-f]{7,40}')
 # `<label> commit` and one space, then a backticked token, on one line; the label is one word that no letter, digit, dot or
@@ -207,6 +213,53 @@ def citation_labels(root):
             'The citation setting "external_repositories" must be a list of distinct labels of letters, digits, dots, '
             'underscores and hyphens')
     return tuple(labels)
+
+
+def selector_expectations(root, commands):
+    """The project's selector expectations at `root`: a list of {'paths': pathspec, 'selects': [...], 'never': [...]}.
+
+    The file is optional and only an absent one means none. A path that exists must be a readable file holding a JSON
+    object with only "version" (1, optional) and "expectations", a nonempty list of objects that hold only "paths" (a nonempty one-line git pathspec),
+    "selects" and "never" (lists of distinct check ids, each a command of `commands`, the merged policy's) and "why" (text,
+    optional); each needs at least one check and no check may be in both lists. `selects` is a floor (a file must select at least
+    those checks, others may run too), `never` a ban, and both are asserted for each matched file alone. Anything else is refused with one message
+    naming the file and the expectation, because a misspelt key or check must not turn the guard off."""
+    import json
+    path = Path(root) / SELECTOR_EXPECTATIONS
+    where = SELECTOR_EXPECTATIONS
+    if not os.path.lexists(path):  # only an absent file means none; a directory or a broken link at the name is refused
+        return []
+    require(path.is_file(), where + ' exists but is not a readable file')
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (ValueError, OSError) as error:
+        raise ValueError(where + ' cannot be read as JSON: ' + str(error)) from error
+    require(isinstance(data, dict) and set(data) <= {'version', 'expectations'} and data.get('version', 1) == 1,
+            where + ' must be an object that holds only "version" (1) and "expectations"')
+    listed = data.get('expectations')
+    require(isinstance(listed, list) and listed, where + ' needs "expectations", a nonempty list')
+    found = []
+    for number, item in enumerate(listed, 1):
+        label = where + ', expectation %d' % number
+        require(isinstance(item, dict) and set(item) <= {'paths', 'selects', 'never', 'why'}, label +
+                ' must be an object that holds only "paths", "selects", "never" and "why"')
+        spec = item.get('paths')
+        require(isinstance(spec, str) and spec.strip() and spec.isprintable(),
+                label + ': "paths" must be one git pathspec on one line')
+        require(isinstance(item.get('why', ''), str), label + ': "why" must be text')
+        lists = {}
+        for key in ('selects', 'never'):
+            names = item.get(key, [])
+            require(isinstance(names, list) and all(isinstance(n, str) for n in names) and len(set(names)) == len(names),
+                    label + ': "%s" must be a list of distinct check ids' % key)
+            unknown = [n for n in names if n not in commands]
+            require(not unknown, label + ': "%s" names no check of the policy: %s' % (key, ', '.join(unknown)))
+            lists[key] = names
+        require(lists['selects'] or lists['never'], label + ' needs at least one check in "selects" or "never"')
+        both = sorted(set(lists['selects']) & set(lists['never']))
+        require(not both, label + ' lists the same check in "selects" and "never": ' + ', '.join(both))
+        found.append({'paths': spec, **lists})
+    return found
 
 
 class Citations:

@@ -35,6 +35,7 @@ For the evidence audit, explanations and open rationale gaps, see [Why these dec
 | G053 | 2026-10-20 | Accepted | [A new project runs one adoption helper and its first Coordinator claims the role by command](#g053---a-new-project-runs-one-adoption-helper-and-its-first-coordinator-claims-the-role-by-command-2026-10-20-accepted) |
 | G054 | 2026-10-21 | Accepted | [Freezing is always allowed and only changing a freeze is restricted](#g054---freezing-is-always-allowed-and-only-changing-a-freeze-is-restricted-2026-10-21-accepted) |
 | G055 | 2026-10-23 | Accepted | [A project may add impact invariants and name the checks an impact mapping may replace](#g055---a-project-may-add-impact-invariants-and-name-the-checks-an-impact-mapping-may-replace-2026-10-23-accepted) |
+| G056 | 2026-10-23 | Accepted | [A project may declare which checks its paths select](#g056---a-project-may-declare-which-checks-its-paths-select-2026-10-23-accepted) |
 
 ## G018 - Delegated checkpoint authority and continuity (2026-10-01, Accepted)
 
@@ -441,3 +442,13 @@ The project's profiles file (`project-governance/config/checkpoint-profiles.json
 **Sensitivity.** The overlay file is already inside the folder the framework's table grades `high`, and every approval already binds it by its hash; both stay, so a change that narrows is a change to a `high` file that the lead developer sees in the seal. The selection stays below the reviewed row: a path with an unmapped row or an unknown group still runs the whole envelope.
 
 See the [rationale](RATIONALE.md#project-impact-invariants-and-narrowable-checks-g055), [the project overlay](CHECKPOINT-TOOL.md#the-project-overlay) and [project governance](PROJECT-GOVERNANCE.md).
+
+## G056 - A project may declare which checks its paths select (2026-10-23, Accepted)
+
+The project may keep `project-governance/config/selector-expectations.json`, an optional declaration of the checks its paths must and must not select. It is `{"version": 1, "expectations": [{"paths": "<git pathspec>", "selects": [check ids], "never": [check ids], "why": "<text>"}]}`. An expectation is an enumerating rule, never a list of files: the conformance folder (`governance/config/conformance/test_selector_expectations.py`) lists the tracked files the pathspec matches (`git ls-files`, so `:(glob)` and the other pathspec magic work) and judges each one by the selection the checkpoint tool itself makes for a change to that file alone (`select_profile`), so its row, its profile, `narrowable` and the impact invariants of the project (G055) all count. `selects` is a floor and `never` a ban, each asserted for every matched file on its own: a file must select at least the checks in `selects` and none in `never`; a failure names the expectation, each offending file, its profile and what it selects, in one message.
+
+**Refusals.** The declaration is optional and only an absent file means none; anything else at that name, a directory included, must be a good file, because a guard that is silently off guards nothing: an unreadable file, a key other than `version`, `expectations`, `paths`, `selects`, `never` and `why`, a check id that is not a command of the merged policy, the same check in both lists, an expectation with no check, a pathspec that is empty or not on one line, and a pathspec that matches no tracked file all fail the test. A tracked file with no usable row fails its expectation instead of being skipped. A row whose Invariants cell is `symbol-map` is always judged with its whole envelope, whatever the working tree holds.
+
+**What it is not.** It is a test, not a gate: it adds no check to any profile, changes no selection and no approval rule, and a project edits only its own declaration, which is a file of `project-governance/` graded `high`, so it is shown in the seal. The check runs whenever a change under `governance/` or `project-governance/` selects the conformance folder, which includes every change to the project's table or profiles, the two places where a wrong selection is introduced.
+
+See the [rationale](RATIONALE.md#project-selector-expectations-g056) and [project governance](PROJECT-GOVERNANCE.md#selector-expectations).

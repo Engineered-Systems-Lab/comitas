@@ -95,6 +95,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/config/conformance/test_project_lifecycle.py` | tooling | tooling | - | - | - | - | - | - |
 | `governance/config/conformance/test_runtime_guard_commands.py` | tooling | tooling | - | - | governance-runtime | - | - | - |
 | `governance/config/conformance/test_script_modes.py` | tooling | tooling | - | - | - | - | - | - |
+| `governance/config/conformance/test_selector_expectations.py` | tooling | tooling | - | - | selector | - | - | - |
 | `governance/config/reconstruction-contract-v1.json` | tooling | tooling | - | - | continuity | - | yes | medium |
 | `governance/extensions/README.md` | governance | governance | - | - | conformance, guidance | - | yes | - |
 | `governance/extensions/diff_viewer/` | governance | blocked | - | - | - | diff-viewer | - | - |

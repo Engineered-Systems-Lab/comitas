@@ -80,7 +80,7 @@ class DocumentedDefaultsTest(unittest.TestCase):
     def test_the_document_names_every_project_file_the_tools_read(self):
         text = DOCUMENT.read_text(encoding='utf-8')
         for path in (ac.PROJECT_TABLE, ac.PROJECT_POLICY, ac.PROJECT_PROFILES, ac.PROJECT_CONTRACT, ac.PROJECT_CONSTRAINTS,
-                     ac.PROJECT_DECISIONS, ac.PROJECT_RATIONALE, ac.FEATURES, ac.DEVLOG, ac.CITATIONS, ac.FROZEN_MANIFEST,
+                     ac.PROJECT_DECISIONS, ac.PROJECT_RATIONALE, ac.FEATURES, ac.DEVLOG, ac.CITATIONS, ac.FROZEN_MANIFEST, ac.SELECTOR_EXPECTATIONS,
                      rp.PROJECT_GOLDEN):
             with self.subTest(path=path):
                 self.assertTrue(path.startswith(FOLDER))
