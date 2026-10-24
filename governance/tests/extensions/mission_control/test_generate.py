@@ -373,17 +373,41 @@ class GeneratorTest(unittest.TestCase):
                                     + project_letter('G002')):
             self.generate(revision=self.run_git('rev-parse', 'HEAD').strip())
 
-    def test_a_missing_project_home_means_none_and_the_shipped_empty_registry_is_valid(self):
+    def empty_project_homes(self):
+        """The shape the starter ships for the project's registry and rationale, written here as fixture text: the test
+        never reads the project's real files, which a project fills with its own decisions."""
+        self.write(ac.PROJECT_DECISIONS, '# Project Decisions\n\n| ID | Date | Status | Decision |\n| --- | --- | --- | --- |\n')
+        self.write(ac.PROJECT_RATIONALE, '# Why the project\'s decisions exist\n\nStatus: Explanatory / non-normative\n\n'
+                                         '## Evidence audit\n\n| Decision | Rationale status | Finding / reading location |\n'
+                                         '| --- | --- | --- |\n')
+
+    def check_a_missing_project_home_means_none_and_an_empty_registry_is_valid(self):
         # The inventory names the project's files; a revision without them reads the framework's alone.
         self.inventory['datasets']['decisions']['paths'].append(ac.PROJECT_DECISIONS)
         self.inventory['datasets']['rationale']['paths'].append(ac.PROJECT_RATIONALE)
         self.generate()
         self.assertEqual([item['id'] for item in self.items('decisions')], ['decision:G001'])
-        for name in (ac.PROJECT_DECISIONS, ac.PROJECT_RATIONALE):
-            self.write(name, (rp.ROOT / name).read_text(encoding='utf-8'))
+        self.empty_project_homes()
         self.commit()
         self.generate(revision=self.run_git('rev-parse', 'HEAD').strip())
         self.assertEqual([item['id'] for item in self.items('decisions')], ['decision:G001'])
+
+    def test_a_missing_project_home_means_none_and_an_empty_registry_is_valid(self):
+        self.check_a_missing_project_home_means_none_and_an_empty_registry_is_valid()
+
+    def test_the_empty_registry_check_does_not_read_the_projects_real_registry(self):
+        # A project that records decisions must still pass the check above: the repository root the test could read holds
+        # a decision of its own, and the test must neither read nor assert on it.
+        with tempfile.TemporaryDirectory() as temp:
+            project_root = Path(temp)
+            real = project_letter('| G001 | 2026-10-03 | Accepted | The project\'s own decision. |\n')
+            for name, text in ((ac.PROJECT_DECISIONS, '# Project Decisions\n\n| ID | Date | Status | Decision |\n'
+                                                      '| --- | --- | --- | --- |\n' + real + '\n## ' + project_letter('G001') + ' - Own\n\nBody.\n'),
+                               (ac.PROJECT_RATIONALE, '# Rationale\n\nStatus: Explanatory / non-normative\n')):
+                (project_root / name).parent.mkdir(parents=True, exist_ok=True)
+                (project_root / name).write_text(text, encoding='utf-8', newline='\n')
+            with patch.object(rp, 'ROOT', project_root):
+                self.check_a_missing_project_home_means_none_and_an_empty_registry_is_valid()
 
     def test_rationale_records_preserve_joint_sections_and_exact_bidirectional_links(self):
         self.rationale_fixture()
