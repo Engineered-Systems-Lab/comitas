@@ -161,4 +161,35 @@ The Comitas version is in [VERSION](VERSION), and each release is described in t
 
 ### Releasing Comitas
 
-This is how Comitas itself makes a release, so an adopter knows what a version names. Each change that an adopter must know about adds its entry under `## Unreleased` in the [Changelog](CHANGELOG.md), and entries collect there until the lead developer cuts a release. A cut is one governed change: it sets [VERSION](VERSION), turns the `## Unreleased` heading into `## <version> (YYYY-MM-DD)` with the date it lands, and adds a Migration note under any entry that needs one. No `## Unreleased` heading stays behind; the next change that lands creates it again. After the cut has landed, the Coordinator gives the release commit an annotated tag `v<version>` on the lead developer's word, and the lead developer pushes it. A project upgrading may name a release by its tag or by its commit.
+This is how Comitas itself makes a release, so an adopter knows what a version names. Each change that an adopter must know about adds its entry under `## Unreleased` in the [Changelog](CHANGELOG.md), and entries collect there until the lead developer cuts a release. A cut is one governed change: it sets [VERSION](VERSION), turns the `## Unreleased` heading into `## <version> (YYYY-MM-DD)` with the date it lands, and adds a Migration note under any entry that needs one. No `## Unreleased` heading stays behind; the next change that lands creates it again. After the cut has landed, the release is checked as below, and only then does the Coordinator give the release commit an annotated tag `v<version>` on the lead developer's word, and the lead developer pushes it. A project upgrading may name a release by its tag or by its commit.
+
+**Readiness.** A release is declared ready by the lead developer, and not before these pass, each run from the release commit:
+
+1. On the framework repository's `main`, in Git Bash, the continuity check and the full suite:
+
+   ```sh
+   python -B governance/tools/validate_continuity.py
+   python -B governance/tools/run_tests.py -s governance/tests -s governance/config -p 'test_*.py'
+   ```
+
+2. In two scratch folders outside the repository, the continuity check and the conformance folder, since these copies differ from `main` only in history and adoption details: a fresh export adopted as in [route B](#route-b-export-the-tracked-files) (export, `git init`, `git add -A`, `adopt.py`, the first commit), and a copy made the way "Use this template" makes one, the same tree as a single fresh commit:
+
+   ```sh
+   git clone --no-local --branch main <comitas-repository> <copy>
+   cd <copy>
+   git checkout --orphan fresh
+   git commit -m 'Initial commit'
+   git branch -M main
+   ```
+
+   In each of the two, run:
+
+   ```sh
+   python -B governance/tools/validate_continuity.py
+   python -B governance/tools/run_tests.py -s governance/config -p 'test_*.py'
+   ```
+
+3. Any scenario the release calls for, such as a case of an adopting project that a fix addresses, passes in the export.
+4. The full output of each run is kept until the release is declared, so that a failure can be diagnosed.
+
+When every run has passed, the lead developer declares the release ready and the tag is created. A failure is fixed by a governed change, and the runs start over from the new release commit.
