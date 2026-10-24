@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.5.1 (2026-10-24)
 
 **The release procedure now says what is checked before a release is declared ready; documentation only, nothing to do but take the upgrade.** [Releasing Comitas](PROJECT-LIFECYCLE.md#releasing-comitas) gains a readiness step between the cut landing and the annotated `v<version>` tag: the continuity check and the full suite pass on the framework repository's `main`; the continuity check and the conformance folder pass in a fresh export adopted the documented way and in a copy made the way "Use this template" makes one; any scenario the release calls for passes in the export; the full output of each run is kept until the lead developer declares the release ready. The step was the Coordinator's private practice before. No tool or test changes.
 
