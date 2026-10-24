@@ -101,11 +101,12 @@ Implementation groups are presentation-only exact matches against existing JSON 
 
 | Display group | Exact source paths |
 | --- | --- |
-| Mission Control | `governance/extensions/mission_control/MISSION-CONTROL-V1-DESIGN.md` |
-| *(your groups)* | An adopting project adds one row per display group, matching the `modules` list in `ui/app.mjs` |
+| Mission Control | `governance/extensions/mission_control/MISSION-CONTROL-V1-DESIGN.md`, declared by the `group` of this extension's manifest |
+| *(each installed extension)* | The `group` of its manifest, `governance/extensions/<name>/extension.json` |
+| *(your groups)* | The `groups` of `project-governance/config/mission-control-inputs.json`, in declared order |
 | Other implementation | Any eligible implementation document not explicitly mapped above |
 
-A named group is explicit, never the fallback. These headings group recorded documents for reading; design-only modules are not thereby claimed to have implemented runtime. Future eligible documents appear after dataset regeneration, while assignment to a named module still requires this explicit presentation mapping. No new module metadata, generator semantics or authoritative relationships are introduced. Existing read-only framing, exact traceability, other routes, filters and actual navigation history remain binding.
+The groups are read, in this order, from this extension's own manifest, the manifests of the other installed extensions in folder order and the project's part; Mission Control names no other extension, so removing one removes its group (G042). A label used twice and a path in two groups are refused with one message, and a path of the project's groups must be an input. A named group is explicit, never the fallback. These headings group recorded documents for reading; design-only modules are not thereby claimed to have implemented runtime. Future eligible documents appear after dataset regeneration, while assignment to a named group still requires an explicit declaration. No new module metadata, generator semantics or authoritative relationships are introduced. Existing read-only framing, exact traceability, other routes, filters and actual navigation history remain binding.
 
 Later context (2026-10-20): the masthead became neutral, with blue and turquoise bands, in template commit `61ebad4`, so the card titles use the terminal's accent color; the text above is kept as it was written.
 

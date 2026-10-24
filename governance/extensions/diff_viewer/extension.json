@@ -19,5 +19,11 @@
   ],
   "prose": [
     "diff viewer"
-  ]
+  ],
+  "group": {
+    "label": "Diff viewer",
+    "paths": [
+      "governance/extensions/diff_viewer/README.md"
+    ]
+  }
 }

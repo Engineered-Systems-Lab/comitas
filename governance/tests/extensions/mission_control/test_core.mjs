@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {TYPES, validateDataset, filter, sorted, facets, facetRecords, applicableFilters, resolveTarget, appendVisit, briefing, escape, hashText} from '../../../extensions/mission_control/ui/core.mjs';
+import {TYPES, validateDataset, filter, sorted, facets, facetRecords, applicableFilters, resolveTarget, appendVisit, briefing, groupImplementations, escape, hashText} from '../../../extensions/mission_control/ui/core.mjs';
 
 // The datasets are never committed: ui/check.py generates them at HEAD, or MC_DATA_DIR names a folder that holds them.
 const dataDir = process.env.MC_DATA_DIR;
@@ -124,12 +124,24 @@ test('Status briefing aggregates source facts without transaction state or infer
   assert.deepEqual(Object.keys(report),['decisions','documents']);
   assert.ok(sorted(items,'recent').every(i=>items.includes(i)));
 });
+test('implementation records are grouped by declared exact paths in declared order, with an unmapped fallback', () => {
+  const doc = path => ({id:path,type:'documents',source:{path}});
+  const records = ['a.md','b.md','c.md','d.md'].map(doc);
+  const names = result => result.map(([label,list]) => [label,list.map(i => i.source.path)]);
+  assert.deepEqual(names(groupImplementations(records,[{label:'Second',paths:['c.md']},{label:'First',paths:['b.md','a.md','missing.md']}])),
+    [['Second',['c.md']],['First',['a.md','b.md']],['Other implementation',['d.md']]]);
+  assert.deepEqual(names(groupImplementations(records,[])),[['Other implementation',['a.md','b.md','c.md','d.md']]]);
+  // A path listed twice never shows a record twice; the earlier group keeps it.
+  assert.deepEqual(names(groupImplementations(records,[{label:'One',paths:['a.md']},{label:'Two',paths:['a.md','b.md']}])),
+    [['One',['a.md']],['Two',['b.md']],['Other implementation',['c.md','d.md']]]);
+});
 test('hostile source content is escaped rather than executed', () => {
   assert.equal(escape('<img src=x onerror="alert(1)">'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
 });
-test('browser fetches are restricted to the five datasets, the local queue (also read by the status light) and the one refresh POST', async () => {
+test('browser fetches are restricted to the five datasets, the declared groups, the local queue (also read by the status light) and the one refresh POST', async () => {
   const app=await readFile(new URL('../../../extensions/mission_control/ui/app.mjs',import.meta.url),'utf8');
-  assert.equal((app.match(/\bfetch\(/g) ?? []).length,4);
+  assert.equal((app.match(/\bfetch\(/g) ?? []).length,5);
+  assert.ok(app.includes("fetch('../groups.json', {cache:'no-store'})"));
   assert.ok(app.includes('fetch(`../data/${type}.json`'));
   assert.equal(app.split("fetch('../queue.json', {cache:'no-store'})").length - 1, 2); // the queue tab and the status light
   assert.ok(app.includes("fetch('../refresh', {method: 'POST', cache: 'no-store'})"));

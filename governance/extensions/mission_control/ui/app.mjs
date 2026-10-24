@@ -1,7 +1,7 @@
-import {TYPES, LABELS, content, escape as e, validateDataset, filter, facets, facetRecords, applicableFilters, matchesStatus, values, CONTEXTUAL, sorted, recordedTime, resolveTarget, appendVisit, sameDestination, briefing, slug, hashText, commitMetadataHtml, recordTimestamp, formatTimestamp, browserTimeZone, provenanceHtml, logTitle, INFERRED_MARK, DERIVED_MARK, queueModel, lightModel, stripModel, dataSourceLabel} from './core.mjs';
+import {TYPES, LABELS, content, escape as e, validateDataset, filter, facets, facetRecords, applicableFilters, matchesStatus, values, CONTEXTUAL, sorted, recordedTime, resolveTarget, appendVisit, sameDestination, briefing, groupImplementations, slug, hashText, commitMetadataHtml, recordTimestamp, formatTimestamp, browserTimeZone, provenanceHtml, logTitle, INFERRED_MARK, DERIVED_MARK, queueModel, lightModel, stripModel, dataSourceLabel} from './core.mjs';
 
 const $ = selector => document.querySelector(selector);
-let items = [], trail = [], cursor = 0, devlogOff = false;
+let items = [], trail = [], cursor = 0, devlogOff = false, declaredGroups = [], groupsProblem = '';
 const blankFilters = () => ({type:[],categories:[],topics:[],status:[],classes:[],subclasses:[],worker:[]});
 const zone = browserTimeZone() ?? undefined;
 function displayTitle(i) {
@@ -89,14 +89,10 @@ function briefingView() {
   const lenses = [['PLAN','docs/PLAN.md'],['PROGRESS','docs/PROGRESS.md'],['ARCHITECTURE','docs/ARCHITECTURE.md']];
   const paths = new Set(lenses.map(([,path]) => path));
   const implementations = c.documents.filter(i => !paths.has(i.source.path));
-  // Presentation-only groups using exact source paths already present in JSON.
-  // An adopting project adds its own display groups here, one [name, [exact source paths]] pair each.
-  const modules = [
-    ['Mission Control', ['governance/extensions/mission_control/MISSION-CONTROL-V1-DESIGN.md']]
-  ];
-  const groupedPaths = new Set(modules.flatMap(([,paths]) => paths));
-  const groups = [...modules.map(([name,paths]) => [name, implementations.filter(i => paths.includes(i.source.path))]), ['Other implementation', implementations.filter(i => !groupedPaths.has(i.source.path))]];
-  const implementationView = '<section class="panel implementation-view" aria-labelledby="implementation-title"><h3 id="implementation-title">IMPLEMENTATION STATUS <span class="micro">/ ' + implementations.length + '</span></h3><p class="summary">Documents grouped for reading by their declared source identity. Recorded statuses remain unchanged.</p>' + groups.filter(([,records]) => records.length).map(([name,records]) => '<section class="implementation-module" aria-label="' + e(name) + '"><h4>' + e(name) + ' <span class="micro">/ ' + records.length + '</span></h4><div class="cards">' + records.map(i => card(i,true)).join('') + '</div></section>').join('') + '</section>';
+  // Presentation-only groups using exact source paths already present in JSON, declared by the installed extensions and by
+  // the project and served as /groups.json; nothing is listed here.
+  const groups = groupImplementations(implementations,declaredGroups);
+  const implementationView = '<section class="panel implementation-view" aria-labelledby="implementation-title"><h3 id="implementation-title">IMPLEMENTATION STATUS <span class="micro">/ ' + implementations.length + '</span></h3><p class="summary">Documents grouped for reading by their declared source identity. Recorded statuses remain unchanged.</p>' + (groupsProblem ? '<div class="error" role="alert">Declared groups are not shown: ' + e(groupsProblem) + '</div>' : '') + groups.filter(([,records]) => records.length).map(([name,records]) => '<section class="implementation-module" aria-label="' + e(name) + '"><h4>' + e(name) + ' <span class="micro">/ ' + records.length + '</span></h4><div class="cards">' + records.map(i => card(i,true)).join('') + '</div></section>').join('') + '</section>';
   const recentDecisions = c.decisions.slice(0,15);
   const projectView = lenses.map(([label,path]) => '<section class="briefing-lens" aria-label="' + label + '"><div class="cards">' + (c.documents.filter(i => i.source.path === path).map(i => card(i,true)).join('') || '<p class="empty">No record in this snapshot.</p>') + '</div></section>').join('');
   return `<p class="eyebrow">RECORDED PROJECT STATUS</p><h2>Status briefing</h2><p class="intro">Project lenses and implementation records, with decision context alongside. Select an item to inspect its content and source identity.</p><div class="notice"><strong>Non-authoritative snapshot briefing.</strong> These are source-authored claims in the loaded datasets, not a live project-status assertion. Verify current Progress, decisions and Git history before drawing normative conclusions. No active transaction state is available or inferred.</div><div class="briefing-layout"><div class="briefing-primary"><section class="panel command-view" aria-labelledby="command-view-title"><h3 id="command-view-title">COMMAND / PROJECT VIEW</h3><p class="summary">Three project-level lenses from the recorded snapshot.</p>${projectView}</section>${implementationView}</div><aside class="panel decisions-rail" aria-labelledby="decisions-rail-title"><h3 id="decisions-rail-title">DECISIONS</h3><p class="summary">Cross-cutting context · newest recorded dates first. Showing ${recentDecisions.length} of ${c.decisions.length} eligible entries; explicitly Superseded entries are omitted here. No relevance relationships are inferred.</p><button class="all-decisions" data-type="decisions">View all Decisions →</button><div class="cards">${recentDecisions.map(i => card(i,true)).join('') || '<p class="empty">No eligible decisions in this snapshot.</p>'}</div></aside></div>`;
@@ -376,6 +372,13 @@ window.addEventListener('focus', refreshLightOnFocus);
 document.addEventListener('visibilitychange', refreshLightOnFocus);
 loadLight();
 try {
+  try {
+    const response=await fetch('../groups.json', {cache:'no-store'});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body=await response.json();
+    if (body.state !== 'ok') throw new Error(body.message ?? 'the declaration was refused');
+    declaredGroups=body.groups;
+  } catch(error) { groupsProblem=error.message; }
   const sources=[];
   const loaded=await Promise.all(TYPES.map(async type => {
     const response=await fetch(`../data/${type}.json`,{cache:'no-store'});

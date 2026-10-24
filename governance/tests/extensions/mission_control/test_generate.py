@@ -844,6 +844,111 @@ class DeclaredInputsTest(unittest.TestCase):
         self.assertTrue(all(path.startswith('governance/') for spec in framework['datasets'].values() for path in spec['paths']))
 
 
+    def extension(self, name, group=None, **more):
+        manifest = dict({'version': 1, 'name': name}, **more)
+        if group is not None:
+            manifest['group'] = group
+        self.write('governance/extensions/%s/extension.json' % name, manifest)
+
+    def project(self, **part):
+        self.write(declared.PROJECT, dict({'version': 1}, **part))
+
+    def test_an_extension_declares_its_group_and_its_documents_become_inputs(self):
+        self.framework()
+        self.extension('mission_control', {'label': 'Own', 'paths': ['governance/README.md']})
+        self.extension('beta', {'label': 'Beta', 'paths': ['governance/extensions/beta/README.md']})
+        self.extension('alpha', {'label': 'Alpha', 'paths': ['governance/extensions/alpha/README.md', 'governance/extensions/alpha/DESIGN.md']})
+        self.extension('plain')
+        self.assertEqual([(g['label'], g['source']) for g in declared.groups(self.root)],
+                         [('Own', 'the extension mission_control'), ('Alpha', 'the extension alpha'), ('Beta', 'the extension beta')])
+        self.assertEqual(declared.load(self.root)['datasets']['documents']['paths'],
+                         ['governance/README.md', 'governance/extensions/alpha/DESIGN.md', 'governance/extensions/alpha/README.md',
+                          'governance/extensions/beta/README.md'])
+
+    def test_removing_an_extension_removes_its_group_and_its_inputs(self):
+        self.framework()
+        self.extension('alpha', {'label': 'Alpha', 'paths': ['governance/extensions/alpha/README.md']})
+        self.project(groups=[{'label': 'Mine', 'paths': ['governance/README.md']}])
+        self.assertEqual([g['label'] for g in declared.groups(self.root)], ['Alpha', 'Mine'])
+        shutil.rmtree(self.root / 'governance/extensions/alpha')
+        self.assertEqual([g['label'] for g in declared.groups(self.root)], ['Mine'])
+        self.assertEqual(declared.load(self.root)['datasets']['documents']['paths'], ['governance/README.md'])
+
+    def test_the_project_groups_follow_the_extensions_in_declared_order(self):
+        self.framework()
+        self.extension('alpha', {'label': 'Alpha', 'paths': ['governance/extensions/alpha/README.md']})
+        self.project(datasets={'documents': {'paths': ['docs/A.md', 'docs/B.md'], 'markdownDirectories': ['docs/plans']}},
+                     groups=[{'label': 'Zed', 'paths': ['docs/B.md']}, {'label': 'Bee', 'paths': ['docs/A.md', 'docs/plans/one.md']}])
+        found = declared.groups(self.root, declared.load(self.root))
+        self.assertEqual([(g['label'], g['paths']) for g in found],
+                         [('Alpha', ['governance/extensions/alpha/README.md']), ('Zed', ['docs/B.md']),
+                          ('Bee', ['docs/A.md', 'docs/plans/one.md'])])
+
+    def test_without_any_declaration_there_are_no_groups(self):
+        self.framework()
+        self.assertEqual(declared.groups(self.root), [])
+        self.project(datasets={})
+        self.assertEqual(declared.groups(self.root), [])
+
+    def test_a_label_declared_twice_is_refused_across_sources(self):
+        self.framework()
+        self.extension('alpha', {'label': 'Same', 'paths': ['governance/extensions/alpha/README.md']})
+        self.project(groups=[{'label': 'Same', 'paths': ['governance/README.md']}])
+        with self.assertRaisesRegex(ValueError, 'label "Same" is declared by the extension alpha and by the project'):
+            declared.load(self.root)
+        shutil.rmtree(self.root / 'governance/extensions/alpha')
+        self.project(groups=[{'label': 'Twice', 'paths': ['governance/README.md']}, {'label': 'Twice', 'paths': ['governance/RATIONALE.md']}])
+        with self.assertRaisesRegex(ValueError, 'label "Twice" is declared by the project and by the project'):
+            declared.load(self.root)
+
+    def test_a_path_in_two_groups_is_refused_across_sources(self):
+        self.framework()
+        self.extension('alpha', {'label': 'Alpha', 'paths': ['governance/extensions/alpha/README.md']})
+        self.project(groups=[{'label': 'Mine', 'paths': ['governance/extensions/alpha/README.md']}])
+        with self.assertRaisesRegex(ValueError, 'path "governance/extensions/alpha/README.md" is in the group "Alpha" and in the group "Mine"'):
+            declared.load(self.root)
+
+    def test_a_project_path_that_is_not_an_input_is_refused(self):
+        self.framework()
+        self.project(groups=[{'label': 'Mine', 'paths': ['docs/missing.md']}])
+        with self.assertRaisesRegex(ValueError, 'path "docs/missing.md" of the group "Mine" is not among the inputs'):
+            declared.load(self.root)
+        self.project(datasets={'documents': {'markdownDirectories': ['docs'], 'excludePaths': ['docs/skip.md']}},
+                     groups=[{'label': 'Mine', 'paths': ['docs/skip.md']}])
+        with self.assertRaisesRegex(ValueError, 'not among the inputs'):
+            declared.load(self.root)
+
+    def test_malformed_groups_are_refused(self):
+        self.framework()
+        ok = ['governance/README.md']
+        for groups in ({'label': 'Mine', 'paths': ok}, [[]], [{'label': 'Mine'}], [{'label': '', 'paths': ok}],
+                       [{'label': ' Mine', 'paths': ok}], [{'label': 'Mine', 'paths': []}],
+                       [{'label': 'Mine', 'paths': 'governance/README.md'}], [{'label': 'Mine', 'paths': [3]}],
+                       [{'label': 'Mine', 'paths': ['/governance/README.md']}], [{'label': 'Mine', 'paths': ['governance\\README.md']}],
+                       [{'label': 'Mine', 'paths': ['governance/../governance/README.md']}], [{'label': 'Mine', 'paths': ['./governance/README.md']}],
+                       [{'label': 'Mine', 'paths': ok, 'color': 'red'}]):
+            with self.subTest(groups=groups):
+                self.project(groups=groups)
+                with self.assertRaises(ValueError):
+                    declared.load(self.root)
+
+    def test_a_malformed_extension_group_is_refused(self):
+        self.framework()
+        for group in ({'label': 'A'}, {'label': 'A', 'paths': []}, 'A', {'label': 'A', 'paths': ['../x.md']}):
+            with self.subTest(group=group):
+                self.extension('alpha', group)
+                with self.assertRaises(ValueError):
+                    declared.load(self.root)
+
+    def test_the_shipped_groups_are_valid_and_their_documents_are_inputs(self):
+        inventory = declared.load(rp.ROOT)
+        found = declared.groups(rp.ROOT, inventory)
+        self.assertEqual(found[0]['label'], 'Mission Control')
+        for group in found:
+            for path in group['paths']:
+                self.assertTrue(declared.is_input(path, inventory), path)
+
+
 class RealRepositoryTest(unittest.TestCase):
     """The generation step that reads the decisions and the rationale, run on this repository's own files."""
 

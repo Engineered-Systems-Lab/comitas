@@ -123,6 +123,19 @@ export function briefing(items) {
   };
 }
 
+// Presentation-only groups of the implementation records: each declared group takes the records whose exact source path it lists,
+// in declared order; a path claimed by an earlier group stays there, and every other record falls into the unmapped fallback.
+export const FALLBACK_GROUP = 'Other implementation';
+export function groupImplementations(records, declared) {
+  const claimed = new Set();
+  const groups = declared.map(({label, paths}) => {
+    const mine = records.filter(i => paths.includes(i.source.path) && !claimed.has(i.source.path));
+    mine.forEach(i => claimed.add(i.source.path));
+    return [label, mine];
+  });
+  return [...groups, [FALLBACK_GROUP, records.filter(i => !claimed.has(i.source.path))]];
+}
+
 // Commit metadata reflects the projection only: absent values stay unknown or omitted, and inferred
 // markers come from the record's inferredFields, never from browser-side inference.
 export function commitMetadata(i) {

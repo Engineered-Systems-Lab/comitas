@@ -24,5 +24,11 @@
   ],
   "prose": [
     "Mission Control"
-  ]
+  ],
+  "group": {
+    "label": "Mission Control",
+    "paths": [
+      "governance/extensions/mission_control/MISSION-CONTROL-V1-DESIGN.md"
+    ]
+  }
 }

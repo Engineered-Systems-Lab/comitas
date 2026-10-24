@@ -17,7 +17,7 @@ The decision is [G042](../DECISIONS.md#g042---the-core-never-depends-on-an-exten
 | --- | --- |
 | Code, scripts, user interface, its own README and design | `governance/extensions/<name>/` |
 | Its tests | `governance/tests/extensions/<name>/`, a package like the other test folders |
-| Its manifest | `governance/extensions/<name>/extension.json`: the folder, the test folder, the policy commands, impact invariants and commit subclasses it owns, the project files it reads, and the names that mark it in files (`markers`) and in prose (`prose`) |
+| Its manifest | `governance/extensions/<name>/extension.json`: the folder, the test folder, the policy commands, impact invariants and commit subclasses it owns, the project files it reads, and the names that mark it in files (`markers`) and in prose (`prose`); optionally a `group`, `{"label": "<name>", "paths": ["<exact document path>", ...]}`, that names the extension's documents for a document browser such as Mission Control, which shows them as one group and reads them as inputs, and loses both when the manifest goes |
 | Its rows | the rows of the [artifact classification table](../ARTIFACT-CLASSIFICATION.md) under its two folders, with their entries in the golden pin; the commands in the policy; the invariants and the subclass in the profiles |
 | Its project part, if any | a file in `project-governance/` that the extension reads when it is present |
 

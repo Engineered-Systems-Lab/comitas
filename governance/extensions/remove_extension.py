@@ -55,8 +55,13 @@ def load_manifest(root, name):
     data = json.loads(path.read_text(encoding='utf-8'))
     keys = {'version', 'name', 'folder', 'tests', 'policy_commands', 'invariants', 'subclasses', 'project_files',
             'markers', 'prose'}
-    if not isinstance(data, dict) or set(data) != keys or data['version'] != 1 or data['name'] != name:
-        fail(path.name + ' of ' + name + ' must be a version 1 object with exactly the keys ' + ', '.join(sorted(keys)))
+    if not isinstance(data, dict) or not keys <= set(data) <= keys | {'group'} or data['version'] != 1 or data['name'] != name:
+        fail(path.name + ' of ' + name + ' must be a version 1 object with exactly the keys ' + ', '.join(sorted(keys))
+             + ' and, optionally, group')
+    group = data.get('group', {'label': '-', 'paths': []})
+    if not isinstance(group, dict) or set(group) != {'label', 'paths'} or not isinstance(group['label'], str) \
+            or not isinstance(group['paths'], list) or not all(isinstance(item, str) for item in group['paths']):
+        fail(name + ': group must be {"label": text, "paths": [paths]}')
     for key in keys - {'version', 'name', 'folder', 'tests'}:
         if not isinstance(data[key], list) or not all(isinstance(item, str) for item in data[key]):
             fail(name + ': ' + key + ' must be a list of strings')

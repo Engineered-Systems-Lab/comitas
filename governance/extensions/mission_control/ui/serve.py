@@ -1,4 +1,4 @@
-"""Loopback preview: UI assets, the five local datasets, a local read-only queue and one local refresh action."""
+"""Loopback preview: UI assets, the five local datasets, the declared display groups, a local read-only queue and one local refresh action."""
 import argparse
 from datetime import datetime, timezone
 from functools import partial
@@ -18,6 +18,7 @@ for entry in (ROOT.parents[1] / 'tools', ROOT.parents[2]):  # absolute and resol
     if str(entry) not in sys.path:
         sys.path.insert(0, str(entry))
 import data_launcher
+import declared_inputs
 import repo_paths as rp
 
 REPO = rp.ROOT
@@ -42,8 +43,9 @@ light_poll_seconds = 0  # --light-poll-seconds; 0 means the light refreshes only
 KINDS = ('decisions', 'commits', 'devlog', 'rationale', 'documents')
 ALLOWED = {'/ui/', '/ui/index.html', '/ui/style.css', '/ui/app.mjs', '/ui/core.mjs'}
 DATASETS = {f'/data/{kind}.json' for kind in KINDS}
-# The server's whole surface: GET of the paths above, GET /queue.json (the queue plus the `execution` field for the status light) and the one action POST /refresh.
+# The server's whole surface: GET of the paths above, GET /queue.json (the queue plus the `execution` field for the status light), GET /groups.json (the display groups of the Status briefing) and the one action POST /refresh.
 QUEUE = '/queue.json'
+GROUPS = '/groups.json'
 REFRESH = '/refresh'
 HELPER = [sys.executable, '-B', 'governance/tools/local_jobs.py', '--repo', str(REPO)]
 # A fixed command: nothing in a request can change it. It writes only the shared ignored local folder.
@@ -160,6 +162,18 @@ def queue_core():
         return dict(payload, state='error', message=str(error)[:300])
 
 
+def groups_payload():
+    """The display groups declared by the manifests of the installed extensions and by the project, read at request time.
+
+    Only labels and exact paths leave the server; a refused declaration is an error with its one message, never a guess."""
+    payload = {'schema': 1, 'authority': 'local/non-authoritative', 'groups': []}
+    try:
+        found = declared_inputs.groups(REPO, declared_inputs.load(REPO))
+        return dict(payload, state='ok', groups=[{'label': group['label'], 'paths': group['paths']} for group in found])
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return dict(payload, state='error', message=str(error).removeprefix('FAIL: ')[:300])
+
+
 class PreviewServer(ThreadingHTTPServer):
     # Exclusive on Windows, where SO_REUSEADDR lets a second server bind a port another one listens on and take its
     # requests: there the socket takes SO_EXCLUSIVEADDRUSE instead. Elsewhere SO_REUSEADDR stays, because there it never
@@ -184,6 +198,7 @@ class Preview(SimpleHTTPRequestHandler):
     # Overridable seams for tests: the local snapshot lookup, the queue source and the refresh command.
     local_snapshot = staticmethod(lambda: data_launcher.local_snapshot(REPO))
     queue_source = staticmethod(queue_payload)
+    groups_source = staticmethod(groups_payload)
     refresh_command = REFRESH_COMMAND
     refresh_lock = threading.Lock()
 
@@ -235,17 +250,19 @@ class Preview(SimpleHTTPRequestHandler):
             self.end_headers()
         elif path == QUEUE:
             self.send_json(200, self.queue_source())
+        elif path == GROUPS:
+            self.send_json(200, self.groups_source())
         elif path in DATASETS:
             self.dataset(False)
         elif path in ALLOWED:
             super().do_GET()
         else:
-            self.send_error(404, 'Only UI assets, declared datasets and the local queue are served')
+            self.send_error(404, 'Only UI assets, declared datasets, the declared groups and the local queue are served')
 
     def do_HEAD(self):
         path = self.path_only()
-        if path in (QUEUE, REFRESH):
-            self.send_error(405, 'GET only' if path == QUEUE else 'POST only')
+        if path in (QUEUE, GROUPS, REFRESH):
+            self.send_error(405, 'GET only' if path != REFRESH else 'POST only')
         elif path in DATASETS:
             self.dataset(True)
         elif path in ALLOWED:

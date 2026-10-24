@@ -18,6 +18,7 @@ import serve
 from serve import Preview, ROOT
 import repo_paths as rp
 
+GROUPS = {'schema': 1, 'authority': 'local/non-authoritative', 'state': 'ok', 'groups': [{'label': 'Demo', 'paths': ['docs/demo.md']}]}
 QUEUE = {'schema': 1, 'authority': 'local/non-authoritative', 'read_at': '2026-10-10T12:00:00Z', 'state': 'ok',
          'queue': [], 'unqueued': []}
 ORIGIN = 'http://127.0.0.1:{}'
@@ -30,6 +31,7 @@ class Fixture(unittest.TestCase):
     def setUpClass(cls):
         handler = type('Handler', (Preview,), {'local_snapshot': staticmethod(lambda: None),
                                                'queue_source': staticmethod(lambda: QUEUE),
+                                               'groups_source': staticmethod(lambda: GROUPS),
                                                'refresh_command': [sys.executable, '-c', 'print("refreshed ok")'],
                                                'refresh_lock': type(Preview.refresh_lock)(), **cls.overrides})
         cls.handler = handler
@@ -102,6 +104,14 @@ class PreviewTest(Fixture):
         self.assertEqual(self.request('HEAD', '/queue.json')[0], 405)
         self.assertEqual(self.request('HEAD', '/refresh')[0], 405)
         self.assertEqual(self.request('GET', '/refresh')[0], 404)
+
+    def test_groups_are_get_only_and_never_cached(self):
+        status, body, response = self.request('GET', '/groups.json')
+        self.assertEqual((status, json.loads(body)), (200, GROUPS))
+        self.assertEqual(response.getheader('Cache-Control'), 'no-store')
+        self.assertEqual(self.request('HEAD', '/groups.json')[0], 405)
+        self.assertEqual(self.request('POST', '/groups.json', {'Content-Length': '0'})[0], 501)
+        self.assertEqual(self.request('GET', '/groups.json/')[0], 404)
 
     def test_refresh_requires_this_pages_origin_host_and_fetch_site(self):
         for headers in ({'Origin': 'http://evil.example'}, {'Origin': 'http://localhost:{}'},
@@ -280,6 +290,25 @@ STATUS = {'schema': '1.0', 'level': 'FROZEN', 'line': 'REFS FROZEN: m1, since 20
           'windows': [{'owner': 'm1', 'scope': 'prepare', 'state': 'preparing', 'since': '2026-10-13T10:00:00Z',
                        'job_handle': 'worker_claims', 'worktree': 'C:/secret/place', 'evidence': ['packet state preparing'],
                        'command': {'pid': 4242, 'running': True}, 'declared': True, 'flags': ['age'], 'age_flag': True}]}
+
+
+class GroupsPayloadTest(unittest.TestCase):
+    def test_the_payload_carries_only_labels_and_paths_in_declared_order(self):
+        found = [{'label': 'One', 'paths': ['a.md'], 'source': 'the project'}, {'label': 'Two', 'paths': ['b.md'], 'source': 'the project'}]
+        with mock.patch.object(serve.declared_inputs, 'load', return_value={}), mock.patch.object(serve.declared_inputs, 'groups', return_value=found):
+            payload = serve.groups_payload()
+        self.assertEqual((payload['state'], payload['groups']), ('ok', [{'label': 'One', 'paths': ['a.md']}, {'label': 'Two', 'paths': ['b.md']}]))
+
+    def test_a_refused_declaration_is_one_plain_error_and_no_groups(self):
+        with mock.patch.object(serve.declared_inputs, 'load', side_effect=ValueError('Mission Control groups: the label "X" is declared twice')):
+            payload = serve.groups_payload()
+        self.assertEqual((payload['state'], payload['groups']), ('error', []))
+        self.assertIn('label "X"', payload['message'])
+
+    def test_this_repositorys_declarations_are_valid(self):
+        payload = serve.groups_payload()
+        self.assertEqual(payload['state'], 'ok', payload.get('message'))
+        self.assertEqual(payload['groups'][0]['label'], 'Mission Control')
 
 
 class ExecutionPayloadTest(unittest.TestCase):

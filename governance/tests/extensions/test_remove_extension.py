@@ -84,6 +84,13 @@ class PiecesTest(unittest.TestCase):
             (folder / 'extension.json').write_text(json.dumps(dict(manifest(), extra=1)), encoding='utf-8')
             with self.assertRaises(SystemExit):
                 r.load_manifest(root, 'demo')
+            group = {'label': 'Demo', 'paths': ['governance/extensions/demo/README.md']}
+            for bad in ({'label': 'Demo'}, {'label': 3, 'paths': []}, {'label': 'Demo', 'paths': 'x.md'}, 'Demo'):
+                (folder / 'extension.json').write_text(json.dumps(manifest(group=bad)), encoding='utf-8')
+                with self.subTest(group=bad), self.assertRaises(SystemExit):
+                    r.load_manifest(root, 'demo')
+            (folder / 'extension.json').write_text(json.dumps(manifest(group=group)), encoding='utf-8')
+            self.assertEqual(r.load_manifest(root, 'demo')['group'], group)
             (folder / 'extension.json').write_text(json.dumps(manifest()), encoding='utf-8')
             self.assertEqual(r.load_manifest(root, 'demo')['name'], 'demo')
             with self.assertRaises(SystemExit):
