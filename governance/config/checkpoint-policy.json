@@ -119,6 +119,16 @@
       "-k",
       "CheckpointTest"
     ],
+    "diff-viewer": [
+      "{python}",
+      "-B",
+      "governance/tools/run_tests.py",
+      "-s",
+      "governance/tests/extensions/diff_viewer",
+      "-p",
+      "test_*.py",
+      "-v"
+    ],
     "mission-control-generator": [
       "{python}",
       "-B",

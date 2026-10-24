@@ -275,6 +275,21 @@
       "why": "removing the package marker silently drops every tooling test from discovery",
       "approval_sensitivity": "medium"
     },
+    "governance/extensions/diff_viewer/render.py": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "diff-viewer"
+      ],
+      "subclass": [
+        "diff-viewer"
+      ],
+      "reachable": false,
+      "why": "the diff viewer must keep its own test group so a change to it is checked",
+      "approval_sensitivity": "low"
+    },
     "governance/extensions/mission_control/data_launcher.py": {
       "class": "tooling",
       "profile": "tooling",

@@ -97,6 +97,10 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/config/conformance/test_script_modes.py` | tooling | tooling | - | - | - | - | - | - |
 | `governance/config/reconstruction-contract-v1.json` | tooling | tooling | - | - | continuity | - | yes | medium |
 | `governance/extensions/README.md` | governance | governance | - | - | conformance, guidance | - | yes | - |
+| `governance/extensions/diff_viewer/` | governance | blocked | - | - | - | diff-viewer | - | - |
+| `governance/extensions/diff_viewer/README.md` | tooling | tooling | - | - | diff-viewer | diff-viewer | - | - |
+| `governance/extensions/diff_viewer/extension.json` | tooling | tooling | - | - | diff-viewer | diff-viewer | - | - |
+| `governance/extensions/diff_viewer/render.py` | tooling | tooling | - | - | diff-viewer | diff-viewer | - | - |
 | `governance/extensions/mission_control/` | governance | blocked | - | - | - | mission-control | - | - |
 | `governance/extensions/mission_control/*.json` | tooling | tooling | - | - | mission-control-generator | mission-control | - | - |
 | `governance/extensions/mission_control/.gitattributes` | tooling | tooling |  |  | mission-control-generator |  |  |  |
@@ -132,6 +136,8 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/tests/coordination/test_local_jobs_claim.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tests/coordination/test_local_jobs_concurrency.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tests/extensions/__init__.py` | tooling | tooling | - | - | - | - | - | medium |
+| `governance/tests/extensions/diff_viewer/__init__.py` | tooling | tooling | - | - | - | diff-viewer | - | medium |
+| `governance/tests/extensions/diff_viewer/test_render.py` | tooling | tooling | - | - | diff-viewer | diff-viewer | - | - |
 | `governance/tests/extensions/mission_control/__init__.py` | tooling | tooling | - | - | - | mission-control | - | medium |
 | `governance/tests/extensions/mission_control/check.py` | tooling | tooling | - | - | mission-control-ui | mission-control | - | - |
 | `governance/tests/extensions/mission_control/fixture_repo.py` | tooling | tooling | - | - | mission-control-ui | mission-control | - | - |

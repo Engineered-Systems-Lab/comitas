@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "diff_viewer",
+  "folder": "governance/extensions/diff_viewer",
+  "tests": "governance/tests/extensions/diff_viewer",
+  "policy_commands": [
+    "diff-viewer"
+  ],
+  "invariants": [
+    "diff-viewer"
+  ],
+  "subclasses": [
+    "diff-viewer"
+  ],
+  "project_files": [],
+  "markers": [
+    "diff_viewer",
+    "diff-viewer"
+  ],
+  "prose": [
+    "diff viewer"
+  ]
+}

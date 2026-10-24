@@ -1,6 +1,6 @@
 # Extensions
 
-This folder is the home of the optional pieces of the framework. An extension is shipped by default, and a project that does not want it removes it without refactoring anything. Today there is one: [Mission Control](mission_control/README.md), the read-only local terminal over the decisions, rationale, logs, documents and commits.
+This folder is the home of the optional pieces of the framework. An extension is shipped by default, and a project that does not want it removes it without refactoring anything. Today there are two: [Mission Control](mission_control/README.md), the read-only local terminal over the decisions, rationale, logs, documents and commits, and the [diff viewer](diff_viewer/README.md), which writes the exact preview or sealed candidate as one readable HTML page beside the review.
 
 ## The rule
 
@@ -55,6 +55,7 @@ Then edit by hand the document lines that name the extension (the script prints 
 - `governance/CHECKPOINT-WORKFLOW.md`: the sentence about the generator tests that an edit of the rationale or the decisions runs.
 - `governance/CONSTRAINTS.md`: the sentence about the datasets as an example of generated artifacts.
 - `governance/WORKER-HAZARDS.md`: H7, the server that loads its code once.
+- `governance/ROLE-WORKER.md`: the section about the optional diff viewer.
 - `governance/CHANGELOG.md`: add the removal to the note for your release.
 - `governance/PROJECT-GOVERNANCE.md`: the section about the Mission Control inputs and port, the two rows of its files and the row of the port in the defaults table, and the clause about the declared log documents in the folder rename paragraph of the devlog section.
 
