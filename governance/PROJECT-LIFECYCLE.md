@@ -120,7 +120,7 @@ The first line starts the server (the port comes from `project-governance/config
 
 The tools stop with a message when something is in the way, and report what they found instead of repairing it. Read the message and the status first (`claims.sh status`); a command that fails because another operation is running is run again after that operation finishes, and it is never put in a loop.
 
-**A stale claim.** A claim whose worktree is gone is stale: it is ignored, counted and reported to you. In Git Bash:
+**A stale claim.** A claim whose worktree is gone is stale and is ignored. When its worktree is also absent from `git worktree list` and its branch is gone, the next preview, prepare, integration or removal clears it itself and prints one notice; you do nothing. Any other stale claim (for example the worktree is gone but the branch exists) is counted and reported to you. In Git Bash:
 
 ```sh
 governance/scripts/claims.sh clear

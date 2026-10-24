@@ -237,7 +237,8 @@ def execution_status(root, owner=None):
     payload = {'schema': EXECUTION_SCHEMA, 'level': 'UNKNOWN', 'line': '', 'read_at': claims.now(), 'windows': [],
                'declared_without_evidence': [], 'database': {'state': 'unreadable', 'message': ''},
                'derived': {'worktrees_inspected': 0, 'lifecycle_lock': False},
-               'owner': owner, 'claims': [], 'overlaps': [], 'base_moved': [], 'stale_claims': 0, 'notes': []}
+               'owner': owner, 'claims': [], 'overlaps': [], 'base_moved': [], 'stale_claims': 0,
+               'stale_claims_clearing': 0, 'notes': []}
     try:
         common, evidence, inspected = derived_evidence(root)
         declared = claims.read_state(common)
@@ -294,15 +295,24 @@ def execution_status(root, owner=None):
             moved = [m for m in moved if m['owner'] == owner]
             partners = {o for overlap in overlaps for o in overlap['owners']} | {owner}
             owners = [row for row in owners if row['owner'] in partners]
-        stale = len(declared.get('paths', [])) - len(active)
-        payload.update(owner=owner, claims=owners, stale_claims=stale,
+        gone = [c for c in declared.get('paths', []) if c['owner'] not in registered]
+        try:
+            clearing = len(claims.provably_stale(root, [dict(c, kind='paths') for c in gone]))
+        except claims.ClaimsError:
+            clearing = 0
+        stale = len(gone) - clearing
+        payload.update(owner=owner, claims=owners, stale_claims=stale, stale_claims_clearing=clearing,
                        overlaps=[dict(o, text=claims.overlap_text(o)) for o in overlaps], base_moved=moved)
         notes = ['overlap: %s with %s, %s' % (o['owners'][0], o['owners'][1], claims.overlap_text(o)) for o in overlaps]
         notes += ['base moved: main advanced to %s by %s; %s' % ((m['main'] or 'a new commit')[:12], m['by'],
                   carry_note(root, m['owner'], registered.get(m['owner']))) + (' (for ' + m['owner'] + ')' if owner is None else '')
                   for m in moved]
+        if clearing:
+            notes.append('%d stale claim(s) the tool can prove dead (worktree not listed, branch gone): the next preview, '
+                         'prepare, integrate or remove clears each with a notice; nobody needs to act' % clearing)
         if stale:
-            notes.append('%d stale claim(s): a claim whose worktree is gone; report it to the lead developer, who runs clear' % stale)
+            notes.append('%d stale claim(s) the tool cannot prove dead (a claim whose worktree is gone but whose branch '
+                         'exists, or another doubt); report it to the lead developer, who runs clear' % stale)
         payload['notes'] = notes
         payload['level'] = 'FROZEN' if windows else 'OVERLAP' if overlaps else 'CLEAR'
         if windows:
@@ -1121,7 +1131,7 @@ def main():
     p.add_argument('--all', action='store_true', help='with --watch: also print every routine event, for diagnosing')
     p.add_argument('--interval', type=float, default=WATCH_SECONDS, help='with --watch: seconds between polls (default %d)' % WATCH_SECONDS)
     p.add_argument('--polls', type=int, default=0, help='with --watch: stop after this many polls (default 0: run until interrupted)')
-    p = sub.add_parser('clear', help='the lead developer runs this in a terminal: list every open claim as STALE or LIVE; a dry run unless --apply')
+    p = sub.add_parser('clear', help='the lead developer runs this in a terminal: list every open claim as STALE or LIVE; a dry run unless --apply (a provably stale claim is cleared by the tool itself)')
     p.add_argument('ids', nargs='*', help='claim ids such as c7; with --apply clears exactly these, otherwise every STALE claim')
     p.add_argument('--apply', action='store_true', help='clear what the dry run listed (all STALE claims, or exactly the named ids)')
     p.add_argument('--even-if-live', action='store_true', help='allow a claim whose transaction still exists: prints the evidence and asks for its id typed again')
@@ -1214,6 +1224,8 @@ def main():
         result = getattr(flow, args.action.replace('-', '_'))(*params)
         common = flow.main.common
         # Best effort and after the operation: what the claims should say once it has succeeded.
+        if args.action in ('integrate', 'remove'):
+            claims.attempt(lambda: claims.sweep_stale(common, args.main, keep=(args.owner,)))
         if args.action == 'integrate':
             result['tooling_authority'] = authority
             claims.attempt(lambda: claims.landed(common, args.owner, args.job_handle, args.expected_tip))

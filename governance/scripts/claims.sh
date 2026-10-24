@@ -10,7 +10,7 @@ Usage: governance/scripts/claims.sh <command> [args...]
   watch, -w              execution-status --watch
   clear, -c              list every open claim as STALE or LIVE; --apply [<id> ...] clears
   doctor, -d             check the claims database; --repair applies what it reports
-clear and doctor are for the lead developer, never workers. Extra arguments pass through, for example: clear --apply <id>, --json-only
+clear and doctor are for the lead developer, never workers; a claim the tool can prove dead is cleared by the next preview, prepare, integrate or remove without them. Extra arguments pass through, for example: clear --apply <id>, --json-only
 EOF
   exit 2
 }

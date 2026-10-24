@@ -79,13 +79,26 @@ class OverlapStatusTest(ClaimsCase):
         self.assertEqual((rows['m1']['level'], rows['m1']['subclasses'], rows['m1']['files'], rows['m1']['job_handle']),
                          ('CLEAR', ['x'], 2, 'job_a'))
 
-    def test_a_claim_whose_worktree_is_gone_is_ignored_for_the_level_and_counted_as_stale(self):
+    def test_a_claim_whose_worktree_and_branch_are_gone_is_ignored_for_the_level_and_counted_as_clearing_itself(self):
         self.mission('m1')
         self.claim('m1', 'a.py:x')
         self.claim('ghost', 'a.py:x')
         status = self.status()
-        self.assertEqual((status['level'], status['stale_claims']), ('CLEAR', 1))
+        self.assertEqual((status['level'], status['stale_claims'], status['stale_claims_clearing']), ('CLEAR', 0, 1))
         self.assertEqual([c['owner'] for c in status['claims']], ['m1'])
+        self.assertTrue(any('stale claim' in n and 'nobody needs to act' in n for n in status['notes']))
+        self.assertFalse(any('lead developer' in n for n in status['notes']))
+        self.assertEqual(len(claims.read_state(self.common)['paths']), 2)  # the status only reads
+
+    def test_a_claim_whose_worktree_is_gone_but_whose_branch_exists_is_reported_to_the_lead_developer(self):
+        self.mission('m1')
+        self.claim('m1', 'a.py:x')
+        gone = self.mission('m2')
+        self.claim('m2', 'a.py:x')
+        self.git('worktree', 'unlock', str(gone))
+        self.git('worktree', 'remove', '--force', str(gone))
+        status = self.status()
+        self.assertEqual((status['stale_claims'], status['stale_claims_clearing']), (1, 0))
         self.assertTrue(any('stale claim' in n and 'lead developer' in n for n in status['notes']))
 
     def test_a_frozen_window_outranks_overlap_and_the_overlap_is_still_listed(self):
@@ -539,6 +552,7 @@ class HookTest(ClaimsCase):
             return w.main(), err.getvalue()
 
     def test_a_successful_integration_writes_the_landed_event_and_releases_the_claims(self):
+        self.mission('m2')
         self.claim('m1', 'a.py:x')
         self.claim('m2', 'a.py:x')
         code, _ = self.run_main('integrate', '--expected-tip', 'b' * 40, '--job-handle', 'worker_claims')
@@ -575,6 +589,143 @@ class HookTest(ClaimsCase):
         code, err = self.run_main('integrate', '--expected-tip', 'b' * 40, '--job-handle', 'worker_claims')
         self.assertEqual(code, 0)
         self.assertIn('NOTICE: claims database corrupt', err)
+
+
+class SelfClearTest(ClaimsCase):
+    """A claim that nothing can own is cleared by the next command that writes claims; every doubt is left alone."""
+    def sweep(self, keep=()):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            cleared = claims.sweep_stale(self.common, self.root, keep)
+        return [c['owner'] for c in cleared], err.getvalue()
+
+    def open_owners(self):
+        return sorted(c['owner'] for c in claims.read_state(self.common)['paths'])
+
+    def test_a_claim_with_no_worktree_and_no_branch_is_cleared_with_one_notice_and_a_recorded_event(self):
+        self.mission('live')
+        self.claim('live', 'a.py:x')
+        self.claim('ghost', 'b.py:y', job='job_ghost')
+        cleared, err = self.sweep()
+        self.assertEqual(cleared, ['ghost'])
+        self.assertEqual(self.open_owners(), ['live'])
+        self.assertEqual(err.count('NOTICE:'), 1)
+        for word in ('ghost', 'job_ghost', 'not in git worktree list', 'tx/ghost no longer exists', 'cleared event', 'clearing.log'):
+            self.assertIn(word, err)
+        [(_, detail)] = self.events('cleared')
+        self.assertEqual((detail['automatic'], detail['status'], detail['forced']), (True, 'STALE', False))
+        self.assertIn('branch gone', detail['evidence'])
+        log = (self.database().parent / claims.CLEARING_LOG).read_text(encoding='utf-8')
+        self.assertIn('owner=ghost', log)
+        self.assertIn('automatic=true', log)
+
+    def test_a_second_sweep_has_nothing_to_clear_and_prints_nothing(self):
+        self.claim('ghost', 'b.py:y')
+        self.sweep()
+        self.assertEqual(self.sweep(), ([], ''))
+
+    def test_a_live_mission_is_never_touched_even_with_a_packet_a_lock_or_no_keep(self):
+        self.mission('m1', 'preparing', lock=True)
+        self.mission('m2')
+        self.claim('m1', 'a.py:x')
+        self.claim('m2', 'a.py:x')
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertEqual(self.open_owners(), ['m1', 'm2'])
+
+    def test_the_owner_whose_command_runs_is_kept(self):
+        self.claim('mine', 'a.py:x')
+        self.assertEqual(self.sweep(keep=('mine',)), ([], ''))
+        self.assertEqual(self.open_owners(), ['mine'])
+
+    def test_the_worktree_gone_but_the_branch_present_is_ambiguous_and_stays(self):
+        gone = self.mission('m2')
+        self.claim('m2', 'a.py:x')
+        self.git('worktree', 'unlock', str(gone))
+        self.git('worktree', 'remove', '--force', str(gone))
+        self.assertIn('tx/m2', self.git('branch', '--list', 'tx/m2'))
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertEqual(self.open_owners(), ['m2'])
+
+    def test_the_branch_gone_but_the_worktree_registered_is_ambiguous_and_stays(self):
+        path = Path(self.temp.name) / 'wt-det'
+        self.git('worktree', 'add', '-q', '--detach', str(path))
+        claims.declare_paths(self.common, 'det', 'job_a', str(path), entries('a.py:x'))
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertEqual(self.open_owners(), ['det'])
+
+    def test_a_registered_worktree_whose_folder_is_missing_is_ambiguous_and_stays(self):
+        path = self.mission('m3')
+        self.claim('m3', 'a.py:x')
+        for item in sorted(path.rglob('*'), reverse=True):
+            item.unlink() if item.is_file() or item.is_symlink() else item.rmdir()
+        path.rmdir()
+        self.assertFalse(path.exists())
+        self.assertIn('wt-m3', self.git('worktree', 'list', '--porcelain'))
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertEqual(self.open_owners(), ['m3'])
+
+    def test_an_owner_that_is_not_a_mission_id_is_left_alone(self):
+        self.claim('Not A Mission', 'a.py:x')
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertEqual(self.open_owners(), ['Not A Mission'])
+
+    def test_a_claim_whose_recorded_worktree_is_still_listed_is_kept(self):
+        path = self.mission('m4')
+        claims.declare_paths(self.common, 'renamed', 'job_a', str(path), entries('a.py:x'))
+        self.assertEqual(self.sweep(), ([], ''))
+
+    def test_a_window_is_not_a_path_claim_and_is_left_alone(self):
+        claims.open_window(self.common, 'ghost', 'prepare', 'validating', 'job_a')
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertEqual(len(claims.read_state(self.common)['windows']), 1)
+
+    def test_without_a_database_or_with_a_broken_one_nothing_is_written(self):
+        self.assertEqual(self.sweep(), ([], ''))
+        self.assertFalse(self.database().exists())
+        self.database().parent.mkdir(parents=True)
+        self.database().write_bytes(b'garbage' * 300)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertFalse(claims.attempt(lambda: claims.sweep_stale(self.common, self.root)))
+        self.assertIn('NOTICE: claims database corrupt', err.getvalue())
+
+    def test_the_preview_hook_clears_the_ghost_and_still_declares_its_own_paths(self):
+        self.claim('ghost', 'b.py:y')
+        tool = SimpleNamespace(common=self.common, root=self.root, branch=lambda: 'refs/heads/tx/new-one')
+        profile = {'artifact_classification': {'c.py': {'class': 'tooling', 'subclass': ['z']}}}
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertTrue(claims.declare_manifest(tool, profile, 'job_new'))
+        self.assertEqual(self.open_owners(), ['new-one'])
+        self.assertIn('stale claim', err.getvalue())
+
+    def test_a_prepare_clears_the_ghost_and_a_seal_does_not_look(self):
+        self.claim('ghost', 'b.py:y')
+        tool = SimpleNamespace(common=self.common, root=self.root, branch=lambda: 'refs/heads/tx/new-one',
+                               load=lambda: {'state': 'validated', 'job_handle': 'job_new'})
+        with redirect_stderr(io.StringIO()), claims.command_window(tool, 'seal'):
+            pass
+        self.assertEqual(self.open_owners(), ['ghost'])
+        with redirect_stderr(io.StringIO()), claims.command_window(tool, 'prepare'):
+            pass
+        self.assertEqual(self.open_owners(), [])
+
+    def test_an_integration_and_a_removal_clear_the_ghost_but_release_their_own_claim_as_before(self):
+        for action in ('integrate', 'remove'):
+            with self.subTest(action):
+                self.claim('ghost', 'b.py:y')
+                self.claim('m1', 'a.py:x')
+                code, err = HookTest.run_main(self, action, '--expected-tip', 'b' * 40)
+                self.assertEqual(code, 0)
+                self.assertIn('stale claim', err)
+                self.assertEqual(self.open_owners(), [])
+                self.assertEqual(self.events('closed')[-1][1]['reason'], 'landed' if action == 'integrate' else 'removed')
+
+    def test_an_integration_that_fails_clears_nothing(self):
+        self.claim('ghost', 'b.py:y')
+        code, _ = HookTest.run_main(self, 'integrate', '--expected-tip', 'b' * 40, fails=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.open_owners(), ['ghost'])
 
 
 if __name__ == '__main__':

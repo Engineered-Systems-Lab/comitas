@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 # MAJOR.MINOR, kept in PRAGMA user_version as MAJOR * 1000 + MINOR. A minor adds fields and is migrated
@@ -488,6 +489,94 @@ def clearing_log(common, line):
         stream.write(line + '\n')
 
 
+# ---- Self-clearing of provably stale claims -------------------------------------------------------
+
+MISSION = re.compile(r'[a-z0-9][a-z0-9-]{0,63}')
+
+
+def listed_worktrees(root):
+    """(owners, paths) of every entry of `git worktree list`, prunable ones included; raises when Git fails."""
+    result = subprocess.run(['git', '-C', str(root), 'worktree', 'list', '--porcelain', '-z'], capture_output=True)
+    if result.returncode != 0:
+        raise ClaimsError('unreadable', 'Git failed: worktree list')
+    owners, paths = set(), set()
+    for record in result.stdout.decode().split('\0\0'):
+        fields = dict(f.split(' ', 1) if ' ' in f else (f, '') for f in record.split('\0') if f)
+        if 'worktree' not in fields:
+            continue
+        paths.add(os.path.normcase(os.path.normpath(fields['worktree'])))
+        reason = fields.get('locked', '')
+        owner = reason.removeprefix('transaction:') if reason.startswith('transaction:')             else fields.get('branch', '').removeprefix('refs/heads/tx/').removeprefix('refs/heads/')
+        if owner:
+            owners.add(owner)
+    return owners, paths
+
+
+def branch_exists(root, owner):
+    """Whether tx/<owner> or a branch named <owner> exists; anything but a plain yes or no raises."""
+    for ref in ('refs/heads/tx/' + owner, 'refs/heads/' + owner):
+        code = subprocess.run(['git', '-C', str(root), 'show-ref', '--verify', '--quiet', ref], capture_output=True).returncode
+        if code == 0:
+            return True
+        if code != 1:
+            raise ClaimsError('unreadable', 'Git failed: show-ref ' + ref)
+    return False
+
+
+def provably_stale(root, rows, keep=()):
+    """The path claims among `rows` that nothing can own any more: the mission's worktree is in no entry of
+    `git worktree list` (by owner or by the path the claim recorded) AND neither tx/<mission> nor a branch of that
+    name exists. Every other shape (worktree gone but branch present, registered but its folder missing, an owner
+    that is not a mission id) is ambiguous and is left for the lead developer. Read-only; raises when Git cannot answer."""
+    candidates = [row for row in rows if row['kind'] == 'paths' and row['owner'] not in keep]
+    if not candidates:
+        return []
+    owners, paths = listed_worktrees(root)
+    proven = []
+    for row in candidates:
+        owner = row['owner']
+        if not MISSION.fullmatch(owner or '') or owner in owners:
+            continue
+        if row.get('worktree') and os.path.normcase(os.path.normpath(row['worktree'])) in paths:
+            continue
+        if not branch_exists(root, owner):
+            proven.append(row)
+    return proven
+
+
+def sweep_stale(common, root, keep=()):
+    """Clear the provably stale path claims, each with one notice and a `cleared` event; returns the cleared claims.
+
+    Called by the commands that write claims (preview, prepare, integrate and remove) through `attempt`, so a missing
+    or unreadable database or an unreadable Git changes nothing. `keep` names the owner whose command runs.
+    """
+    try:
+        rows = open_claims(common)
+    except ClaimsError as error:
+        if error.state == 'missing':
+            return []
+        raise
+    proven = provably_stale(root, rows, keep)
+    if not proven:
+        return []
+    why = 'its worktree is not in git worktree list and its branch tx/%s no longer exists, so nothing can own the claim'
+    evidence = {row['id']: {'status': 'STALE', 'forced': False, 'automatic': True,
+                            'evidence': ['worktree not registered', 'branch gone', 'cleared by the tool itself, no one was asked']}
+                for row in proven}
+    cleared = clear_claims(common, evidence)
+    for row in cleared:
+        text = ('cleared stale claim c%d of mission %s (%s, since %s): %s; recorded as a cleared event in the claims '
+                'database and in %s' % (row['id'], row['owner'], 'Job ' + row['job_handle'] if row['job_handle'] else 'no Job',
+                                        row['since'], why % row['owner'], '/'.join(FOLDER) + '/' + CLEARING_LOG))
+        print('NOTICE: ' + text, file=sys.stderr, flush=True)
+        try:
+            clearing_log(common, '%s cleared c%d owner=%s kind=%s status=STALE forced=false automatic=true evidence=%s' % (
+                now(), row['id'], row['owner'], row['kind'], ' | '.join(evidence[row['id']]['evidence'])))
+        except (ClaimsError, OSError):
+            pass
+    return cleared
+
+
 QUARANTINE = ('move %s and its WAL files aside as %s.corrupt-<time> and start an empty database '
               '(windows re-derive from Git; path claims return at the next preview)' % (DATABASE, DATABASE))
 
@@ -669,6 +758,7 @@ def declare_manifest(tool, profile, job_handle=None):
             subclasses = view.get('subclass') or []
             entries.append((path, view.get('class'), tokens(subclasses) if isinstance(subclasses, str) else list(subclasses)))
         declare_paths(tool.common, owner_of(tool), job_handle, str(tool.root), entries)
+    attempt(lambda: sweep_stale(tool.common, tool.root, keep=(owner_of(tool),)))
     return attempt(declaring)
 
 
@@ -710,6 +800,8 @@ def command_window(tool, action, job_handle=None):
                 release_paths(tool.common, owner[0], 'abandon')
                 note_event(tool.common, owner[0], 'attention', reason='abandoned', job_handle=job[0])
 
+    if action == 'prepare':
+        attempt(lambda: sweep_stale(tool.common, tool.root, keep=(owner_of(tool),)))
     if action in WINDOW_ACTIONS or action in CLOSING_ACTIONS:
         attempt(opening)
     try:
