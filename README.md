@@ -16,6 +16,8 @@ A reusable governance framework for projects that humans and AI agents work on t
 - **Mission Control**: a read-only local terminal over the decisions, rationale, logs, documents and commits;
 - the **decision registry and rationale** for each of these rules, so you know why they are there before you change them.
 
+**What approval guarantees, and its limits.** Human approval binds to the exact reviewed transaction: its candidate and its validation evidence. A change that invalidates that binding requires a fresh approval, except through the optional guarded carry. When enabled, the guarded carry preserves an approval after main advances only when all its conditions hold: the change merges cleanly, the approved change and commit message are preserved under the documented comparison rules, the validation selection (framework and project checks alike) remains unchanged, and every selected check passes again. This verifies preservation and passing checks; it does not prove that the combined result is semantically correct or that parallel changes are independent ([approval](governance/CHECKPOINT-WORKFLOW.md#exact-approval-and-execution), [guarded carry](governance/CHECKPOINT-TOOL.md#the-carry)).
+
 The documents are written as rules: MUST and MUST NOT mark requirements, the lead developer is the person who holds final approval, and the Coordinator is the role that plans the work and hands out Jobs.
 
 ## Layout
