@@ -8,7 +8,7 @@ digits, or the same after an underscore or a hyphen), which is how a heading of 
 `EXCEPTIONS` is the narrow list of exact phrases that may spell such a reference, each keyed by its file and carrying
 its reason. A phrase exempts only the tokens inside it, so a stale framework reference on any other line, or elsewhere
 on the same line, is still found. Such a phrase describes a project's own numbering (the prefix D is the project's
-by G049), never a framework decision. The Mission Control tests that exercise a project's D-prefixed registry derive
+by G049), never a framework decision. Tests of optional extensions that exercise a project's D-prefixed registry derive
 the text from the framework's G-prefixed fixture instead of writing it out."""
 import re
 import subprocess

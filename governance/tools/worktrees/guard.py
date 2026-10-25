@@ -230,7 +230,7 @@ def age_flag(scope, since):
 
 
 def execution_status(root, owner=None):
-    """One payload for the Coordinator, workers and Mission Control: derived evidence cross-checked with the claims.
+    """One payload for the Coordinator, workers and optional readers such as extensions: derived evidence cross-checked with the claims.
 
     With an owner, the overlap and base-moved parts describe that mission only; a frozen window still shows for all.
     """

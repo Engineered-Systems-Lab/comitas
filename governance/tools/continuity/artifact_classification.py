@@ -282,7 +282,7 @@ def split_citations(text, labels):
     """Split the backticked commit ids of `text` into local, external and malformed ones; see Citations.
 
     The one reader of the form `<label> commit` followed by one space and the id in backticks, on the same line, for the
-    continuity check, the conformance test of the framework's documents and the Mission Control generator. The word `commit`
+    continuity check, the conformance test of the framework's documents and optional readers such as extensions. The word `commit`
     is lowercase and the label is matched exactly as declared."""
     local, external, malformed = [], [], []
     for found in CITATION.finditer(text):
@@ -303,7 +303,7 @@ def checkpoint_line_refusal(line):
     """The one message for a `Repository checkpoint:` line that is not exactly one backticked full id, else None.
 
     A repository checkpoint is a commit of this repository, so a labeled id, a short id, an id without backticks or any other
-    text on the line is refused. The continuity check and the Mission Control generator both read the line through this."""
+    text on the line is refused. The continuity check and optional readers such as extensions use this shared check."""
     if CHECKPOINT_LINE.fullmatch(line.rstrip('\r')):
         return None
     return 'A repository checkpoint is a commit of this repository, not a labeled one: ' + line
