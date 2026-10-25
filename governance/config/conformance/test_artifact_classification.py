@@ -215,8 +215,12 @@ APPROVAL_HIGH = (
     'governance/tools/worktrees/worktree_carry.py', 'governance/tools/worktrees/worktree_support.py', 'governance/tools/runtime_guard.py',
     'project-governance/config/artifact-classification-golden.json', 'project-governance/config/checkpoint-features.toml',
     'project-governance/config/checkpoint-policy.json', 'project-governance/config/checkpoint-profiles.json',
+    'project-governance/ARTIFACT-CLASSIFICATION.md', 'project-governance/config/citations.json',
+    'project-governance/config/devlog.json', 'project-governance/config/frozen-manifest.json',
+    'project-governance/config/reconstruction-contract.json', 'project-governance/config/selector-expectations.json',
 )
 APPROVAL_MEDIUM = (
+    'project-governance/CONSTRAINTS.md', 'project-governance/DECISIONS.md',
     'AGENTS.md', '.gitattributes', '.gitignore',
     'governance/ARTIFACT-CLASSIFICATION.md', 'governance/CHECKPOINT-TOOL.md', 'governance/CHECKPOINT-WORKFLOW.md',
     'governance/CONSTRAINTS.md', 'governance/DECISIONS.md', 'governance/LOCAL-COORDINATION.md',
@@ -276,19 +280,28 @@ class ApprovalSensitivityTest(unittest.TestCase):
                 if row.kind == 'file' and table.resolve(row.path).approval_sensitivity == 'high']
         self.assertEqual(sorted(high), sorted(APPROVAL_HIGH))
 
-    def test_the_project_overlay_folder_is_high_for_any_file_in_it(self):
+    def test_the_project_fallback_stays_high_and_keeps_its_scope(self):
         _, _, table = real_data()
-        for path in ('project-governance/ARTIFACT-CLASSIFICATION.md', 'project-governance/config/checkpoint-profiles.json',
-                     'project-governance/config/checkpoint-policy.json', 'project-governance/notes/anything.md',
-                     rp.PROJECT_CONSTRAINTS, rp.PROJECT_DECISIONS, rp.PROJECT_RATIONALE, rp.PROJECT_CONTRACT,
-                     rp.FEATURES, rp.DEVLOG_SETTINGS):
-            with self.subTest(path=path):
-                self.assertEqual(table.resolve(path).approval_sensitivity, 'high')
-                self.assertEqual(table.ineligible_paths([path], 'medium', table), [path])
+        sentinel = 'project-governance/unclassified-sentinel'
+        pin = json.loads((ROOT / rp.GOLDEN).read_text(encoding='ascii'))['paths'][sentinel]
+        self.assertEqual({key: value for key, value in pin.items() if key != 'why'}, {
+            'class': 'governance', 'profile': 'governance', 'boundary': [], 'bound': False,
+            'invariants': ['classification', 'continuity', 'early-approval', 'selector'],
+            'subclass': [], 'reachable': False, 'approval_sensitivity': 'high',
+        })
+        self.assertEqual(table.resolve(sentinel).row.path, 'project-governance/')
+        resolved = table.resolve('project-governance/notes/anything.md')
+        self.assertEqual(resolved.approval_sensitivity, 'high')
+        self.assertEqual((resolved.klass, resolved.profile), ('governance', 'governance'))
+        self.assertEqual(resolved.invariants, ['classification', 'continuity', 'early-approval', 'selector'])
+        self.assertFalse(resolved.bound)
+        self.assertFalse(resolved.reachable)
+        self.assertEqual(resolved.boundary, [])
+        self.assertEqual(resolved.subclasses, [])
 
     def test_ordinary_paths_are_low(self):
         _, _, table = real_data()
-        for path in (rp.PROGRESS, 'docs/PLAN.md', 'governance/RATIONALE.md', rp.DEVLOG_INDEX,
+        for path in (rp.PROJECT_RATIONALE, rp.PROGRESS, 'docs/PLAN.md', 'governance/RATIONALE.md', rp.DEVLOG_INDEX,
                      'governance/tools/local_jobs.py', 'governance/tools/timing_record.py',
                      'governance/tools/coordination/local_jobs.py', 'governance/tools/support/timing_record.py'):
             with self.subTest(path=path):

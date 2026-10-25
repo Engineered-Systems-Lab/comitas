@@ -549,5 +549,69 @@ class CategoryTransactionTest(unittest.TestCase):
                     f.doCleanups()
 
 
+class ProjectArtifactScopeTest(unittest.TestCase):
+    # Independent check expectations. Extension consumers assert their full selection in their own tests.
+    BASE = {'continuity', 'continuity-regressions'}
+    SELECTOR = {'checkpoint-selector', 'commit-metadata', 'checkpoint-invariants'}
+    WORKTREES = {'checkpoint-worktrees', 'checkpoint-reconcile', 'checkpoint-evidence', 'checkpoint-invariants'}
+    EXPECTED = {
+        'ARTIFACT-CLASSIFICATION.md': ('governance', 'governance', {'classification-tests', 'checkpoint-selector'}),
+        'CONSTRAINTS.md': ('governance', 'governance', set()),
+        'DECISIONS.md': ('governance', 'governance', set()),
+        'RATIONALE.md': ('record', 'record-only', set()),
+        'config/artifact-classification-golden.json': ('tooling', 'tooling', {'classification-tests', 'checkpoint-selector'}),
+        'config/checkpoint-policy.json': ('tooling', 'tooling', SELECTOR),
+        'config/checkpoint-profiles.json': ('tooling', 'tooling', SELECTOR),
+        'config/checkpoint-features.toml': ('tooling', 'tooling', WORKTREES | {'early-approval-tests', 'test-runner-tests'}),
+        'config/citations.json': ('tooling', 'tooling', set()),
+        'config/devlog.json': ('tooling', 'tooling', WORKTREES),
+        'config/frozen-manifest.json': ('tooling', 'tooling', set()),
+        'config/reconstruction-contract.json': ('tooling', 'tooling', WORKTREES),
+        'config/selector-expectations.json': ('tooling', 'tooling', SELECTOR),
+    }
+
+    def test_each_supported_core_artifact_selects_its_checks_present_or_absent(self):
+        from governance.tools.continuity import artifact_classification as ac
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            contents = {path: (REPO / path).read_text(encoding='utf-8')
+                        for path in (ac.TABLE, ac.POLICY, ac.PROFILES)}
+            optional = {
+                ac.PROJECT_POLICY: '{"version": 4, "commands": {}}',
+                ac.PROJECT_PROFILES: '{"version": 4, "profiles": {}}',
+                ac.FROZEN_MANIFEST: '{"version": 1, "files": {}}',
+                ac.SELECTOR_EXPECTATIONS: '{"version": 1, "expectations": []}',
+            }
+            for name in self.EXPECTED:
+                path = ac.PROJECT_GOVERNANCE + '/' + name
+                contents[path] = ((REPO / path).read_text(encoding='utf-8')
+                                  if (REPO / path).is_file() else optional[path])
+            for path, text in contents.items():
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text, encoding='utf-8', newline=chr(10))
+            tool = bare_tool(root, FakeGit(contents))
+            for name, (klass, profile, extra) in self.EXPECTED.items():
+                path = ac.PROJECT_GOVERNANCE + '/' + name
+                for present in (False, True):
+                    with self.subTest(path=path, present=present):
+                        if present:
+                            (root / path).write_text(contents[path], encoding='utf-8', newline=chr(10))
+                        else:
+                            (root / path).unlink(missing_ok=True)
+                        policy, profiles = tool.data()
+                        with patch.object(tool, 'link_retargets', return_value={}):
+                            selected = tool.select_profile([path], policy, profiles, 'auto')[1]
+                        actual = {check['id'] for check in selected['checks']}
+                        self.assertEqual(actual - extension_checks(), self.BASE | extra)
+                        self.assertEqual(selected['classification'][path], klass)
+                        self.assertEqual(selected['path_profiles'][path], profile)
+                        resolved = tool.table(policy, profiles).resolve(path)
+                        self.assertEqual(resolved.row.path, path)
+                        self.assertFalse(resolved.reachable)
+                        self.assertEqual(resolved.boundary, [])
+                (root / path).write_text(contents[path], encoding='utf-8', newline=chr(10))
+
+
 if __name__ == '__main__':
     unittest.main()

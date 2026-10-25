@@ -154,15 +154,24 @@ class RemovalTest(unittest.TestCase):
         self.repository()
         self.core_tests(AREAS)
 
-    def test_removing_one_extension_keeps_the_layer_and_the_core_consistent(self):
-        manifest = self.manifests[0]
-        run([sys.executable, '-B', SCRIPT, manifest['name']], self.root)
-        self.assertFalse((self.root / manifest['folder']).exists())
-        self.assertFalse((self.root / manifest['tests']).exists())
-        self.assertTrue((self.root / LAYER / 'README.md').is_file())
-        self.repository()
-        run([sys.executable, '-B', 'governance/tools/validate_continuity.py'], self.root)
-        self.core_tests(AREAS[:1])
+    def test_removing_each_extension_keeps_the_layer_and_the_core_consistent(self):
+        source = self.root
+        for manifest in self.manifests:
+            with self.subTest(extension=manifest['name']):
+                self.root = self.parent / manifest['name']
+                shutil.copytree(source, self.root)
+                run([sys.executable, '-B', SCRIPT, manifest['name']], self.root)
+                self.assertFalse((self.root / manifest['folder']).exists())
+                self.assertFalse((self.root / manifest['tests']).exists())
+                self.assertTrue((self.root / LAYER / 'README.md').is_file())
+                pins = json.loads((self.root / 'governance/config/artifact-classification-golden.json').read_text(encoding='utf-8'))['paths']
+                for path in manifest['project_files']:
+                    self.assertFalse((self.root / path).exists())
+                    self.assertNotIn(path, pins)
+                self.repository()
+                run([sys.executable, '-B', 'governance/tools/validate_continuity.py'], self.root)
+                self.core_tests(AREAS[:3])
+        self.root = source
 
 
 class ScratchRepositoryTest(unittest.TestCase):

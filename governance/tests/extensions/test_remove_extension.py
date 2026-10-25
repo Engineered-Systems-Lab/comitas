@@ -105,8 +105,9 @@ class RemovalTest(unittest.TestCase):
             'governance/tests/extensions/demo/test_a.py': 'x = 1\n',
             'project-governance/config/demo.json': '{}\n',
             'governance/ARTIFACT-CLASSIFICATION.md': '\n'.join([ROW % ('governance/extensions/demo/a.py', 'demo-inv', 'demo-sub'),
-                                                                 ROW % ('governance/DECISIONS.md', 'guidance, demo-inv', '-'), *table_extra]) + '\n',
-            'governance/config/artifact-classification-golden.json': json.dumps({'version': 1, 'paths': {}}, indent=2) + '\n',
+                                                                 ROW % ('governance/DECISIONS.md', 'guidance, demo-inv', '-'),
+                                                                 ROW % ('project-governance/config/demo.json', 'demo-inv', 'demo-sub'), *table_extra]) + '\n',
+            'governance/config/artifact-classification-golden.json': json.dumps({'version': 1, 'paths': {'project-governance/config/demo.json': {'invariants': ['demo-inv'], 'subclass': ['demo-sub']}}}, indent=2) + '\n',
             'governance/config/checkpoint-policy.json': json.dumps({'commands': {'demo-check': [], 'continuity': []}}, indent=2) + '\n',
             'governance/config/checkpoint-profiles.json': json.dumps({'impact': {'invariants': {'demo-inv': {'groups': ['demo-check']}}},
                                                                       'commit_metadata': {'subclasses': [{'value': 'demo-sub'}]}}, indent=2) + '\n',
@@ -124,6 +125,7 @@ class RemovalTest(unittest.TestCase):
             self.assertFalse((root / 'governance/extensions/demo').exists())
             self.assertFalse((root / 'governance/tests/extensions/demo').exists())
             self.assertFalse((root / 'project-governance').exists())
+            self.assertEqual(json.loads((root / r.GOLDEN).read_text(encoding='utf-8'))['paths'], {})
             self.assertEqual((root / 'governance/ARTIFACT-CLASSIFICATION.md').read_text(encoding='utf-8'),
                              ROW % ('governance/DECISIONS.md', 'guidance', '-') + '\n')
             self.assertEqual(json.loads((root / 'governance/config/checkpoint-policy.json').read_text(encoding='utf-8')),
@@ -137,6 +139,16 @@ class RemovalTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as raised:
                 r.remove(root, ['demo'], False)
             self.assertIn('governance/ARTIFACT-CLASSIFICATION.md:2', str(raised.exception))
+
+
+class ExactProjectPinTest(unittest.TestCase):
+    def test_exact_project_pin_removal_preserves_similarly_named_files(self):
+        target = 'project-governance/config/demo.json'
+        keep = target + '.backup'
+        golden = {'version': 1, 'paths': {target: {'invariants': None}, keep: {'invariants': None}}}
+        self.assertEqual(set(r.edit_golden(golden, [target], [], [])['paths']), {keep})
+        text = chr(10).join([ROW % (target, '-', '-'), ROW % (keep, '-', '-')])
+        self.assertEqual(r.edit_table(text, [target], [], []), ROW % (keep, '-', '-'))
 
 
 if __name__ == '__main__':

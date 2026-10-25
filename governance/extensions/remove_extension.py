@@ -104,7 +104,7 @@ def edit_table(text, prefixes, invariants, subclasses):
 def edit_golden(data, prefixes, invariants, subclasses):
     paths = {}
     for path, entry in data['paths'].items():
-        if any(path.startswith(prefix.rstrip('/') + '/') for prefix in prefixes):
+        if any(path == prefix.rstrip('/') or path.startswith(prefix.rstrip('/') + '/') for prefix in prefixes):
             continue
         if isinstance(entry.get('invariants'), list):
             kept = [item for item in entry['invariants'] if item not in invariants]
@@ -199,13 +199,14 @@ def remove(root, names, everything):
     prefixes = [item for manifest in manifests for item in (manifest['folder'], manifest['tests'])]
     if everything:
         prefixes += [EXTENSIONS, EXTENSION_TESTS]
+    configuration_paths = prefixes + [path for manifest in manifests for path in manifest['project_files']]
     commands = [c for m in manifests for c in m['policy_commands']]
     invariants = [i for m in manifests for i in m['invariants']]
     subclasses = [s for m in manifests for s in m['subclasses']]
     markers = [x for m in manifests for x in m['markers']] + prefixes
     prose = [x for m in manifests for x in m['prose']]
-    write(root, TABLE, edit_table(read(root, TABLE), prefixes, invariants, subclasses))
-    write(root, GOLDEN, json.dumps(edit_golden(json.loads(read(root, GOLDEN)), prefixes, invariants, subclasses),
+    write(root, TABLE, edit_table(read(root, TABLE), configuration_paths, invariants, subclasses))
+    write(root, GOLDEN, json.dumps(edit_golden(json.loads(read(root, GOLDEN)), configuration_paths, invariants, subclasses),
                                    indent=2, ensure_ascii=False) + '\n')
     write(root, POLICY, json.dumps(edit_policy(json.loads(read(root, POLICY)), commands), indent=2, ensure_ascii=False) + '\n')
     write(root, PROFILES, json.dumps(edit_profiles(json.loads(read(root, PROFILES)), commands, invariants, subclasses),

@@ -589,171 +589,230 @@
       "class": "governance",
       "profile": "governance",
       "boundary": [],
-      "bound": false,
+      "bound": true,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
-        "selector"
+        "classification"
       ],
-      "subclass": [],
+      "subclass": [
+        "checkpoint"
+      ],
       "reachable": false,
-      "why": "the project's table; the project folder decides the fast track, so it is high and the project cannot classify it",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/CONSTRAINTS.md": {
       "class": "governance",
       "profile": "governance",
       "boundary": [],
-      "bound": false,
+      "bound": true,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
-        "selector"
+        "conformance",
+        "guidance"
       ],
-      "subclass": [],
+      "subclass": [
+        "constraints"
+      ],
       "reachable": false,
-      "why": "the project's own rules; the project folder is high and the project cannot classify it",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "medium",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/DECISIONS.md": {
       "class": "governance",
       "profile": "governance",
       "boundary": [],
-      "bound": false,
+      "bound": true,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
-        "selector"
+        "conformance",
+        "guidance",
+        "mission-control-generator"
       ],
-      "subclass": [],
+      "subclass": [
+        "decisions"
+      ],
       "reachable": false,
-      "why": "the project's own decision registry (prefix D); the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "medium",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/RATIONALE.md": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "record",
+      "profile": "record-only",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
-        "selector"
+        "conformance",
+        "mission-control-generator"
       ],
-      "subclass": [],
+      "subclass": [
+        "rationale"
+      ],
       "reachable": false,
-      "why": "the rationale of the project's decisions; the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "low",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/artifact-classification-golden.json": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "tooling",
+      "profile": "tooling",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
-        "selector"
+        "classification"
       ],
       "subclass": [
         "checkpoint"
       ],
       "reachable": false,
-      "why": "the independent pin of the project's table rows; it labels like the framework's golden, and the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/checkpoint-features.toml": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "tooling",
+      "profile": "tooling",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
-        "continuity",
         "early-approval",
-        "selector"
+        "test-runner",
+        "worktrees"
       ],
       "subclass": [
         "checkpoint"
       ],
       "reachable": false,
-      "why": "the kill switch of the early conditional approval, now the project's file; a checkpoint-tool setting, and the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/checkpoint-policy.json": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "tooling",
+      "profile": "tooling",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
         "selector"
       ],
       "subclass": [
         "checkpoint"
       ],
       "reachable": false,
-      "why": "the project's policy; it labels like the framework's policy, so an overlay commit can carry the checkpoint subclass, and the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/checkpoint-profiles.json": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "tooling",
+      "profile": "tooling",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
         "selector"
       ],
       "subclass": [
         "checkpoint"
       ],
       "reachable": false,
-      "why": "the project's profiles and impact invariants; it labels like the framework's profiles, so an overlay commit can carry the checkpoint subclass, and the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/config/citations.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "continuity",
+        "mission-control-generator"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/devlog.json": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "tooling",
+      "profile": "tooling",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
         "continuity",
-        "early-approval",
-        "selector"
+        "mission-control-generator",
+        "worktrees"
       ],
       "subclass": [],
       "reachable": false,
-      "why": "the development log settings, now the project's file; the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/frozen-manifest.json": {
-      "class": "governance",
-      "profile": "governance",
+      "class": "tooling",
+      "profile": "tooling",
       "boundary": [],
       "bound": false,
       "invariants": [
-        "classification",
-        "continuity",
-        "early-approval",
-        "selector"
+        "continuity"
       ],
       "subclass": [],
       "reachable": false,
-      "why": "the checksums of the project's frozen files (G054); a change of an entry is a change of what is frozen, and the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/config/mission-control-inputs.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "mission-control-generator"
+      ],
+      "subclass": [
+        "mission-control"
+      ],
+      "reachable": false,
+      "approval_sensitivity": "low",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/config/mission-control.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "mission-control-ui"
+      ],
+      "subclass": [
+        "mission-control"
+      ],
+      "reachable": false,
+      "approval_sensitivity": "low",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
     },
     "project-governance/config/reconstruction-contract.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "continuity",
+        "worktrees"
+      ],
+      "subclass": [],
+      "reachable": false,
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/config/selector-expectations.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "approval_sensitivity": "high",
+      "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/unclassified-sentinel": {
       "class": "governance",
       "profile": "governance",
       "boundary": [],
@@ -766,8 +825,8 @@
       ],
       "subclass": [],
       "reachable": false,
-      "why": "the project's half of the reconstruction contract; the project folder is high",
-      "approval_sensitivity": "high"
+      "approval_sensitivity": "high",
+      "why": "pins the directory fallback for unknown files"
     }
   }
 }

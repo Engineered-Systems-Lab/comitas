@@ -95,7 +95,9 @@ class OverlayTest(unittest.TestCase):
 
     def test_a_project_table_needs_the_high_row_in_the_framework_table(self):
         text = (self.root / ac.TABLE).read_text(encoding='utf-8')
-        lines = [line for line in text.split('\n') if not line.startswith('| `project-governance/`')]
+        # Remove both the fallback and the explicit table row's high protection.
+        protected = ('| `project-governance/`', '| `' + ac.PROJECT_TABLE + '`')
+        lines = [line for line in text.split('\n') if not line.startswith(protected)]
         self.write(ac.TABLE, '\n'.join(lines))
         self.write(ac.PROJECT_TABLE, project_table('notes/a.md'))
         with self.assertRaisesRegex(ValueError, 'approval-sensitivity high'):
