@@ -764,6 +764,31 @@ class GeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unsupported inline'):
             self.generate(proposal=self.proposal('docs/guide.md', '# Guide\n\n[Broken](target (bad).md)\n'))
 
+    def test_a_link_to_an_example_environment_file_resolves(self):
+        examples = ('docs/.env.example', 'docs/.env.sample', 'docs/.env.template',
+                    'config/.env.prod.example', 'config/.env.prod.sample', 'config/.env.prod.template')
+        for name in examples:
+            self.write(name, 'KEY=\n')
+        links = ''.join('[{0}](../{0})\n\n'.format(n) if n.startswith('config/') else
+                        '[{0}]({1})\n\n'.format(n, n[len('docs/'):]) for n in examples)
+        self.write('docs/guide.md', '# Guide\n\n' + links)
+        self.commit()
+        self.revision = self.run_git('rev-parse', 'HEAD').strip()
+        self.generate()
+        guide = next(i for i in self.items('documents') if i['source']['path'] == 'docs/guide.md')
+        self.assertEqual(sorted(l['target']['path'] for l in guide['links']), sorted(examples))
+
+    def test_private_environment_files_are_still_refused(self):
+        for name in ('.env', '.envrc', '.env.local', '.env.production', 'docs/.env.example.local', 'x/.env.example.bak',
+                     'x/.env.', '.env.localexample'):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, 'Private/transient input'):
+                    g.path_name(name)
+        for name in ('.env.example', 'a/.env.sample', '.env.template', 'a/.env.prod.example',
+                     '.env.prod.sample', '.env.prod.template'):
+            with self.subTest(name=name):
+                self.assertEqual(g.path_name(name), name)
+
     def test_verify_does_not_mutate_outputs_or_state(self):
         self.generate()
         state = (self.output / 'state.json').read_bytes()

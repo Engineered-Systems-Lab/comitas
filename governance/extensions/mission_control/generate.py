@@ -49,15 +49,24 @@ def canonical(value):
                        allow_nan=False) + '\n').encode('utf-8')
 
 
+# The example files the shipped .gitignore keeps tracked (its `!` lines for .env.*): safe to link.
+ENV_EXAMPLE = re.compile(r'\.env\.(example|sample|template)|\.env\..+\.(example|sample|template)')
+
+
+def private_component(part):
+    if ENV_EXAMPLE.fullmatch(part):
+        return False
+    return part in {'.git', 'tmp', 'work', '__pycache__', 'target', '.cache',
+                    'generated', 'node_modules', '.venv', 'secrets', '.secrets',
+                    '.aws', '.ssh', '.env', '.envrc'} or part.startswith('.env.')
+
+
 def path_name(value):
     require(isinstance(value, str) and value and '\\' not in value and
             not value.startswith('/') and ':' not in value and
             all(p not in ('', '.', '..') for p in value.split('/')),
             'Expected exact repo-relative POSIX path: ' + str(value))
-    require(not any(p in {'.git', 'tmp', 'work', '__pycache__', 'target', '.cache',
-                          'generated', 'node_modules', '.venv', 'secrets', '.secrets',
-                          '.aws', '.ssh', '.env', '.envrc'} or p.startswith('.env.')
-                    for p in value.split('/')),
+    require(not any(private_component(p) for p in value.split('/')),
             'Private/transient input: ' + value)
     return value
 
