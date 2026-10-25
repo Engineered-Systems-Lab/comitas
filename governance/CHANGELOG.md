@@ -4,6 +4,8 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**The worker brief keeps an extension-neutral reminder to follow presentation rules; nothing to do but take the upgrade.** `local_jobs.py brief` replaces its diff viewer sentence with a reminder to follow any rule in a README under `governance/extensions/` for presenting a preview or a sealed review. Workers still read the [worker role](ROLE-WORKER.md#the-optional-diff-viewer) and follow the existing viewer rule. The extension-removal check now also runs the local Job helper tests, including the brief, after all extensions are removed. This repairs the [G042 discrepancy](RATIONALE.md#the-core-never-depends-on-an-extension-g042) without changing G042 or approval rules.
+
 **The release procedure and the boundary between review aids and approval now have standing decision records; documentation only, no adopter action.** [G057](DECISIONS.md#g057---how-a-release-is-made-2026-10-25-accepted) records Unreleased collection, readiness before immutable public tags and version choices; [G058](DECISIONS.md#g058---review-aids-never-affect-approval-2026-10-25-accepted) records that review aids display the recorded candidate and never affect approval. Their rationale preserves the supplied reasons and alternatives, with later context on G018's unchanged higher-of rule and the verified G042 brief-wording discrepancy. No tool, test, VERSION or approval rule changes.
 
 ## 0.5.3 (2026-10-25)

@@ -671,10 +671,8 @@ def brief(primary, name, stagger=False, extra_file=None):
               '- Report follow-up to the Coordinator; do not create successor workers or Jobs. Keep your Job record '
               'current by its handle (the `note` command, or `put` with --expected-sha256). Report anything beyond '
               'scope instead of adding it.',
-              '- While the diff viewer extension is installed (its folder under governance/extensions exists), every message in which you present a preview or a sealed '
-              'review ENDS with exactly one line, placed last, immediately before the go or Approve question: '
-              '`Diff page: <file:// link>`, or `Diff page: not available (<reason>)` when rendering failed; never '
-              'omitted, never elsewhere in the message.',
+              '- If a README under `governance/extensions/` sets a rule for how you present a preview or a sealed review, '
+              'follow it.',
               '- Do NOT close or complete your own Job: the Coordinator closes it with `dispose` and `complete` after '
               'reading every pending entry.',
               "- Stale lock files, killing a process, or touching branches and worktrees other than your own: only with "

@@ -11,7 +11,7 @@ of the areas most likely to depend on an extension run in it, each through the r
 - the continuity checker on the copy (links, reachability, devlog settings);
 - the checkpoint scope selector, which selects checks from the real table, policy and profiles;
 - the shared repository paths and the commit-metadata vocabulary read from the real profiles;
-- the modes of the shipped scripts, link retargeting and the agent pointer.
+- the modes of the shipped scripts, link retargeting, the agent pointer and the local Job helper, including its brief.
 
 A full-suite run would be far too slow for a test; these are the modules that read the real configuration, which is where
 a hidden dependency shows. The test skips when there is no usable Git checkout or no extension layer to remove. It never
@@ -44,6 +44,7 @@ AREAS = (
     ('test_script_modes.py', ('governance/config',)),
     ('test_link_retarget.py', ('governance/tests',)),
     ('test_agent_pointer.py', ('governance/config',)),
+    ('test_local_jobs.py', ('governance/tests',)),
 )
 IDENTITY = {'GIT_AUTHOR_NAME': 'Scratch', 'GIT_COMMITTER_NAME': 'Scratch',
             'GIT_AUTHOR_EMAIL': 'noreply@example.invalid', 'GIT_COMMITTER_EMAIL': 'noreply@example.invalid'}
