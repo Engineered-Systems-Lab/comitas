@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import render
 
@@ -154,11 +155,27 @@ def views_of(section):
     return collapsed, complete
 
 
+class TitleTest(Fixture):
+    def test_the_browser_title_and_the_header_label_carry_the_escaped_job_handle_and_stay_plain_without_one(self):
+        title = lambda text: text.split('<title>', 1)[1].split('</title>', 1)[0]
+        self.assertEqual(title(self.build()), 'Diff preview: demo_job')
+        self.assertEqual(title(self.build(render.SEALED)), 'Diff sealed review: demo_job')
+        self.assertEqual(title(render.build(self.root, render.PREVIEW, self.record(), 'a<i>&', [])), 'Diff preview: a&lt;i&gt;&amp;')
+        self.assertEqual(title(render.build(self.root, render.PREVIEW, self.record(), None, [])), 'Diff preview')
+        label = lambda text: text.split('<div class="label ', 1)[1].split('</strong>', 1)[0].split('<strong>')[1]
+        self.assertEqual(label(self.build()), 'PREVIEW of demo_job (no approval)')
+        self.assertEqual(label(self.build(render.SEALED)), 'SEALED REVIEW of demo_job')
+        self.assertEqual(label(render.build(self.root, render.PREVIEW, self.record(), 'a<i>&', [])), 'PREVIEW of a&lt;i&gt;&amp; (no approval)')
+        self.assertEqual(label(render.build(self.root, render.PREVIEW, self.record(), None, [])), 'PREVIEW (no approval)')
+        self.assertEqual(label(render.build(self.root, render.SEALED, self.record(), None, [])), 'SEALED REVIEW')
+        self.assertEqual(title(render.build(self.root, render.SEALED, self.record(), None, [])), 'Diff sealed')
+
+
 class CompactHeaderTest(Fixture):
     def test_the_header_is_a_narrow_bar_that_names_the_kind_in_its_own_colour(self):
         preview, sealed = self.build(), self.build(render.SEALED)
-        self.assertIn('<div class="label preview"><strong>PREVIEW (no approval)</strong>', preview)
-        self.assertIn('<div class="label sealed"><strong>SEALED REVIEW</strong>', sealed)
+        self.assertIn('<div class="label preview"><strong>PREVIEW of demo_job (no approval)</strong>', preview)
+        self.assertIn('<div class="label sealed"><strong>SEALED REVIEW of demo_job</strong>', sealed)
         self.assertNotIn('clamp(', preview)  # no more title sized by the window
         self.assertIn('.label.preview{background:var(--preview)}.label.sealed{background:var(--sealed)}', preview)
         self.assertNotEqual(re.search(r'--preview:(#\w+)', preview).group(1), re.search(r'--sealed:(#\w+)', preview).group(1))
@@ -347,6 +364,103 @@ class SealedTest(Fixture):
         with self.assertRaises(render.ViewerError):
             render.run_sealed(args)
         self.assertEqual(list(self.review.iterdir()), [])
+
+
+class RenameTest(unittest.TestCase):
+    """A moved file is one renamed entry computed by the page itself; the checkpoint tool's own records are not involved."""
+    BIG = ''.join('line %d of the moved file\n' % n for n in range(1, 41))
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve() / 'repo'
+        self.root.mkdir()
+        git(self.root, 'init', '-q', '-b', 'main')
+        (self.root / 'old').mkdir()
+        write(self.root, 'old/moved.txt', self.BIG)
+        write(self.root, 'old/edited.txt', self.BIG.replace('line', 'row'))
+        write(self.root, 'old/gone.txt', ''.join('alpha %d\n' % n for n in range(30)))
+        git(self.root, 'add', '-A')
+        git(self.root, 'commit', '-q', '-m', 'base')
+        self.parent = git(self.root, 'rev-parse', 'HEAD')
+        (self.root / 'new').mkdir()
+        git(self.root, 'mv', 'old/moved.txt', 'new/moved.txt')
+        git(self.root, 'mv', 'old/edited.txt', 'new/edited.txt')
+        write(self.root, 'new/edited.txt', self.BIG.replace('line', 'row').replace('row 7 ', 'ROW SEVEN '))
+        git(self.root, 'rm', '-q', 'old/gone.txt')
+        write(self.root, 'new/unrelated.txt', ''.join('omega %d\n' % n for n in range(30)))
+        git(self.root, 'add', '-A')
+        git(self.root, 'commit', '-q', '-m', 'candidate')
+        self.tree = git(self.root, 'rev-parse', 'HEAD^{tree}')
+
+    def build(self):
+        record = {'id': 'r' * 32, 'branch': 'refs/heads/tx/demo', 'parent': self.parent, 'tree': self.tree, 'manifest': []}
+        return render.build(self.root, render.PREVIEW, record, 'demo_job', [])
+
+    def test_a_pure_move_is_one_entry_with_no_change_lines_and_says_so(self):
+        text = self.build()
+        section = section_of(text, 'old/moved.txt →')
+        self.assertIn('renamed</span> old/moved.txt → new/moved.txt (100%)</h3>', section)
+        self.assertIn('Moved with no content change', section)
+        self.assertNotIn('<table', section)
+        self.assertNotIn('class="old change"', section)
+        self.assertRegex(text, r'kind renamed">renamed</span></td><td><a href="#f\d+">old/moved.txt → new/moved.txt \(100%\)</a></td><td></td><td>\+0 -0</td>')
+
+    def test_a_move_with_an_edit_shows_its_similarity_and_only_the_edited_lines(self):
+        section = section_of(self.build(), 'old/edited.txt →')
+        self.assertRegex(section, r'old/edited.txt → new/edited.txt \(9\d%\)</h3>')
+        collapsed, complete = views_of(section)
+        self.assertEqual(collapsed.count('<tr data-c>'), 1)
+        self.assertIn('<td class="old change"><span class="n">7</span>row 7 of the moved file</td>', collapsed)
+        self.assertIn('<td class="new change"><span class="n">7</span>ROW SEVEN of the moved file</td>', collapsed)
+        self.assertEqual(complete.count('class="old change"'), 1)
+
+    def test_a_real_deletion_and_an_unrelated_addition_are_not_paired(self):
+        text = self.build()
+        self.assertRegex(text, r'kind deleted">deleted</span></td><td><a href="#f\d+">old/gone.txt</a>')
+        self.assertRegex(text, r'kind added">added</span></td><td><a href="#f\d+">new/unrelated.txt</a>')
+        self.assertNotIn('gone.txt →', text)
+        self.assertNotIn('→ new/unrelated.txt', text)
+
+    def test_a_move_counts_once_and_only_its_real_changes_are_totalled(self):
+        text = self.build()
+        self.assertIn('4 files, +31 -31 lines', text)  # moved, edited (+1 -1), the deletion (-30) and the addition (+30)
+        self.assertIn('<h2>Files (4)</h2>', text)
+
+    def test_the_page_labels_the_pairing_and_links_each_side_as_its_own_file(self):
+        text = self.build()
+        section = section_of(text, 'old/moved.txt →')
+        self.assertIn('Display aid', section)
+        self.assertIn('Display aid', text.split('<div class="overview">', 1)[1].split('</div>', 1)[0])
+        match = re.search(r'id="(f\d+)"><div class="bar"><a class="back" href="#">&larr; All files</a><h3><span class="kind renamed">renamed</span> old/moved', text)
+        number = match.group(1)
+        self.assertIn('href="#%s-old"' % number, section)
+        self.assertIn('href="#%s-new"' % number, section)
+        old_side = text.split('<section id="%s-old">' % number, 1)[1].split('</section>', 1)[0]
+        new_side = text.split('<section id="%s-new">' % number, 1)[1].split('</section>', 1)[0]
+        self.assertIn('kind deleted">deleted</span> old/moved.txt', old_side)
+        self.assertIn('kind added">added</span> new/moved.txt', new_side)
+        self.assertIn('<td class="old removed"><span class="n">1</span>line 1 of the moved file</td>', old_side)
+        self.assertIn('<td class="new added"><span class="n">1</span>line 1 of the moved file</td>', new_side)
+        self.assertIn('href="#%s">&larr; The rename' % number, old_side)
+
+    def test_the_page_is_the_same_under_other_git_settings_for_renames(self):
+        reference = self.build()
+        config = Path(self.temp.name) / 'global.config'
+        for name, value in (('diff.renames', 'false'), ('diff.renames', 'copies'), ('diff.renameLimit', '1'), ('diff.algorithm', 'patience')):
+            config.write_text('[diff]\n\t%s = %s\n' % (name.split('.')[1], value), encoding='utf-8')
+            with self.subTest(setting=name + '=' + value), mock.patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': str(config)}):
+                self.assertEqual(self.build(), reference)
+        with (self.root / '.git' / 'config').open('a', encoding='utf-8') as handle:  # the repository's own configuration, written without `git config`
+            handle.write('[diff]\n\trenames = false\n\trenameLimit = 1\n\talgorithm = histogram\n')
+        self.assertEqual(self.build(), reference)
+
+    def test_the_options_are_passed_explicitly(self):
+        self.assertIn('--find-renames=50%', render.RENAME_FLAGS)
+        self.assertIn('-l1000', render.RENAME_FLAGS)
+        self.assertIn('diff.renames=true', render.RENAME_OPTIONS)
+        env = render.display_env()
+        self.assertEqual((env['GIT_CONFIG_GLOBAL'], env['GIT_CONFIG_NOSYSTEM']), (os.devnull, '1'))
 
 
 if __name__ == '__main__':

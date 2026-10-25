@@ -11,6 +11,7 @@ import hmac
 import html
 import itertools
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -22,6 +23,10 @@ CONTEXT = 3
 MAX_LINES = 3000  # per side of one file; more is cut and the page says so
 MAX_BYTES = 1_000_000  # per side of one file, read before the lines are counted
 MAX_FILES = 300  # files shown side by side; the list always holds every file
+SIMILARITY = 50  # percent of a file that must stay for a deletion and an addition to be shown as one rename
+RENAME_LIMIT = 1000  # files on each side that rename detection compares
+RENAME_OPTIONS = ('-c', 'diff.renames=true', '-c', 'diff.renameLimit=%d' % RENAME_LIMIT, '-c', 'diff.algorithm=default')  # beat any setting of the user or the repository
+RENAME_FLAGS = ('--no-ext-diff', '--no-textconv', '--find-renames=%d%%' % SIMILARITY, '-l%d' % RENAME_LIMIT, '--diff-algorithm=default', '-z')
 MODE_NAMES = {'100644': 'file', '100755': 'executable', '120000': 'symbolic link', '160000': 'submodule', '040000': 'tree'}
 PICTURES = {code: chr(0x2400 + code) for code in range(32) if code not in (9, 10)}  # control characters shown, not sent raw
 
@@ -39,9 +44,9 @@ def require(condition, message):
         raise ViewerError(message)
 
 
-def git(repo, *args):
+def git(repo, *args, env=None):
     try:
-        result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, timeout=300)
+        result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, timeout=300, env=env)
     except (OSError, subprocess.SubprocessError) as error:
         raise ViewerError('cannot run Git: ' + str(error)) from error
     require(result.returncode == 0, 'Git failed (%s): %s' % (' '.join(args[:2]), result.stderr.decode('utf-8', 'replace').strip()))
@@ -117,22 +122,38 @@ def candidate_diff(repo, parent, tree):
     return git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--binary', parent, tree).decode('utf-8', 'replace')
 
 
+def display_env():
+    """The environment of the rename view: no system or user Git configuration is read."""
+    return dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+
+
 def changes(repo, parent, tree):
-    """Every changed path between the recorded commit and tree, in path order, renames shown as a deletion and an addition."""
-    flags = ('--no-ext-diff', '--no-textconv', '--no-renames', '-z')
-    raw = git(repo, 'diff', '--raw', '--no-abbrev', *flags, parent, tree).decode('utf-8', 'replace').split('\0')
-    numbers = git(repo, 'diff', '--numstat', *flags, parent, tree).decode('utf-8', 'replace').split('\0')
-    counts = {}
-    for entry in numbers:
+    """Every changed path between the recorded commit and tree, in path order. A file moved with at most half of it changed is one
+    renamed entry: the page pairs the deletion and the addition for display, with the options above, so no Git setting changes it;
+    the checkpoint tool still records them as a deletion and an addition."""
+    def run(*args):
+        out = git(repo, *RENAME_OPTIONS, 'diff', *args, *RENAME_FLAGS, parent, tree, env=display_env())
+        return out.decode('utf-8', 'replace').split('\0')
+    raw, numbers = run('--raw', '--no-abbrev'), run('--numstat')
+    counts, index = {}, 0
+    while index < len(numbers):
+        entry = numbers[index]
+        index += 1
         if entry.count('\t') == 2:
             added, removed, path = entry.split('\t')
+            if not path:  # a rename: the old and the new path follow as fields of their own
+                path, index = numbers[index + 1], index + 2
             counts[path] = None if added == '-' else (int(added), int(removed))
     found, index = [], 0
     while index + 1 < len(raw) and raw[index].startswith(':'):
         old_mode, new_mode, old_id, new_id, status = raw[index][1:].split(' ')
-        path = raw[index + 1]
+        path, old_path, similarity = raw[index + 1], None, None
         index += 2
-        found.append({'path': path, 'status': status[0], 'old_mode': old_mode, 'new_mode': new_mode, 'old_id': old_id, 'new_id': new_id,
+        if status[0] == 'R':
+            old_path, path, similarity = path, raw[index], int(status[1:])
+            index += 1
+        found.append({'path': path, 'old_path': old_path, 'similarity': similarity, 'status': status[0], 'old_mode': old_mode,
+                      'new_mode': new_mode, 'old_id': old_id, 'new_id': new_id,
                       'counts': counts.get(path, (0, 0)), 'binary': counts.get(path, (0, 0)) is None})
     return sorted(found, key=lambda item: item['path'].encode('utf-8', 'surrogatepass'))
 
@@ -166,6 +187,8 @@ def show(line):
 
 
 def kind_of(item):
+    if item['status'] == 'R':
+        return 'renamed'
     if item['status'] == 'A':
         return 'added'
     if item['status'] == 'D':
@@ -173,6 +196,13 @@ def kind_of(item):
     if item['status'] == 'T':
         return 'type changed'
     return 'modified'
+
+
+def move_text(item):
+    """`<old> -> <new> (<similarity>%)` of a renamed entry, the path alone for any other."""
+    if item['status'] != 'R':
+        return show(item['path'])
+    return '%s \u2192 %s (%d%%)' % (show(item['old_path']), show(item['path']), item['similarity'])
 
 
 def mode_text(item):
@@ -236,16 +266,28 @@ def side_table(rows, parent, tree):
             '<div class="grip" title="Drag to move the divider; double-click to centre"></div></div></div>') % (panes, lines)
 
 
-def file_section(repo, item, number, parent, tree):
-    """(html, summary) of one file: a notice for binaries and submodules, side-by-side hunks and the complete file for text."""
+def sides_of(item):
+    """The deletion and the addition a rename is made of, each as an entry of its own."""
+    return (dict(item, status='D', path=item['old_path'], new_mode='000000', old_path=None, similarity=None),
+            dict(item, status='A', old_mode='000000', old_path=None, similarity=None))
+
+
+def file_section(repo, item, number, parent, tree, back='<a class="back" href="#">&larr; All files</a>'):
+    """The section of one file: a notice for binaries and submodules, side-by-side hunks and the complete file for text; a rename
+    names its pairing and links its two sides, which are sections of their own."""
     kind = kind_of(item)
     notes = [mode_text(item)] if mode_text(item) else []
     old_data, old_size = blob(repo, item['old_mode'], item['old_id'])
     new_data, new_size = blob(repo, item['new_mode'], item['new_id'])
     sizes = '%s bytes before, %s bytes after' % ('no' if old_size is None else old_size, 'no' if new_size is None else new_size)
-    head = '<a class="back" href="#">&larr; All files</a><h3><span class="kind %s">%s</span> %s</h3>' % (kind.replace(' ', '-'), kind, show(item['path']))
+    head = '%s<h3><span class="kind %s">%s</span> %s</h3>' % (back, kind.replace(' ', '-'), kind, move_text(item))
     toggle = ''  # the checkbox of the file, at the right end of the heading row, for a file that has two views
     body = ''.join('<p class="note">%s</p>' % html.escape(note) for note in notes)
+    if item['status'] == 'R':
+        body += ('<p class="note">Display aid: this page paired the deletion of %s with the addition of %s because %d%% of the file stayed; '
+                 'the checkpoint tool records them as a deletion and an addition. See each side as its own file: '
+                 '<a href="#f%s-old">the old path as deleted</a>, <a href="#f%s-new">the new path as added</a>.</p>') % (
+            show(item['old_path']), show(item['path']), item['similarity'], number, number)
     if '160000' in (item['old_mode'], item['new_mode']):
         body += '<p class="note">Submodule: the recorded commit changed from %s to %s.</p>' % (
             show(item['old_id'] if item['old_mode'] == '160000' else 'none'), show(item['new_id'] if item['new_mode'] == '160000' else 'none'))
@@ -259,10 +301,13 @@ def file_section(repo, item, number, parent, tree):
         matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
         everything = full_rows(matcher, old, new)  # first: get_grouped_opcodes trims the matcher's cached opcodes in place
         hunks = side_rows(matcher, old, new)
-        if not hunks and not (cut_old or cut_new):
-            body += '<p class="note">No content change.</p>'
+        unchanged = not hunks and not (cut_old or cut_new)
+        if unchanged:
+            body += '<p class="note">%s</p>' % ('Moved with no content change: the old and the new path hold the same bytes.' if item['status'] == 'R' else 'No content change.')
         collapsed = [row for hidden, rows in hunks for row in ([(hidden, 'gap')] if hidden else []) + rows]
-        if collapsed == everything:  # nothing is left out, so one table serves both states of the checkbox
+        if unchanged and item['status'] == 'R':
+            pass  # a pure move has no change lines; each side is a section of its own
+        elif collapsed == everything:  # nothing is left out, so one table serves both states of the checkbox
             if sum(1 for n, row in enumerate(everything) if row[4] != 'same' and (n == 0 or everything[n - 1][4] == 'same')) > 1:
                 toggle = NAV  # several changes in a short file: the buttons only
             body += '<div class="allview">%s</div>' % side_table(everything, parent, tree) if everything else ''
@@ -270,7 +315,7 @@ def file_section(repo, item, number, parent, tree):
             toggle = '<label class="toggle"><input type="checkbox" class="collapse" checked> Collapse unchanged fragments</label>' + NAV
             body += '<div class="hunkview">%s</div><div class="fullview">%s</div>' % (
                 side_table(collapsed, parent, tree) if collapsed else '', side_table(everything, parent, tree))
-    return '<section id="f%d"><div class="bar">%s%s</div>%s</section>' % (number, head, toggle, body)
+    return '<section id="f%s"><div class="bar">%s%s</div>%s</section>' % (number, head, toggle, body)
 
 
 STYLE = """:root{--bg:#fff;--fg:#1d2129;--mute:#5b6472;--line:#d5d9e0;--panel:#f4f6f9;--del:#fde8e8;--add:#e3f6e6;--chg:#fff3d6;--preview:#8a1f11;--sealed:#1b4f8f;--bannerfg:#fff;--link:#0b5cad;--split:.5}
@@ -278,7 +323,7 @@ STYLE = """:root{--bg:#fff;--fg:#1d2129;--mute:#5b6472;--line:#d5d9e0;--panel:#f
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
 main{padding:0 16px 6px}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:start}
 nav{position:sticky;top:0;max-height:100vh;overflow:auto;padding:12px 0;font-size:13px}nav ul{list-style:none;margin:0;padding-left:14px}nav>ul{padding-left:0}nav a{color:inherit;text-decoration:none;display:block;padding:1px 4px;border-radius:3px;word-break:break-all}nav a:hover{background:var(--panel)}nav summary{color:var(--mute);padding:1px 4px;cursor:pointer}nav details>ul{padding-left:14px}.treebar{display:flex;gap:6px;margin:0 0 6px}.treebar button{font:12px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 8px;cursor:pointer}
-nav .a{border-left:3px solid #3a9b4f}nav .d{border-left:3px solid #c2433b}nav .m{border-left:3px solid #c99a2e}
+nav .a{border-left:3px solid #3a9b4f}nav .d{border-left:3px solid #c2433b}nav .m{border-left:3px solid #c99a2e}nav .r{border-left:3px solid #3b7fc4}
 @media (max-width:900px){.layout{display:block}nav{position:static;max-height:none}}
 .label{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;color:var(--bannerfg);padding:5px 16px;font-size:12px}
 .label.preview{background:var(--preview)}.label.sealed{background:var(--sealed)}
@@ -290,7 +335,7 @@ table{border-collapse:collapse}th,td{vertical-align:top}
 @media (max-width:700px){.facts{grid-template-columns:minmax(0,1fr)}}
 table.files{width:100%;margin:8px 0 24px}table.files td,table.files th{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left}
 .kind{display:inline-block;padding:0 8px;border-radius:10px;font-size:12px;font-weight:700;background:var(--panel);border:1px solid var(--line)}
-.kind.added{background:var(--add)}.kind.deleted{background:var(--del)}.kind.modified,.kind.type-changed{background:var(--chg)}
+.kind.added{background:var(--add)}.kind.deleted{background:var(--del)}.kind.modified,.kind.type-changed,.kind.renamed{background:var(--chg)}
 section{display:none;margin:0}section:target{display:block}.view:has(section:target) .overview{display:none}.bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin:0 0 8px}.bar h3{margin:0;flex:1 1 auto}h3{font-size:16px;word-break:break-all}
 .note{margin:6px 0;color:var(--mute)}
 a,a:visited{color:var(--link)}nav a,nav a:visited{color:inherit}.frame{position:relative;min-width:70em}.grip{position:absolute;top:0;bottom:0;width:19px;margin-left:-10px;left:calc(100%*var(--split));cursor:col-resize;touch-action:none;background:linear-gradient(to right,transparent 7px,var(--mute) 7px,var(--mute) 12px,transparent 12px);opacity:.7}.grip:hover{opacity:1;background:linear-gradient(to right,rgba(128,128,128,.18) 0,rgba(128,128,128,.18) 100%),linear-gradient(to right,transparent 7px,var(--fg) 7px,var(--fg) 12px,transparent 12px)}table.side col.l{width:calc(var(--split)*100%)}table.side col.r{width:calc((1 - var(--split))*100%)}table.side{width:100%;table-layout:fixed;margin:8px 0;border:1px solid var(--line);font:13px/1.45 ui-monospace,Consolas,monospace}.scroll{overflow:auto;max-height:calc(100vh - 7.5em);overscroll-behavior:contain}.scroll:focus{outline:none}
@@ -325,8 +370,9 @@ def tree(items, shown):
                 out += '<li><details open><summary>%s</summary><ul>%s</ul></details></li>' % (show(name), walk(value))
             else:
                 n, item = value
-                css = {'added': 'a', 'deleted': 'd'}.get(kind_of(item), 'm')
-                out += '<li>%s</li>' % ('<a class="%s" href="#f%d">%s</a>' % (css, n, show(name)) if n <= shown else '<span class="%s">%s</span>' % (css, show(name)))
+                css = {'added': 'a', 'deleted': 'd', 'renamed': 'r'}.get(kind_of(item), 'm')
+                title = ' title="renamed from %s"' % show(item['old_path']) if item['status'] == 'R' else ''
+                out += '<li>%s</li>' % ('<a class="%s" href="#f%d"%s>%s</a>' % (css, n, title, show(name)) if n <= shown else '<span class="%s"%s>%s</span>' % (css, title, show(name)))
         return out
     return '<ul>%s</ul>' % walk(root)
 
@@ -337,27 +383,37 @@ def page(*arguments):
     return text.replace('@@HASH@@', digest).replace('@@SCRIPT@@', SCRIPT)
 
 
-def build_page(kind, facts, items, sections, omitted):
+def headline(kind, job):
+    """The bar's label: the kind as before, naming the Job when it is known."""
+    if not job:
+        return html.escape(LABELS[kind])
+    return ('PREVIEW of %s (no approval)' if kind == PREVIEW else 'SEALED REVIEW of %s') % show(job)
+
+
+def build_page(kind, facts, items, sections, omitted, job=None):
     def fact(name, value, wide=False):
         return '<div class="fact%s"><span class="k">%s</span><span class="v">%s</span></div>' % (' wide' if wide else '', html.escape(name), show(str(value)))
+    shown = min(len(items), MAX_FILES)  # files that have a section; the sides of a rename are sections too, but not files
     short = [f for f in facts if f[0] != 'Manifest']  # the manifest can be long and spans both columns
     half = (len(short) + 1) // 2
     rows = ''.join(['<div>%s</div>' % ''.join(fact(*f) for f in part) for part in (short[:half], short[half:])] +
                    [fact(name, value, True) for name, value in facts if name == 'Manifest'])
     listing = ''.join('<tr><td><span class="kind %s">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>' % (
-        kind_of(i).replace(' ', '-'), kind_of(i), '<a href="#f%d">%s</a>' % (n, show(i['path'])) if n <= len(sections) else show(i['path']),
+        kind_of(i).replace(' ', '-'), kind_of(i), '<a href="#f%d">%s</a>' % (n, move_text(i)) if n <= shown else move_text(i),
         show(mode_text(i)), 'binary' if i['binary'] else '+%d -%d' % i['counts']) for n, i in enumerate(items, 1))
+    aid = ('<p class="note">Display aid: a file moved with at least %d%% of it unchanged is shown as one renamed entry, paired by this page from the recorded parent and candidate. '
+           'The checkpoint tool records a move as a deletion and an addition, and its review and the sealed diff list it that way.</p>' % SIMILARITY) if any(i['status'] == 'R' for i in items) else ''
     more = '<p class="note">The first %d files are shown side by side; the list above has every file.</p>' % MAX_FILES if omitted else ''
     return ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n'
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'sha256-@@HASH@@\'">\n'
             '<title>%s</title><style>%s</style></head><body>\n<div class="label %s"><strong>%s</strong><span>%s</span></div>\n<main>\n'
-            '<div class="facts">%s</div>\n<div class="layout"><nav><div class="treebar"><button type="button" data-fold="open">Expand all</button><button type="button" data-fold="close">Collapse all</button></div>%s</nav><div class="view">\n<div class="overview"><h2>Files (%d)</h2>\n<table class="files"><tr><th>Change</th><th>Path</th><th>Mode</th><th>Lines</th></tr>%s</table>\n<p class="note">Choose a file in the list or in the tree to read its changes.</p></div>\n'
+            '<div class="facts">%s</div>\n<div class="layout"><nav><div class="treebar"><button type="button" data-fold="open">Expand all</button><button type="button" data-fold="close">Collapse all</button></div>%s</nav><div class="view">\n<div class="overview"><h2>Files (%d)</h2>\n<table class="files"><tr><th>Change</th><th>Path</th><th>Mode</th><th>Lines</th></tr>%s</table>\n<p class="note">Choose a file in the list or in the tree to read its changes.</p>%s</div>\n'
             '%s%s\n<p class="fine">Built from the recorded parent commit and candidate tree only, never the working tree. '
             'A reading aid: it grants no approval and records nothing; the decision is taken in the conversation.</p>\n'
             '</div></div></main><script>@@SCRIPT@@</script></body></html>\n') % (
-        'Diff ' + kind, STYLE, kind, html.escape(LABELS[kind]),
+        ('Diff %s: %s' % ('preview' if kind == PREVIEW else 'sealed review', show(job))) if job else 'Diff ' + kind, STYLE, kind, headline(kind, job),
         'Read-only view of the exact candidate; not an approval.' if kind == PREVIEW else 'Read-only view of the exact sealed candidate; the decision is taken in the conversation.',
-        rows, tree(items, len(sections)), len(items), listing, ''.join(sections), more)
+        rows, tree(items, shown), len(items), listing, aid, ''.join(sections), more)
 
 
 def build(repo, kind, record, job, extra):
@@ -365,7 +421,12 @@ def build(repo, kind, record, job, extra):
     parent, tree = record['parent'], record['tree']
     verify_objects(repo, parent, tree)
     items = changes(repo, parent, tree)
-    sections = [file_section(repo, item, n, parent, tree) for n, item in enumerate(items[:MAX_FILES], 1)]
+    sections = []
+    for n, item in enumerate(items[:MAX_FILES], 1):
+        sections.append(file_section(repo, item, n, parent, tree))
+        if item['status'] == 'R':  # each side as the file it is: the old path deleted, the new path added
+            for label, side in zip(('old', 'new'), sides_of(item)):
+                sections.append(file_section(repo, side, '%d-%s' % (n, label), parent, tree, '<a class="back" href="#f%d">&larr; The rename</a>' % n))
     totals = [i['counts'] for i in items if not i['binary']]
     facts = [('Kind', LABELS[kind]), ('Job', job or 'not recorded in the preview record (pass --job)'),
              ('Mission', mission_of(record['branch'])), ('Branch', record['branch']),
@@ -373,7 +434,7 @@ def build(repo, kind, record, job, extra):
              ('Preview id' if kind == PREVIEW else 'Transaction id', record['id'])]
     facts += extra
     facts.append(('Totals', '%d files, +%d -%d lines' % (len(items), sum(c[0] for c in totals), sum(c[1] for c in totals))))
-    return page(kind, facts, items, sections, len(items) > MAX_FILES)
+    return page(kind, facts, items, sections, len(items) > MAX_FILES, job)
 
 
 def review_folder(repo, branch):
