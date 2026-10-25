@@ -6,10 +6,10 @@ before they are committed:
 1. A shell script must be committed as mode 100755. On Windows `core.filemode` is false, so `git add` stages every script
    as 100644; the helper sets the executable bit of each staged `*.sh` in the index (`git update-index --chmod=+x`).
    It never edits `core.filemode` or any Git configuration.
-2. The framework cites its own commits as `template commit` (the label of the archive that holds its early history), and
-   a copy has none of that history, so the project declares the label `template` in
-   `project-governance/config/citations.json`: the helper writes that file, or adds the label to the one that exists,
-   and stages it.
+2. The framework cites its own commits as `template commit`; the label names the framework repository by role
+   (see governance/PROJECT-GOVERNANCE.md, "The template label"). A copy has none of that history, so the project
+   declares the label `template` in `project-governance/config/citations.json`: the helper writes that file, or adds
+   the label to the one that exists, and stages it.
 
 It refuses where HEAD exists, so it can never run in Comitas or in a project that is already going. Before the first
 commit it is idempotent: a second run changes nothing. It writes no Git configuration and nothing outside this repository."""

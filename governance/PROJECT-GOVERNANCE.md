@@ -144,7 +144,7 @@ The check also requires the index and the conventions to resolve their links lik
 `config/citations.json` is optional and so is every key in it: `{"version": 1, "external_repositories": []}` is the same as no file. A file that is missing, unreadable or not a JSON object means no label. A key that is set must hold a good value, or the tools stop; a key they do not know is refused too.
 
 - `version`: `1` when present.
-- `external_repositories`: a list of distinct labels, each one word of letters, digits, dots, underscores and hyphens. A label names another repository whose commits this project cites. Comitas declares none, because it knows no other repository; the [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) writes the label `template` into the file of a project made from it, and a project adds its own labels beside it.
+- `external_repositories`: a list of distinct labels, each one word of letters, digits, dots, underscores and hyphens. A declared label identifies repository citations checked for form only. The code default is no labels; the [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) writes `template` into the file of a project made from Comitas, and a project adds its own labels beside it. See [the meaning of `template`](#the-template-label).
 
 A commit of another repository is cited as the label, one space, the lowercase word `commit`, one space and the id in backticks, on one source line (a table row works): ``template commit `<id>` ``. The id is 7 to 40 lowercase hexadecimal characters and the label is matched exactly as declared. The rule has no special case:
 
@@ -153,7 +153,11 @@ A commit of another repository is cited as the label, one space, the lowercase w
 - a labeled id whose label is not declared is checked like a local one: it must resolve in this repository, as must a bare id;
 - a labeled commit counts as a citation of a devlog entry, but an implementation checkpoint entry still needs the ``Repository checkpoint: `<full hash>` `` line of a commit of this repository, and the Mission Control generator refuses a labeled id on that line.
 
-The framework writes its own commit citations as ``template commit `<id>` `` and a conformance test requires it. A project made from Comitas declares `template` (the label of the archive that holds the framework's history before Comitas), which the adoption helper writes before the project's first commit, so those citations are only checked for their form in the project. See [G051](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted).
+### The template label
+
+`template` names the framework's own repository by role. In Comitas it covers Comitas's own commits and, for history before Comitas, the private template archive holding the commits of 0.2.3 and earlier. In an adopting project it names the framework that project adopted. It does not mean only the archive, and a labeled id may also resolve to a commit in the current repository.
+
+The framework writes its own commit citations as ``template commit `<id>` `` and a conformance test requires it. A project made from Comitas declares `template`, which the adoption helper writes before the project's first commit, so those citations are checked for their form without requiring the framework's history in the project. The declaration controls lookup as described [above](#citationsjson); whether a labeled id also exists locally does not change the label's meaning. See [G051](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted) and its [later explanatory context](RATIONALE.md#labeled-commit-citations-g051).
 
 ## The frozen manifest
 

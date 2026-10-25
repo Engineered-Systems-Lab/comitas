@@ -73,7 +73,7 @@ Each entry names who it concerns (worker, Coordinator or both), what happens, wh
 
 - **Concerns:** worker.
 - **What happens:** the continuity validator treats every backticked 40-hex id in a devlog entry as a commit and checks it with `git cat-file` (`governance/tools/validate_continuity.py`). A tree or blob id written in full fails the records prepare.
-- **Do:** write commits in full and trees, blobs and other ids in 7 characters. A commit of another repository that the project declared in `project-governance/config/citations.json` is written `<label> commit` and the id in backticks (7 to 40 characters), and is checked for its form only; an undeclared label does not exempt it ([G051](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted)). The framework's own documents write their commits as `template commit` and the id.
+- **Do:** write commits in full and trees, blobs and other ids in 7 characters. A commit of another repository that the project declared in `project-governance/config/citations.json` is written `<label> commit` and the id in backticks (7 to 40 characters), and is checked for its form only; an undeclared label does not exempt it ([G051](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted)). The framework's own documents write their commits as `template commit` and the id; [the label names the framework repository by role](PROJECT-GOVERNANCE.md#the-template-label).
 - **Taught by:** a records prepare that failed on a tree id written in full.
 
 ## H10. Names in committed text
