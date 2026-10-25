@@ -1189,6 +1189,8 @@ class BriefTest(unittest.TestCase):
         self.assertNotIn('<your handle>', shown)
         self.assertIn('"Coordinator"', shown)
         self.assertIn('remove your owned worktree and branch and any superseded ones', shown)
+        self.assertIn('ENDS with exactly one line, placed last, immediately before the go or Approve question', shown)
+        self.assertIn('`Diff page: <file:// link>`', shown)
         self.assertTrue(shown.index('READ FIRST') < shown.index(j.COORDINATION_TITLE) < shown.index('IF MAIN MOVES')
                         < shown.index('RULES THAT STAY') < shown.index('\nSCOPE\n'))
 

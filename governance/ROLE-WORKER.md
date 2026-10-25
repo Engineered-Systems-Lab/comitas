@@ -30,7 +30,7 @@ Validation scope must match change scope ([Validation scope](CHECKPOINT-WORKFLOW
 
 ## The optional diff viewer
 
-Where the [diff viewer extension](extensions/diff_viewer/README.md) is present, the worker may run it after showing a preview or presenting a sealed review and put the link it prints on one line directly beside that review, so the lead developer can read the exact candidate in a browser. The page is built from the recorded parent and tree only, is removed with the mission's review folder and grants nothing: the go and the Approve are asked exactly as before, and a project without the extension loses nothing.
+Where the [diff viewer extension](extensions/diff_viewer/README.md) is present (the folder `governance/extensions/diff_viewer/` exists), the worker runs it after showing a preview or presenting a sealed review and puts the link it prints in that message so the lead developer can read the exact candidate in a browser. The message ends with exactly one line, `Diff page: <file:// link>` (or `Diff page: not available (<reason>)`), placed last, immediately before the go or Approve question, never omitted and never elsewhere ([the rule](extensions/diff_viewer/README.md#where-the-link-goes)). The page is built from the recorded parent and tree only, is removed with the mission's review folder and grants nothing: the go and the Approve are asked exactly as before, and a project without the extension loses nothing.
 
 ## The preview waiver
 

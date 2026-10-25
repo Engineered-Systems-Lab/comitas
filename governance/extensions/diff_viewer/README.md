@@ -11,7 +11,23 @@ python -B governance/extensions/diff_viewer/render.py --job '<job-handle>' previ
 python -B governance/extensions/diff_viewer/render.py sealed
 ```
 
-Each command writes one file into the mission's review folder (`../_review/<mission-id>/`), `diff-preview-<preview id>.html` or `diff-sealed-<transaction id>.html`, and prints its path and a `file://` link. The worker puts that link on one line directly beside the preview or the sealed review it presents, so the lead developer opens it in a browser. The review folder is deleted with the mission, so the page leaves nothing behind. `--output-dir` names another folder, and `--repo` another checkout (the default is the current folder).
+Each command writes one file into the mission's review folder (`../_review/<mission-id>/`), `diff-preview-<preview id>.html` or `diff-sealed-<transaction id>.html`, and prints its path and a `file://` link. The worker puts that link in the message that presents the preview or the sealed review, as described under [Where the link goes](#where-the-link-goes), so the lead developer opens it in a browser. The review folder is deleted with the mission, so the page leaves nothing behind. `--output-dir` names another folder, and `--repo` another checkout (the default is the current folder).
+
+## Where the link goes
+
+While the folder `governance/extensions/diff_viewer/` exists, every message in which a worker presents a preview or a sealed review ENDS with exactly one line, placed last, immediately before the go or Approve question, so the link sits next to the answer the lead developer gives:
+
+```text
+Diff page: <file:// link>
+```
+
+or, when rendering failed:
+
+```text
+Diff page: not available (<reason>)
+```
+
+The line is never omitted and never placed elsewhere in the message. Run the renderer before you write the message, so that the line is known. The line grants nothing: the go and the Approve are asked exactly as before.
 
 A preview record does not hold the Job handle, so `--job` supplies it for the page; the sealed review reads it from the packet.
 

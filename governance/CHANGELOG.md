@@ -4,6 +4,8 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**A worker's preview or sealed-review message always ends with the diff page line; documentation and the worker brief only, nothing to do but take the upgrade.** Where the optional diff viewer is installed (its folder `governance/extensions/diff_viewer/` exists), the link's place was left to each worker, so it appeared above, below or not at all. Now every message that presents a preview or a sealed review ends with exactly one line, placed last, immediately before the go or Approve question: `Diff page: <file:// link>`, or `Diff page: not available (<reason>)` when rendering failed; it is never omitted and never elsewhere ([the rule](extensions/diff_viewer/README.md#where-the-link-goes)). The worker role and the brief printed by `local_jobs.py brief` state it. The checkpoint tool and the core review are not changed, and the go and the Approve are asked exactly as before.
+
 **The README introduction states what approval guarantees and where it stops; documentation only, nothing to do but take the upgrade.** Approval binds to the exact reviewed transaction, its candidate and its validation evidence, and a change that invalidates that binding needs a fresh approval, except through the optional guarded carry; the carry preserves an approval after main advances only when the change merges cleanly, the approved change and message are preserved, the validation selection is unchanged and every selected check passes again, which does not prove that the combined result is semantically correct or that parallel changes are independent ([the carry](CHECKPOINT-TOOL.md#the-carry)). No tool or test changes.
 
 ## 0.5.2 (2026-10-25)
