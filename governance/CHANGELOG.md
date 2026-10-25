@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.5.3 (2026-10-25)
 
 **A worker's preview or sealed-review message always ends with the diff page line; documentation and the worker brief only, nothing to do but take the upgrade.** Where the optional diff viewer is installed (its folder `governance/extensions/diff_viewer/` exists), the link's place was left to each worker, so it appeared above, below or not at all. Now every message that presents a preview or a sealed review ends with exactly one line, placed last, immediately before the go or Approve question: `Diff page: <file:// link>`, or `Diff page: not available (<reason>)` when rendering failed; it is never omitted and never elsewhere ([the rule](extensions/diff_viewer/README.md#where-the-link-goes)). The worker role and the brief printed by `local_jobs.py brief` state it. The checkpoint tool and the core review are not changed, and the go and the Approve are asked exactly as before.
 
