@@ -462,6 +462,48 @@ index using the existing same-directory Markdown link convention. Unrelated
 uncommitted index entries need not be included.
 A working-copy continuity PASS alone is insufficient durable promotion.
 
+### Recovering blocked post-commit verification
+
+`verify` also accepts an authenticated `verification-blocked` packet for an explicit recheck after inspection.
+It reconstructs the original approval without the post-commit error field and verifies the original immutable commit,
+the interpreter pin, branch, configuration, empty index, sealed working bytes and unrelated state again. HEAD must still
+equal the blocked result. It reruns post-commit continuity and all independent runtime-pending checks. A continuing
+failure stays blocked; success clears the obsolete error and enters only the ordinary verified or follow-up-pending
+state. It never repeats the commit, changes an approval, repairs records or accepts changed candidate bytes.
+
+A project blocked by the framework-only reconstruction-contract lookup in 0.6.1 can recover across a governed upgrade:
+
+1. Inspect the original mission, packet, exact approved runtime commit and execution status. Preserve its worktree,
+   branch, key, packets and review inputs. Do not abandon it, edit its packets or replace its working `governance/`.
+2. Take the complete fixed framework through a separate, normally previewed and approved upgrade mission on clean main,
+   then finish and integrate that upgrade. A blocked packet with no running operation or lock is not a ref window.
+   Its path claims can report an overlap; they do not prohibit the upgrade. Read execution status at each required step.
+3. In Git Bash, use the same Python interpreter as the blocked transaction. Change the current directory to the
+   main checkout and run its upgraded, committed driver against the unchanged original mission:
+
+   ```sh
+   python -B governance/tools/checkpoint.py --repo '<original-mission>' inspect
+   python -B governance/tools/checkpoint.py --repo '<original-mission>' verify
+   python -B governance/tools/checkpoint.py --repo '<original-mission>' continue-records
+   ```
+
+   Run only inspected, committed fixed tooling. This explicit driver choice leaves the old mission's sealed working
+   bytes intact; copying fixed files into it would invalidate verification. Main's movement does not change its commit.
+4. Delegate the continuity-record work separately, with the required fresh-worker assessment and exact approval.
+   Edit the Progress and indexed devlog records in the original mission. From the main checkout, prepare those changes
+   with the upgraded driver and `--repo '<original-mission>'`, then approve, commit, verify and finish with that driver. The records cite the
+   original runtime commit and preserve its anchored completion report. Full committed continuity must pass.
+5. The finished branch now diverges from upgraded main. When the committed `diff_bound_approval` switch is true, use
+   [the carry](#the-carry) from upgraded main for the finished runtime/records pair, then guarded integration and owned
+   cleanup. The carry proves the approved changes, substitutes the carried runtime identity in the records and reruns
+   every selected check. It can refuse on changed selection, conflicts, changed evidence or any other existing gate.
+   If it is off or refuses, preserve the mission and obtain a fresh reviewed reconciliation mission and approvals;
+   neither `reconcile` of an unfinished packet nor a forced merge is a recovery shortcut.
+
+The same-interpreter and original-receipt requirements remain. Missing approval evidence, changed working bytes,
+unexpected HEAD, an unrelated continuity failure or a failed carry needs inspection and the applicable fresh review;
+this procedure supplies no authority to repair those conditions. No packet migration, copying or hand editing is needed.
+
 `continue-records` accepts a verified `follow-up-pending` runtime, atomically moves
 its authenticated packet to scratch `pending.json`, and permits only explicit
 Progress/devlog paths in the next normal preparation. It does not imply lifecycle

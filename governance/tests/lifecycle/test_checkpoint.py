@@ -48,6 +48,200 @@ def ignore_local_folder(tool):
         stream.write('/.local/\n')
 
 
+def build_runtime_repository(root):
+    """Real continuity, overlay-only facts, frozen content and indexed runtime logs; disposable gates only."""
+    from governance.tests.continuity import test_continuity as continuity_fixtures
+    checkpoint, _, _ = continuity_fixtures.build_fixture(root)
+    # Only this disposable repository gets an identity. Checkpoint's environment stays free of GIT_* overrides.
+    for key, value in (('user.name', 'Fixture'), ('user.email', 'fixture@example.invalid')):
+        subprocess.run(['git', '-C', str(root), 'config', '--local', key, value], check=True, capture_output=True)
+    shutil.copytree(Path(c.__file__).parent, root / 'governance/tools', dirs_exist_ok=True)
+    (root / 'governance/__init__.py').write_text('', encoding='utf-8')
+    contract = json.loads((root / ac.CONTRACT).read_text(encoding='utf-8'))
+    overlay = {key: contract.pop(key) for key in ('facts', 'completion_evidence_fact')}
+    overlay['version'] = 1
+    contract['facts'] = {}
+    (root / ac.CONTRACT).write_text(json.dumps(contract), encoding='utf-8')
+    (root / ac.PROJECT_CONTRACT).write_text(json.dumps(overlay), encoding='utf-8')
+    (root / '.gitignore').write_text('/.local/\n__pycache__/\n', encoding='utf-8')
+    rows = [('.gitignore', 'tooling', 'test', '-'), ('AGENTS.md', 'governance', 'test', '-'),
+            ('README.md', 'record', 'test', '-'), ('contracts/', 'governance', 'test', 'frozen'),
+            ('devlog/', 'record', 'test', '-'), ('docs/', 'record', 'test', '-'),
+            ('governance/', 'tooling', 'test', '-'), ('project-governance/', 'tooling', 'test', '-'),
+            ('src/', 'runtime', 'test', 'runtime')]
+    (root / ac.TABLE).write_text(fixture_table(sorted(rows)), encoding='utf-8')
+    policy = {'version': 4, 'prohibited_components': ['.git', 'tmp', '__pycache__'],
+              'required_checks': ['continuity'], 'commands': {
+                  'continuity': ['{python}', '-B', 'governance/tools/validate_continuity.py'],
+                  'runtime-fixture': ['{python}', '-B', '-c', 'print("fixture runtime gate PASS")']}}
+    profiles = {'version': 4, 'profiles': {'test': {
+        'checks': [{'id': name, 'argv': argv} for name, argv in policy['commands'].items()],
+        'runtime_checks': ['runtime-fixture'], 'limitations': 'Synthetic runtime gate; real continuity and Git.'}},
+        'impact': {'version': 1, 'invariants': {}, 'symbol_maps': {}},
+        'commit_metadata': {'version': 2, 'classes': ['record', 'governance', 'tooling', 'runtime'], 'subclasses': []}}
+    for name, value in ((ac.POLICY, policy), (ac.PROFILES, profiles)):
+        (root / name).write_text(json.dumps(value), encoding='utf-8')
+    tool = c.Checkpoint(root)
+    tool.git('add', '-A')
+    tool.git('commit', '-qm', 'Configure overlay fixture')
+    return checkpoint
+
+
+class RuntimeOverlayRecoveryTest(unittest.TestCase):
+    """Exercise the real commit/continuity lifecycle without mocking the contract or facts."""
+
+    def setUp(self):
+        environment = {k: value for k, value in os.environ.items() if not k.startswith('GIT_')}
+        env = patch.dict(os.environ, environment, clear=True)
+        env.start()
+        self.addCleanup(env.stop)
+        self.temp = tempfile.TemporaryDirectory(prefix='runtime-overlay-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'repo'
+        self.old_checkpoint = build_runtime_repository(self.root)
+        self.tool = c.Checkpoint(self.root)
+        self.message = Path(self.temp.name) / 'message.txt'
+
+    def prepare(self, tool, manifest, category):
+        self.message.write_text('Update fixture\n\n## Fixture\n- Update the selected paths.\n\nClass: ' +
+                                category + '\nWorker: Fixture\n', encoding='utf-8', newline='\n')
+        packet = tool.prepare(manifest, str(self.message), 'auto', tool.head(), tool.branch(), 'Fixture scope',
+                              worker_context={'identity': 'Fixture', 'isAI': False, 'configuration': None})
+        with redirect_stdout(io.StringIO()):
+            tool.approve(lambda prompt: 'APPROVE ' + packet['id'] + ' ' + c.digest(c.canonical(packet)))
+        return packet
+
+    def runtime(self, tool=None):
+        tool = tool or self.tool
+        (tool.root / 'src/app.txt').write_text('runtime v3\n', encoding='utf-8')
+        self.prepare(tool, ['src/app.txt'], 'runtime')
+        return tool.commit()
+
+    def records(self, tool, runtime):
+        from datetime import datetime, timezone
+        progress = tool.root / 'docs/PROGRESS.md'
+        progress.write_text(progress.read_text(encoding='utf-8').replace(self.old_checkpoint, runtime), encoding='utf-8')
+        moment = datetime.fromisoformat(tool.git('show', '-s', '--format=%cI', runtime).decode().strip())
+        date = moment.astimezone(timezone.utc).strftime(ac.DEVLOG_DEFAULTS['date_format'])
+        name = ac.date_prefix(date) + 'new-runtime.md'
+        entry = 'devlog/' + name
+        (tool.root / entry).write_text('# New runtime\n\nDate: ' + date + '\nSubject: New runtime\n'
+            'Status: Historical / non-normative\nProvenance: Fixture\nRepository checkpoint: `' + runtime + '`\n', encoding='utf-8')
+        index = tool.root / 'devlog/README.md'
+        index.write_text(index.read_text(encoding='utf-8') + '\n[New runtime](' + name + ')\n', encoding='utf-8')
+        self.prepare(tool, ['docs/PROGRESS.md', 'devlog/README.md', entry], 'record')
+        result = tool.commit()
+        self.assertEqual(result['state'], 'verified')
+        tool.finish()
+        return result
+
+    def test_overlay_only_runtime_reaches_pending_and_finishes_the_records_transaction(self):
+        result = self.runtime()
+        self.assertEqual(result['state'], 'follow-up-pending')
+        self.assertEqual(result['continuity'], 'checkpoint committed; continuity follow-up pending')
+        self.assertEqual(json.loads((self.root / ac.CONTRACT).read_text())['facts'], {})
+        self.assertEqual(self.tool.continue_records()['result_sha'], result['result_sha'])
+        self.records(self.tool, result['result_sha'])
+
+    def blocked(self, tool=None):
+        # Reproduce 0.6.1 by substituting exactly its framework-only contract reader, not packet bytes.
+        from governance.tools.continuity import validate_continuity as v
+        with patch.object(v, 'reconstruction_contract', side_effect=lambda root:
+                          json.loads(v.read(root, v.CONTRACT))):
+            with self.assertRaisesRegex(KeyError, 'implementation_checkpoint'):
+                self.runtime(tool)
+        tool = tool or self.tool
+        packet = tool.load()
+        self.assertEqual(packet['state'], 'verification-blocked')
+        return packet
+
+    def test_blocked_verification_rechecks_exact_approval_and_then_allows_records(self):
+        blocked = self.blocked()
+        with self.assertRaisesRegex(ValueError, 'Cannot abandon'):
+            self.tool.abandon()
+        result = self.tool.verify()
+        self.assertEqual(result['result_sha'], blocked['result_sha'])
+        self.assertNotIn('error', result)
+        self.assertEqual(self.tool.verify(), result)
+        self.tool.continue_records()
+        self.records(self.tool, result['result_sha'])
+
+    def test_blocked_verification_keeps_refusing_unrelated_continuity_failure(self):
+        self.blocked()
+        self.tool.runner = lambda argv, root: {'argv': argv, 'exit_code': 1, 'stdout': '',
+            'stderr': 'FAIL: unrelated frozen mutation', 'duration_seconds': 0}
+        with self.assertRaisesRegex(ValueError, 'unexpected failure'):
+            self.tool.verify()
+        self.assertEqual(self.tool.load()['state'], 'verification-blocked')
+
+    def test_blocked_verification_refuses_changed_content_index_and_head(self):
+        blocked = self.blocked()
+        path = self.root / 'src/app.txt'
+        original = path.read_bytes()
+        path.write_bytes(b'changed\n')
+        with self.assertRaisesRegex(ValueError, 'working content changed'):
+            self.tool.verify()
+        path.write_bytes(original)
+        self.tool.git('add', '--intent-to-add', 'README.md')  # An unchanged tracked path stages nothing.
+        (self.root / 'README.md').write_text('# Changed\n', encoding='utf-8')
+        self.tool.git('add', 'README.md')
+        with self.assertRaisesRegex(ValueError, 'branch/index mismatch'):
+            self.tool.verify()
+        self.tool.git('restore', '--staged', '--worktree', 'README.md')
+        self.tool.git('commit', '--allow-empty', '-qm', 'Unexpected HEAD')
+        with self.assertRaisesRegex(ValueError, 'Blocked verification HEAD changed'):
+            self.tool.verify()
+        self.assertEqual(self.tool.load(), blocked)
+
+    def test_governed_upgrade_coexists_with_blocked_mission_then_recovery_carries_the_finished_pair(self):
+        from governance.tools.worktrees import guard
+        lifecycle = 'governance/tools/lifecycle/checkpoint_lifecycle.py'
+        fixed = (self.root / lifecycle).read_text(encoding='utf-8')
+        legacy = fixed.replace('contract = continuity.reconstruction_contract(self.root)',
+                               'contract = json.loads(continuity.read(self.root, continuity.CONTRACT))')
+        legacy = legacy.replace("'verification-blocked', 'verified'", "'verified'")
+        (self.root / lifecycle).write_text(legacy, encoding='utf-8')
+        features = self.root / ac.FEATURES
+        features.write_text('diff_bound_approval = true\n', encoding='utf-8')
+        self.tool.git('add', lifecycle, ac.FEATURES)
+        self.tool.git('commit', '-qm', 'Old driver and enabled carry fixture')
+        base = self.tool.head()
+        flow = guard.Worktrees(self.root)
+        owned = flow.create(None, 'runtime', base)
+        mission = c.Checkpoint(Path(owned['worktree']))
+        blocked = self.blocked(mission)
+        raw = (mission.store / c.TRANSACTION).read_bytes()
+        old = subprocess.run([sys.executable, '-B', str(mission.root / 'governance/tools/checkpoint.py'),
+                              '--repo', str(mission.root), 'verify'], capture_output=True)
+        self.assertNotEqual(old.returncode, 0)
+        self.assertIn(b'No commit attempt to verify', old.stderr)
+        self.assertEqual(guard.execution_status(self.root)['level'], 'CLEAR')
+        upgrade = flow.create(None, 'upgrade', base)
+        newer = c.Checkpoint(Path(upgrade['worktree']))
+        (newer.root / lifecycle).write_text(fixed, encoding='utf-8')
+        self.prepare(newer, [lifecycle], 'tooling')
+        upgraded = newer.commit()
+        newer.finish()
+        checker_hash = c.digest((newer.root / ac.CONTINUITY_CHECKER).read_bytes())
+        flow.integrate(newer.root, 'upgrade', base, upgraded['result_sha'], checker_hash)
+        self.assertEqual((mission.store / c.TRANSACTION).read_bytes(), raw)
+        self.assertEqual(mission.head(), blocked['result_sha'])
+        # Use committed upgraded tooling against the unchanged old mission; no packet or working-byte edits.
+        for action in ('verify', 'continue-records'):
+            done = subprocess.run([sys.executable, '-B', str(self.root / 'governance/tools/checkpoint.py'),
+                                   '--repo', str(mission.root), action], capture_output=True)
+            self.assertEqual(done.returncode, 0, done.stderr.decode())
+            self.assertEqual(json.loads(done.stdout)['state'], 'follow-up-pending')
+        self.records(mission, blocked['result_sha'])
+        tip = mission.head()
+        carried = flow.carry(mission.root, 'runtime', upgraded['result_sha'], tip)
+        self.assertNotEqual(mission.head(), tip)
+        checker_hash = c.digest((mission.root / ac.CONTINUITY_CHECKER).read_bytes())
+        flow.integrate(mission.root, 'runtime', upgraded['result_sha'], mission.head(), checker_hash)
+        self.assertEqual(flow.main.head(), mission.head())
+        self.assertTrue(carried)
+
+
 class CheckpointTest(unittest.TestCase):
     def setUp(self):
         environment = patch.dict(os.environ, {k: v for k, v in os.environ.items()
@@ -861,7 +1055,7 @@ class CheckpointTest(unittest.TestCase):
             'completion': {'source': 'report.md#evidence'},
             'frozen_contracts_and_fixtures_unchanged': {'source': 'git:frozen-invariants'}}}
         with patch.object(v, 'validate_docs') as docs, \
-                patch.object(v, 'read', return_value=json.dumps(contract)), \
+                patch.object(v, 'reconstruction_contract', return_value=contract), \
                 patch.object(v, 'extract_facts', return_value={'implementation_checkpoint': self.parent}), \
                 patch.object(v, 'frozen_invariants') as frozen, \
                 patch.object(v, 'source_text', return_value='anchored evidence'), \

@@ -3,7 +3,7 @@
 The copy is the tracked tree in a temporary directory (a file that is new and not yet added to Git is not in it). In it the
 removal script of `governance/extensions/` deletes the extensions and the extension layer, with their rows, golden entries,
 policy commands, profile entries and links; then no file other than a document may still name an extension; then the copy
-becomes a Git repository whose one commit sits on the checkout's HEAD (the identity comes from the environment, no Git
+becomes a Git repository with removal committed over the checkout's HEAD (the identity comes from the environment, no Git
 configuration is read or written; the checkout's objects are an alternate, so a commit that a record cites resolves) and the tests
 of the areas most likely to depend on an extension run in it, each through the repository's own runner:
 
@@ -28,6 +28,8 @@ import time
 import unittest
 
 import repo_paths as rp
+from governance.tools.continuity import artifact_classification as ac
+from governance.tools.continuity.show_classification import head_reader
 
 REPO = rp.ROOT
 LAYER = 'governance/extensions'
@@ -79,11 +81,13 @@ def forget_read_only(function, path, error):
 
 
 def make_repository(source, root, entries):
-    """Turn the copy in `root` into a Git repository on main, keeping the executable bits of the index.
+    """Commit removal in `root` over source history, keeping candidate runtime bytes out of that commit.
 
-    The copy's one commit sits on the source's HEAD, whose objects the copy reaches through an alternate object store,
-    so a commit that a record cites (a devlog entry, the implementation checkpoint) still resolves and still precedes
-    the copy's HEAD. A source without a commit gives a repository with the one commit alone."""
+    Source commits remain resolvable through an alternate object store. The scratch commit contains the removed
+    extension's rows and profiles together, so HEAD-table readers see consistent configuration. Runtime paths, under
+    either HEAD or candidate classification, keep their source-HEAD index entries for this commit only. Restore the
+    whole candidate index afterwards, without changing working bytes, so continuity sees no invented runtime history
+    and frozen-index/coverage checks still see the actual candidate. With no source HEAD, make one initial commit."""
     run(['git', 'init', '-q', '-b', 'main'], root)
     code, head = run(['git', 'rev-parse', '--verify', '-q', 'HEAD^{commit}'], source, check=False)
     if code == 0:
@@ -96,7 +100,22 @@ def make_repository(source, root, entries):
     executable = [path for mode, path in entries if mode == '100755' and (root / path).is_file()]
     for start in range(0, len(executable), 50):
         run(['git', 'update-index', '--chmod=+x', '--', *executable[start:start + 50]], root)
-    run(['git', 'commit', '-q', '-m', 'Scratch copy'], root)
+    candidate = run(['git', 'write-tree'], root)[1].strip()
+    if code == 0:
+        tables = []
+        for location in (source, root):
+            if (location / ac.TABLE).is_file():
+                tables.append(ac.load_table(location, ac.load_profiles(location)))
+        read_head = head_reader(source)
+        if read_head(ac.TABLE) is not None:
+            tables.append(ac.table_from(read_head, ac.profiles_from(read_head)))
+        names = {path for _, path in indexed(root)}
+        names.update(run(['git', 'ls-tree', '-r', '--name-only', '-z', 'HEAD'], root)[1].split('\0'))
+        runtime = sorted(path for path in names if path and any(table.in_boundary(path, 'runtime') for table in tables))
+        for start in range(0, len(runtime), 50):
+            run(['git', 'restore', '--source=HEAD', '--staged', '--', *runtime[start:start + 50]], root)
+    run(['git', 'commit', '--allow-empty', '-q', '-m', 'Scratch copy'], root)
+    run(['git', 'read-tree', candidate], root)
 
 
 class RemovalTest(unittest.TestCase):
@@ -176,6 +195,69 @@ class RemovalTest(unittest.TestCase):
 
 class ScratchRepositoryTest(unittest.TestCase):
     """The scratch copy keeps every commit of the checkout resolvable (generic fixtures, no project names)."""
+
+    def test_extension_removal_is_committed_while_candidate_runtime_stays_staged(self):
+        from unittest.mock import patch
+        from governance.tests.lifecycle.test_checkpoint import build_runtime_repository
+        from governance.tools.continuity import validate_continuity as continuity
+        from governance.tools.continuity.show_classification import head_table
+        parent = Path(tempfile.mkdtemp(prefix='scratch-removal-runtime-'))
+        self.addCleanup(shutil.rmtree, parent, onexc=forget_read_only)
+        source = parent / 'source'
+        with patch.dict(os.environ, {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}, clear=True):
+            checkpoint = build_runtime_repository(source)
+        folder = source / LAYER / 'demo'
+        folder.mkdir(parents=True)
+        shutil.copyfile(REPO / SCRIPT, source / SCRIPT)
+        manifest = {'version': 1, 'name': 'demo', 'folder': LAYER + '/demo',
+                    'tests': 'governance/tests/extensions/demo', 'policy_commands': [],
+                    'invariants': ['demo-inv'], 'subclasses': [], 'project_files': [],
+                    'markers': ['demo-inv'], 'prose': []}
+        (folder / 'extension.json').write_text(json.dumps(manifest), encoding='utf-8')
+        table = source / ac.TABLE
+        lines = table.read_text(encoding='utf-8').splitlines()
+        row = '| `governance/extensions/demo/` | tooling | test | - | - | demo-inv | - | - | - |'
+        rows = sorted([line for line in lines if line.startswith('| `')] + [row])
+        table.write_text('\n'.join([line for line in lines if not line.startswith('| `')] + rows) + '\n', encoding='utf-8')
+        profiles = json.loads((source / ac.PROFILES).read_text(encoding='utf-8'))
+        profiles['impact']['invariants']['demo-inv'] = {'groups': []}
+        (source / ac.PROFILES).write_text(json.dumps(profiles), encoding='utf-8')
+        (source / 'governance/config/artifact-classification-golden.json').write_text(
+            '{"version": 1, "paths": {}}\n', encoding='utf-8')
+        run(['git', 'add', '-A'], source)
+        run(['git', 'commit', '-qm', 'Install fixture extension'], source)
+        for option in ('demo', '--all'):
+            with self.subTest(removal=option):
+                copy = parent / ('layer' if option == '--all' else 'extension')
+                shutil.copytree(source, copy, ignore=shutil.ignore_patterns('.git'))
+                (copy / 'src/app.txt').write_text('candidate runtime\n', encoding='utf-8')
+                run([sys.executable, '-B', SCRIPT, option], copy)
+                make_repository(source, copy, indexed(source))
+                self.assertIsNotNone(head_table(copy, ac.load_profiles(copy)))
+                self.assertNotIn('demo-inv', run(['git', 'show', 'HEAD:' + ac.TABLE], copy)[1])
+                self.assertNotIn('demo-inv', run(['git', 'show', 'HEAD:' + ac.PROFILES], copy)[1])
+                self.assertEqual(run(['git', 'diff', '--cached', '--name-only', 'HEAD'], copy)[1].strip(), 'src/app.txt')
+                self.assertEqual(run(['git', 'show', ':src/app.txt'], copy)[1], 'candidate runtime\n')
+                self.assertEqual(continuity.verify_repository(copy)[1]['implementation_checkpoint'], checkpoint)
+
+    def test_runtime_candidate_is_validated_without_inventing_committed_runtime_history(self):
+        from unittest.mock import patch
+        from governance.tests.lifecycle.test_checkpoint import build_runtime_repository
+        from governance.tools.continuity import validate_continuity as continuity
+        parent = Path(tempfile.mkdtemp(prefix='scratch-runtime-'))
+        self.addCleanup(shutil.rmtree, parent, onexc=forget_read_only)
+        source, copy = parent / 'source', parent / 'copy'
+        with patch.dict(os.environ, {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}, clear=True):
+            checkpoint = build_runtime_repository(source)
+        shutil.copytree(source, copy, ignore=shutil.ignore_patterns('.git'))
+        (copy / 'src/app.txt').write_text('candidate runtime\n', encoding='utf-8')
+        make_repository(source, copy, indexed(source))
+        self.assertEqual(continuity.verify_repository(copy)[1]['implementation_checkpoint'], checkpoint)
+        self.assertEqual(run(['git', 'show', ':src/app.txt'], copy)[1], 'candidate runtime\n')
+        # This is the old test's precise failure: its extra commit invents runtime history past Progress.
+        run(['git', 'commit', '-qm', 'Old scratch candidate'], copy)
+        with self.assertRaisesRegex(ValueError, 'Stale implementation checkpoint'):
+            continuity.verify_repository(copy)
 
     def test_a_commit_cited_by_a_record_resolves_in_the_copy_and_precedes_its_head(self):
         parent = Path(tempfile.mkdtemp(prefix='scratch-repository-'))

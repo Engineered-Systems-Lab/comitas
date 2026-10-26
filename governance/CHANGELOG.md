@@ -2,6 +2,31 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
+## Unreleased
+
+**Runtime post-commit verification reads the merged reconstruction contract.** Facts declared only in the project's
+overlay, including `implementation_checkpoint` and completion evidence, now participate in the independent pending
+checks. Frozen files remain checked even when the project declares no frozen-invariants fact. The audit found no other
+semantic framework-only contract reader in the tools.
+
+**Blocked post-commit verification can be explicitly rechecked without repeating the commit.** `verify` authenticates
+the original approval and unchanged result, then repeats all verification gates. An unrelated failure still blocks.
+See [blocked verification recovery](CHECKPOINT-TOOL.md#recovering-blocked-post-commit-verification).
+
+Migration. Take the complete `governance/` upgrade in its own governed mission. Preserve an already blocked runtime
+mission unchanged and run the upgraded committed main driver against it with the original interpreter. After successful
+verification, complete its separately delegated and approved continuity records, then try the existing guarded carry
+of the finished pair onto upgraded main before integration. Claims do not block that separate upgrade; running windows
+and locks still do. Follow the linked recovery procedure; ordinary abandon and uncommitted reconcile do not accept
+this post-commit state. No project overlay rewrite or version-field workaround is required.
+
+**Extension-removal conformance preserves the candidate's uncommitted runtime state.** Scratch copies exclude candidate
+runtime changes from committed history, preventing false stale-checkpoint failures for mixed runtime/conformance
+manifests. Scratch commits contain the extension removals and consistent
+configuration, with runtime paths held at source HEAD; the candidate's runtime bytes are then restored to the index.
+Individual-extension and whole-layer removal retain their real
+configuration, coverage, continuity and frozen-index checks; no adopter workaround is needed.
+
 ## 0.6.1 (2026-10-25)
 
 **Citation-label conformance fixtures are independent of the current commit hash.** A commit whose short prefix contains only digits could fail a test that expected that prefix to be a citation, although short digits-only tokens are intentionally excluded. The label tests now use deterministic commit samples alongside a real full-HEAD lookup, with explicit coverage of the numeric-prefix case. Citation rules are unchanged; no adopter workaround is needed. See [labeled commit citations](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted).

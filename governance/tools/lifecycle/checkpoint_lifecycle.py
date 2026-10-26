@@ -134,7 +134,7 @@ class Lifecycle:
         # Reconstruct the original approval, including after a restarted verification.
         prepared = {k: v for k, v in packet.items() if k not in
                     ('approval', 'commit_result', 'result_sha', 'post_continuity', 'post_status',
-                     'follow_up', 'continuity')}
+                     'follow_up', 'continuity', 'error')}
         prepared['state'] = 'prepared'
         sha = packet.get('result_sha', self.head())
         headers, message = self.git('cat-file', 'commit', sha).split(b'\n\n', 1)
@@ -525,10 +525,10 @@ class Lifecycle:
                 result['stderr'].strip() == 'FAIL: Stale implementation checkpoint: runtime history has advanced',
                 'Post-commit continuity has an unexpected failure; blocked')
         continuity.validate_docs(self.root)
-        contract = json.loads(continuity.read(self.root, continuity.CONTRACT))
+        contract = continuity.reconstruction_contract(self.root)
         facts = continuity.extract_facts(self.root, contract)
         require(facts['implementation_checkpoint'] != packet['result_sha'], 'Unexpected continuity checkpoint')
-        if continuity.FROZEN_FACT in contract['facts']:
+        if continuity.FROZEN_FACT in contract['facts'] or continuity.frozen_in_force(self.root):
             continuity.frozen_invariants(self.root, packet['result_sha'])
         report = continuity.completion_evidence_source(contract)
         if report:
@@ -542,7 +542,7 @@ class Lifecycle:
         self.quiet_operation()
         require(self.branch() == packet['branch'] and self.configuration() == packet['configuration'],
                 'Post-commit branch/configuration changed')
-        require(packet['state'] in ('committing', 'commit-attempted', 'verified', 'follow-up-pending'),
+        require(packet['state'] in ('committing', 'commit-attempted', 'verification-blocked', 'verified', 'follow-up-pending'),
                 'No commit attempt to verify')
         self.commit_identity(packet)
         if packet['state'] in ('verified', 'follow-up-pending'):
@@ -551,7 +551,9 @@ class Lifecycle:
             require(self.residual(packet['manifest']) == self.residual(packet['manifest'], packet['prepared_status']), 'Post-verification unrelated state changed')
             atomic(self.store / HANDOFF, canonical(packet))
             return packet
-        require(packet['state'] in ('committing', 'commit-attempted'), 'No commit attempt to verify')
+        if packet['state'] == 'verification-blocked':
+            require(self.head() == packet['result_sha'], 'Blocked verification HEAD changed')
+        require(packet['state'] in ('committing', 'commit-attempted', 'verification-blocked'), 'No commit attempt to verify')
         sha = self.head()
         raw = self.git('cat-file', 'commit', sha)
         headers, message = raw.split(b'\n\n', 1)
@@ -585,6 +587,7 @@ class Lifecycle:
             packet.update(state='verification-blocked', error=str(error))
             self.save(packet)
             raise
+        packet.pop('error', None)
         self.save(packet)
         # Identical packet produces identical handoff bytes. No prose or devlog mutation.
         atomic(self.store / HANDOFF, canonical(packet))
