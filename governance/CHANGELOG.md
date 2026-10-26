@@ -2,6 +2,10 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
+## Unreleased
+
+**Project-artifact conformance fixtures work with populated adopter configuration and absent optional settings.** The selector tests use independent minimal project fixtures, so their present/absent cases no longer leave a project profile or impact invariant referring to a removed dependency. The optional Mission Control settings tests likewise supply their own fixtures. Production overlay validation is unchanged; no adopter workaround is needed. See [the project overlay](CHECKPOINT-TOOL.md#the-project-overlay).
+
 ## 0.6.0 (2026-10-25)
 
 **Epics can close automatically or explicitly.** The optional `closure_policy` is `automatic` (also the default for existing records) or `explicit`. Normal completion/pruning still removes the last member and closes automatic Epics. Explicit Epics stay open, including when empty, until the lead developer confirms closure and the Coordinator removes them through the existing guarded update. Either policy permits adding Jobs while the Epic exists, and the Coordinator can change an existing Epic’s policy through the guarded update; an empty Epic changed to automatic closes on the next prune. The queue report and Mission Control show the policy and retained empty Epics. See [Local coordination](LOCAL-COORDINATION.md#epics-dependencies-and-priority).

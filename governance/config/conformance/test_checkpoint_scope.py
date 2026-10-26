@@ -570,22 +570,62 @@ class ProjectArtifactScopeTest(unittest.TestCase):
         'config/selector-expectations.json': ('tooling', 'tooling', SELECTOR),
     }
 
+    def test_core_artifact_fixture_is_independent_of_populated_project_dependencies(self):
+        from governance.tools.continuity import artifact_classification as ac
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)
+            contents = {path: (REPO / path).read_text(encoding='utf-8')
+                        for path in (ac.TABLE, ac.POLICY, ac.PROFILES)}
+            contents.update({ac.PROJECT_GOVERNANCE + '/' + name: '# Fixture\n'
+                             for name in self.EXPECTED})
+            command = ['{python}', '-B', 'fixture_check.py']
+            contents[ac.PROJECT_POLICY] = json.dumps({'version': 4, 'commands': {'adopter-stack': command}})
+            contents[ac.PROJECT_PROFILES] = json.dumps({
+                'version': 4, 'profiles': {'adopter-checks': {
+                    'limitations': 'Fixture only.',
+                    'checks': [{'id': 'adopter-stack', 'argv': command}]}},
+                'impact': {'invariants': {'adopter-stack': {'groups': ['adopter-stack'], 'requires': []}}}})
+            contents[ac.PROJECT_TABLE] = '\n'.join([ac.HEADER, ac.SEPARATOR,
+                '| `fixture.src` | tooling | adopter-checks | - | - | adopter-stack | - | - | - |', ''])
+            for relative, text in contents.items():
+                target = source / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text, encoding='utf-8', newline=chr(10))
+            # Establish that the source is valid and contains both reported dependencies.
+            tool = bare_tool(source, FakeGit(contents))
+            policy, profiles = tool.data()
+            self.assertEqual(tool.table(policy, profiles).resolve('fixture.src').profile, 'adopter-checks')
+            self.assertEqual(profiles['impact']['invariants']['adopter-stack']['groups'], ['adopter-stack'])
+            self.assertEqual(policy['commands']['adopter-stack'], command)
+            installed = extension_checks()
+            with patch.dict(globals(), REPO=source), patch.dict(globals(), extension_checks=lambda: installed):
+                self.test_each_supported_core_artifact_selects_its_checks_present_or_absent()
+
     def test_each_supported_core_artifact_selects_its_checks_present_or_absent(self):
         from governance.tools.continuity import artifact_classification as ac
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             contents = {path: (REPO / path).read_text(encoding='utf-8')
                         for path in (ac.TABLE, ac.POLICY, ac.PROFILES)}
-            optional = {
-                ac.PROJECT_POLICY: '{"version": 4, "commands": {}}',
-                ac.PROJECT_PROFILES: '{"version": 4, "profiles": {}}',
-                ac.FROZEN_MANIFEST: '{"version": 1, "files": {}}',
-                ac.SELECTOR_EXPECTATIONS: '{"version": 1, "expectations": []}',
+            # Each project artifact stands alone: deleting policy or profiles must
+            # not leave dependencies borrowed from the adopting repository.
+            project = {
+                'ARTIFACT-CLASSIFICATION.md': fixtures.fixture_table([('fixture-only.md', 'record', 'record-only', '-')]),
+                'CONSTRAINTS.md': '# Fixture constraints\n',
+                'DECISIONS.md': '# Fixture decisions\n',
+                'RATIONALE.md': '# Fixture rationale\n',
+                'config/artifact-classification-golden.json': '{"version": 1, "paths": {}}',
+                'config/checkpoint-policy.json': '{"version": 4, "commands": {}}',
+                'config/checkpoint-profiles.json': '{"version": 4, "profiles": {}}',
+                'config/checkpoint-features.toml': '',
+                'config/citations.json': '{"version": 1, "external_repositories": []}',
+                'config/devlog.json': '{"enabled": false}',
+                'config/frozen-manifest.json': '{"version": 1, "files": {}}',
+                'config/reconstruction-contract.json': '{"version": 1}',
+                'config/selector-expectations.json': '{"version": 1, "expectations": []}',
             }
-            for name in self.EXPECTED:
-                path = ac.PROJECT_GOVERNANCE + '/' + name
-                contents[path] = ((REPO / path).read_text(encoding='utf-8')
-                                  if (REPO / path).is_file() else optional[path])
+            self.assertEqual(set(project), set(self.EXPECTED))
+            contents.update({ac.PROJECT_GOVERNANCE + '/' + name: text for name, text in project.items()})
             for path, text in contents.items():
                 target = root / path
                 target.parent.mkdir(parents=True, exist_ok=True)

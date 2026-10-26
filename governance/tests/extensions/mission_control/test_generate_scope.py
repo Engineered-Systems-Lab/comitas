@@ -65,10 +65,32 @@ class ExtensionScopeTest(unittest.TestCase):
             self.assertIn(invariant, self.profiles['impact']['invariants'])
         known = {entry['value'] for entry in self.profiles['commit_metadata']['subclasses']}
         self.assertTrue(set(manifest['subclasses']) <= known)
-        self.assertTrue((rp.ROOT / manifest['project_files'][0]).is_file())
+        # Ownership declarations cover optional files, even before a project creates them.
+        table = self.tool.table(self.policy, self.profiles)
+        for path in manifest['project_files']:
+            self.assertIn(path, table.by_path)
 
 
 class ProjectSettingsScopeTest(unittest.TestCase):
+    def test_project_consumer_fixture_needs_no_optional_project_settings(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from governance.tools.continuity import artifact_classification as ac
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)
+            for relative in (ac.TABLE, ac.POLICY, ac.PROFILES, EXTENSION + 'extension.json'):
+                target = source / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text((rp.ROOT / relative).read_text(encoding='utf-8'),
+                                  encoding='utf-8', newline=chr(10))
+            self.assertFalse((source / ac.PROJECT_GOVERNANCE).exists())
+            with patch.object(rp, 'ROOT', source):
+                self.test_project_consumers_select_the_exact_checks_present_or_absent()
+                manifest_case = ExtensionScopeTest('test_the_manifest_names_what_the_policy_and_the_profiles_hold')
+                manifest_case.setUp()
+                manifest_case.test_the_manifest_names_what_the_policy_and_the_profiles_hold()
+
     def test_project_consumers_select_the_exact_checks_present_or_absent(self):
         import tempfile
         from pathlib import Path
@@ -89,7 +111,8 @@ class ProjectSettingsScopeTest(unittest.TestCase):
             root = Path(folder)
             contents = {path: (rp.ROOT / path).read_text(encoding='utf-8')
                         for path in (ac.TABLE, ac.POLICY, ac.PROFILES)}
-            contents.update({'project-governance/' + name: (rp.ROOT / 'project-governance' / name).read_text(encoding='utf-8')
+            # These settings are optional and their contents do not select checks.
+            contents.update({'project-governance/' + name: '{}\n' if name.endswith('.json') else '# Fixture\n'
                              for name in expected})
             for path, text in contents.items():
                 target = root / path
