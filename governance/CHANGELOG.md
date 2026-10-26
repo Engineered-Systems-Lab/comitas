@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.6.2 (2026-10-26)
 
 **Runtime post-commit verification reads the merged reconstruction contract.** Facts declared only in the project's
 overlay, including `implementation_checkpoint` and completion evidence, now participate in the independent pending
