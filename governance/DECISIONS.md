@@ -165,6 +165,10 @@ The Coordinator owns Epic membership, Job-level dependencies and scheduling prio
 
 Explicit RP, roleplay, role-play or role-playing markers exclude the marked playful/exploratory message or passage from Job, decision, rationale and devlog capture unless the lead developer later explicitly promotes it for recording. RP is scoped, grants no authority and does not erase history. See AGENTS and the local coordination procedure.
 
+### G025 Epic closure policy extension (2026-10-25)
+
+An Epic has an optional closure policy: `automatic` closes through normal completion/pruning after its Jobs are removed; `explicit` keeps it open, even when empty, until the lead developer confirms closure and the Coordinator removes it. An absent policy means automatic. At the lead developer's direction, the Coordinator may change an existing Epic’s policy in either direction through the guarded update; an empty Epic changed to automatic is removed on the next prune. Both policies allow adding Jobs while the Epic exists and neither fixes membership. This supersedes the unconditional empty-Epic disposal rule in the local job coordination extension above. Job completion, dependencies, disposal and approval boundaries remain unchanged. See the [procedure](LOCAL-COORDINATION.md#epics-dependencies-and-priority) and [rationale](RATIONALE.md#epic-closure-policy-g025-epic-closure-policy-extension).
+
 ### G025 worktree container extension (2026-10-10)
 
 Transaction worktrees live in one container outside every checkout: `<parent>/_worktrees/<repo>/<mission-id>/` is the workspace and `<parent>/_worktrees/<repo>/_review/<mission-id>/` holds the external review inputs, where `<parent>/<repo>` is the main checkout. The lifecycle guard derives the workspace when no path is given and accepts an explicit path only when it equals the derived one. The existing rules are unchanged: no nesting inside any registered worktree, main included, a clean idle main, a locked worktree and the `tx/<mission-id>` branch. The app's own session folders are out of scope. See the [layout](WORKTREE-WORKFLOW.md#container-layout) and the [rationale](RATIONALE.md#transaction-owned-worktrees-g025).

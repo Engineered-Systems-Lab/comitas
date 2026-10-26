@@ -235,7 +235,16 @@ class QueuePayloadTest(unittest.TestCase):
         job, epic = payload['queue']
         self.assertEqual((job['handle'], job['priority'], job['pending_count'], job['has_record']), ('a_job', 1, 2, True))
         self.assertEqual(epic['jobs'][0]['handle'], 'member_job')
+        self.assertEqual(epic['closure_policy'], 'automatic')
         self.assertFalse(payload['unqueued'][0]['has_record'])
+
+    def test_empty_explicit_epic_and_its_policy_leave_the_server(self):
+        queue = {'queue': [{'handle': 'an_epic', 'kind': 'epic', 'priority': 2,
+                            'closure_policy': 'explicit', 'jobs': []}], 'unqueued': []}
+        with mock.patch.object(serve, 'helper', return_value=completed(json.dumps(queue))):
+            payload = serve.queue_payload()
+        self.assertEqual(payload['state'], 'ok')
+        self.assertEqual(payload['queue'], queue['queue'])
 
     def test_the_page_gets_the_helpers_order_unchanged(self):
         # The order of execution is decided once, in the helper, so the page and the report cannot disagree.

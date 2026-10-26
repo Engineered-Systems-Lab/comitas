@@ -271,7 +271,9 @@ export function epicRow(entry) {
   for (const job of entry.jobs) { const key = job?.status ?? 'no record'; counts.set(key, (counts.get(key) ?? 0) + 1); }
   return {role: 'epic', priority: priorityText(entry.priority), workKind: '', handle: `${entry.handle} (Epic)`,
           description: `${entry.jobs.length} ${entry.jobs.length === 1 ? 'Job' : 'Jobs'}`, chips: [],
-          lines: [[...counts].map(([status, count]) => `${count} ${status}`).join(' · ')], awaiting: null};
+          lines: [entry.jobs.length ? [...counts].map(([status, count]) => `${count} ${status}`).join(' · ')
+                                   : `empty; awaiting ${entry.closure_policy === 'explicit' ? 'explicit closure' : 'automatic pruning'}`,
+                  `closure: ${entry.closure_policy ?? 'automatic'}`], awaiting: null};
 }
 // The footer says which copy of the datasets is on screen; the server names it in X-MC-Data-Source.
 export function dataSourceLabel(header) {

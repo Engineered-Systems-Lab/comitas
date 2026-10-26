@@ -155,6 +155,7 @@ def queue_core():
             return dict(payload, state='error', message=failure(result))
         data = json.loads(result.stdout)
         queue = [{'handle': entry['handle'], 'kind': 'epic', 'priority': entry['priority'],
+                  'closure_policy': entry.get('closure_policy', 'automatic'),
                   'jobs': [public_job(job) for job in entry['jobs']]} if entry['kind'] == 'epic'
                  else dict(public_job(entry), kind='job', priority=entry['priority']) for entry in data['queue']]
         return dict(payload, state='ok', queue=queue, unqueued=[public_job(job) for job in data['unqueued']])

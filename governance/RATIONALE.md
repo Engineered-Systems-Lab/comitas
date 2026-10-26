@@ -111,6 +111,7 @@ The audit covers every entry in the decision registry as of October 7, 2026 (G03
 | G025 same-tree transient ref-name extension | explicit | Saved six-ref name churn blocked reconciliation despite unchanged tree targets; narrow target-preserving classification and separate audits retain protected refs. See Same-tree transient ref names. |
 | G025 ignored-file removal extension | explicit | The lead developer's single-source principle: the ignore file is the one declaration of disposable local state; see Transaction-owned worktrees. |
 | G025 local job coordination extension | explicit | The lead developer requested transparent cross-vendor handoffs, local JSON status and deterministic disposal rather than another stale memory archive; see Transaction-owned worktrees. |
+| G025 Epic closure policy extension | recoverable | The recorded human-authorized scope distinguishes automatic closure from explicit closure while allowing new Jobs under either; see Epic closure policy. |
 | G025 worktree container extension | explicit | The lead developer called sibling worktrees and loose review folders a mess that pollutes the dev folder and asked for one contained place; see Transaction-owned worktrees. |
 | G025 protected-set ref extension | explicit | The lead developer wants multitasking: a prepare, seal or integration protects only what the transaction depends on, so unrelated branch, worktree and stash activity no longer fails a 37-minute prepare; see Protected-set refs. |
 | G025 execution status extension | explicit | The lead developer wanted worker coordination automated and deterministic, with the Coordinator out of it, a small tested database instead of hand-made lock files, and the message protocol gone the moment its replacement lands; see Execution status. |
@@ -717,3 +718,19 @@ The Job scope attributed the Diff page sentence of the worker brief to `governan
 **Why.** Supplied by the lead developer in the worker chat on 2026-10-25: implement the reduced per-role plan, mirror document sensitivity, keep core configuration high and defer the blocked fallback, reachability amendment and new overlay check. Source-stated: the former shared row classified explanatory rationale as governance and selected the same approval/selector checks for every project file. Agent-reasoned: explicit invariants select the consumers each file can affect without conflating class, binding and sensitivity.
 
 **Alternatives.** The lead developer replaced the earlier all-high plan with per-role sensitivity and deferred the wider proposal. **Tradeoffs.** More rows and pins must stay consistent; unknown files retain the existing high fallback. A migration uses the higher sensitivity at HEAD, and later low or medium edits may use the unchanged committed reach. **Evidence.** The classification table, framework golden, real-selector expectations and extension-removal tests record the chosen values. This later context supersedes the blanket-high/no-dedicated-row claims of G045/G050 without rewriting their historical rationale. **Revisit when.** A supported project artifact gains another validation or approval role.
+
+## Epic closure policy: G025 Epic closure policy extension
+
+**Decision.** Let an Epic close automatically through existing pruning or remain open until explicit lead-developer confirmation, with missing policy meaning automatic.
+
+**Why (source-stated).** The recorded launch scope and rationale distinguish automatic closure after the current Jobs finish from explicit closure when more Jobs may arrive later. They reject objective completion conditions as unnecessarily specific and burdensome for this need; these are summaries of the supplied intent, not direct quotations. **Why (agent-reasoned).** Reusing the existing digest-guarded Coordinator update for explicit closure keeps one mutation path, and defaulting omission to automatic avoids migration.
+
+**Alternatives.** Automatic-only behavior is replaced by the authorized two-policy choice. Objective completion criteria, acceptance checklists, separate outcome assessments, required outcome descriptions, history lists and an additional grouping level were excluded by the recorded human-authorized scope. Fixed membership was excluded: either policy permits adding Jobs while the Epic exists. No separate close command was added; the existing guarded update was chosen by the worker for the narrow implementation.
+
+**Why (supplied by the lead developer, worker chat).** "add the option of modifying an existing epic's closure policy". The same guarded update permits both directions; an empty Epic switched to automatic closes on the next prune.
+
+**Tradeoffs or costs.** Empty explicit Epics need a later human decision and Coordinator update. Local records remain assertions, and the helper cannot authenticate human confirmation. Older helpers reject the new optional field.
+
+**Evidence.** The authorized closure-policy launch scope; inspected [local coordination](LOCAL-COORDINATION.md), [helper](tools/coordination/local_jobs.py), [Coordinator role](ROLE-COORDINATOR.md) and queue view code. Focused compatibility, pruning, membership and display tests accompany this change.
+
+**Revisit when.** Retained empty Epics become confusing or guarded manual closure proves insufficient.

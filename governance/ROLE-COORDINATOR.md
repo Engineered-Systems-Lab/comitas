@@ -32,7 +32,7 @@ Attach `execution-status --watch` through your monitor tool, which turns each pr
 
 ## The queue
 
-- You own membership, dependencies and priorities of the queue; workers own Job notes. See [Epics, dependencies and priority](LOCAL-COORDINATION.md#epics-dependencies-and-priority) for the schema and the order of execution, and the helper's optional Job keys (`description`, `kind`, `created_at`) in [Job state](LOCAL-COORDINATION.md#job-state-and-reported-worker-activity).
+- At the lead developer's direction, you may change an existing Epic’s closure policy in either direction through the digest-guarded `put`, preserving its other fields; an empty Epic changed to automatic is removed on the next prune. You own membership, closure policies, dependencies and priorities of the queue; workers own Job notes. An explicit Epic stays open, even when empty, until the lead developer confirms closure; then remove its empty Epic entry, queue entry and priority through the digest-guarded `put`. Both closure policies permit adding Jobs while the Epic exists. See [Epics, dependencies and priority](LOCAL-COORDINATION.md#epics-dependencies-and-priority) for the schema and the order of execution, and the helper's optional Job keys (`description`, `kind`, `created_at`) in [Job state](LOCAL-COORDINATION.md#job-state-and-reported-worker-activity).
 - Closing a Job and pruning: use `note`, `dispose` and `complete` as described in [Updates, handoff and disposal](LOCAL-COORDINATION.md#updates-handoff-and-disposal). You perform shared pruning because it changes scheduling records; workers report completion and transfer their notes rather than editing the shared plan.
 
 ### The horizon rule

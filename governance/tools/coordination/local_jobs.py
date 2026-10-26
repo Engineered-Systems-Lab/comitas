@@ -197,8 +197,10 @@ def validate(data):
         for name, epic in epics.items():
             handle(name)
             require(name in data['queue'], 'Epic must be queued')
-            require(isinstance(epic, dict) and set(epic) == {'jobs'} and
-                    isinstance(epic['jobs'], list) and epic['jobs'], 'Epic requires nonempty jobs')
+            require(isinstance(epic, dict) and {'jobs'} <= set(epic) <= {'jobs', 'closure_policy'}
+                    and isinstance(epic['jobs'], list), 'Epic requires jobs and optional closure_policy')
+            policy = epic.get('closure_policy', 'automatic')
+            require(isinstance(policy, str) and policy in ('automatic', 'explicit'), 'Unknown Epic closure policy')
             for job in epic['jobs']:
                 handle(job)
                 require(job not in epics and job not in data['queue'],
@@ -432,8 +434,9 @@ def queued(directory):
     for name in coordinator['queue']:
         if name in epics:
             jobs = [row(job) for job in sorted(epics[name]['jobs'], key=lambda h: rank[h])]
-            entry = {'handle': name, 'kind': 'epic', 'priority': priorities.get(name), 'jobs': jobs}
-            entries.append((min(standing(job) for job in jobs), entry))
+            entry = {'handle': name, 'kind': 'epic', 'priority': priorities.get(name), 'jobs': jobs,
+                     'closure_policy': epics[name].get('closure_policy', 'automatic')}
+            entries.append((min((standing(job) for job in jobs), default=(True, True)), entry))
         else:
             entry = dict(row(name), kind='job', priority=priorities.get(name))
             entries.append((standing(entry), entry))
@@ -540,7 +543,7 @@ def prune(directory, primary):
             removed_epics = set()
             for name, epic in list(queue.get('epics', {}).items()):
                 epic['jobs'] = [job for job in epic['jobs'] if job not in handles]
-                if not epic['jobs']:
+                if not epic['jobs'] and epic.get('closure_policy', 'automatic') == 'automatic':
                     removed_epics.add(name)
                     del queue['epics'][name]
             removed = handles | removed_epics

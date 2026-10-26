@@ -462,11 +462,18 @@ test('queue rows keep Epic bands, dependency-ordered members, empty member prior
   assert.deepEqual(model.queue.map(r => [r.role, r.priority, r.handle]), [
     ['epic', '3', 'sample_epic (Epic)'], ['member', '', 'member_read'], ['member', '', 'member_write'], ['job', 'unset', 'sample_job']]);
   assert.equal(model.queue[0].description, '2 Jobs');
-  assert.deepEqual(model.queue[0].lines, ['1 WIP · 1 PENDING']);
+  assert.deepEqual(model.queue[0].lines, ['1 WIP · 1 PENDING', 'closure: automatic']);
   assert.equal(model.queue[3].workKind, 'cleanup');
   assert.equal(model.queue[3].description, 'Tidy files.');
   assert.deepEqual(model.unscheduled.map(r => [r.role, r.priority, r.handle]), [['job', 'unset', 'loose_job']]);
   assert.equal(model.readAt, '2026-10-10T12:00:00Z');
+});
+
+test('an empty explicit Epic stays visible with its closure policy', () => {
+  const model = core.queueModel(payload({queue: [{handle: 'more_work', kind: 'epic', priority: 1,
+    closure_policy: 'explicit', jobs: []}]}));
+  assert.equal(model.queue[0].description, '0 Jobs');
+  assert.deepEqual(model.queue[0].lines, ['empty; awaiting explicit closure', 'closure: explicit']);
 });
 
 test('BLOCKED, waiting on dependencies, missing records and pending counts stay distinct', () => {

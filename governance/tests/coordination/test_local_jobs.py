@@ -339,7 +339,7 @@ class LocalJobsTest(JobsFixture):
             dict(good, dependencies={'job_a': ['mission_epic']}),
             dict(good, dependencies={'mission_epic': ['job_a']}),
             dict(good, dependencies={'job_a': ['job_b', 'job_b']}),
-            dict(good, epics={'mission_epic': {'jobs': []}}),
+            dict(good, epics={'mission_epic': {'jobs': [], 'closure_policy': 'unknown'}}),
             dict(good, queue=['mission_epic', 'other_epic'],
                  epics={'mission_epic': {'jobs': ['job_a']}, 'other_epic': {'jobs': ['job_a']}})
         ]
@@ -394,6 +394,88 @@ class LocalJobsTest(JobsFixture):
         self.assertEqual(coordinator['queue'], ['next_job'])
         self.assertEqual(coordinator['priorities'], {})
         self.assertEqual(coordinator['dependencies'], {'next_job': []})
+
+    def test_epic_policy_validation_and_legacy_default(self):
+        for policy in (None, 'automatic', 'explicit'):
+            epic = {'jobs': []}
+            if policy is not None:
+                epic['closure_policy'] = policy
+            data = self.coordinator(queue=['mission_epic'], epics={'mission_epic': epic})
+            j.put(self.primary, data, self.digest('coordinator'))
+            self.assertEqual(j.queued(self.primary)['queue'][0]['closure_policy'], policy or 'automatic')
+        for invalid in (None, True, 1, [], {}, '', 'Automatic', 'open_scope'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                j.validate(self.coordinator(queue=['mission_epic'], epics={
+                    'mission_epic': {'jobs': [], 'closure_policy': invalid}}))
+        with self.assertRaises(ValueError):
+            j.validate(self.coordinator(queue=['mission_epic'], epics={
+                'mission_epic': {'jobs': [], 'closure_policy': 'explicit', 'outcome': 'extra'}}))
+
+    def test_explicit_epic_survives_completion_pruning_and_accepts_more_jobs(self):
+        self.job(status='COMPLETE', pending=[], commits=[self.tip])
+        data = self.coordinator(queue=['mission_epic', 'next_job'], priorities={'mission_epic': 2},
+            epics={'mission_epic': {'jobs': ['sample_job'], 'closure_policy': 'explicit'}},
+            dependencies={'next_job': ['sample_job']})
+        j.put(self.primary, data, None)
+        self.assertEqual(j.prune(self.primary, self.root), ['sample_job'])
+        kept = self.stored('coordinator')
+        self.assertEqual(kept['epics']['mission_epic'], {'jobs': [], 'closure_policy': 'explicit'})
+        self.assertEqual(kept['priorities'], {'mission_epic': 2})
+        self.assertEqual(kept['dependencies'], {'next_job': []})
+        self.assertFalse((self.primary / 'sample_job.json').exists())
+        j.prune(self.primary, self.root)
+        self.assertEqual(j.queued(self.primary)['queue'][0]['jobs'], [])
+        kept['epics']['mission_epic']['jobs'].append('later_job')
+        j.put(self.primary, kept, self.digest('coordinator'))
+        self.assertEqual(j.queued(self.primary)['queue'][0]['jobs'][0]['handle'], 'later_job')
+
+    def test_existing_epic_policy_changes_preserve_members_and_other_scheduling(self):
+        self.put_job('sample_job')
+        self.put_job('prereq')
+        data = self.coordinator(queue=['mission_epic'], priorities={'mission_epic': 3},
+            epics={'mission_epic': {'jobs': ['sample_job']}}, dependencies={'sample_job': ['prereq']})
+        j.put(self.primary, data, None)
+        for policy in ('explicit', 'automatic'):
+            old_digest = self.digest('coordinator')
+            changed = self.stored('coordinator')
+            changed['epics']['mission_epic']['closure_policy'] = policy
+            j.put(self.primary, changed, old_digest)
+            with self.assertRaisesRegex(ValueError, 'Record changed'):
+                j.put(self.primary, changed, old_digest)
+            self.assertEqual(self.stored('coordinator')['dependencies'], data['dependencies'])
+            self.assertEqual(self.stored('coordinator')['priorities'], data['priorities'])
+            self.assertEqual(j.queued(self.primary)['queue'][0]['closure_policy'], policy)
+            member = next(job for job in j.queued(self.primary)['queue'][0]['jobs'] if job['handle'] == 'sample_job')
+            self.assertFalse(member['dependency_ready'])
+            changed['epics']['mission_epic']['jobs'].append('new_' + policy)
+            j.put(self.primary, changed, self.digest('coordinator'))
+            self.assertIn('sample_job', self.stored('coordinator')['epics']['mission_epic']['jobs'])
+
+    def test_empty_epic_can_change_policy_then_prune_or_close_by_guarded_update(self):
+        data = self.coordinator(queue=['mission_epic'], priorities={'mission_epic': 1},
+            epics={'mission_epic': {'jobs': [], 'closure_policy': 'automatic'}})
+        j.put(self.primary, data, None)
+        data['epics']['mission_epic']['closure_policy'] = 'explicit'
+        j.put(self.primary, data, self.digest('coordinator'))
+        j.prune(self.primary, self.root)
+        self.assertIn('mission_epic', self.stored('coordinator')['epics'])
+        # Coordinator removal after human confirmation uses the existing guarded update.
+        closed = dict(data, queue=[], priorities={}, epics={})
+        j.put(self.primary, closed, self.digest('coordinator'))
+        self.assertEqual(j.queued(self.primary)['queue'], [])
+        j.put(self.primary, data, self.digest('coordinator'))
+        data['epics']['mission_epic']['closure_policy'] = 'automatic'
+        j.put(self.primary, data, self.digest('coordinator'))
+        j.prune(self.primary, self.root)
+        self.assertEqual(self.stored('coordinator')['queue'], [])
+        self.assertEqual(self.stored('coordinator')['priorities'], {})
+        self.assertEqual(self.stored('coordinator')['epics'], {})
+
+    def test_empty_explicit_epic_sorts_after_ready_groups_at_its_priority(self):
+        self.put_job('ready_job')
+        self.assertEqual(self.order(queue=['empty_epic', 'ready_job'],
+            priorities={'empty_epic': 1, 'ready_job': 1},
+            epics={'empty_epic': {'jobs': [], 'closure_policy': 'explicit'}}), ['ready_job', 'empty_epic'])
 
     def test_cancelled_dependency_is_preserved_and_does_not_make_job_ready(self):
         data = record()
