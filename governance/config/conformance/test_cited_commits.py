@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 import unittest
+from unittest.mock import patch
 
 from governance.tools.continuity import artifact_classification as ac
 import repo_paths as rp
@@ -78,16 +79,46 @@ class CitedCommitsTest(unittest.TestCase):
         self.assertEqual(tree, 'tree')
         self.assertIsNone(object_type('0' * 6 + '1' + 'f' * 33))
 
-    def test_a_bare_commit_id_fails_the_label_requirement(self):
-        head = object_type('HEAD')
-        self.assertEqual(head, 'commit')
-        commit = subprocess.run(['git', '-C', str(rp.ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True,
-                                timeout=60).stdout.strip()
+    @patch(__name__ + '.object_type', return_value='commit')
+    def test_a_bare_commit_id_fails_the_label_requirement(self, lookup):
+        # Label semantics need a known commit, not the incidental characters of HEAD.
+        commit = 'a1' * 20
+        for token in (commit, commit[:10]):
+            with self.subTest(token=token):
+                self.assertEqual(problems_of('x.md', 'template commit `%s`' % token), [])
+                for text in ('see `%s`' % token, 'the commit `%s`' % token, 'lab commit `%s`' % token):
+                    with self.subTest(text=text):
+                        problems = problems_of('x.md', text)
+                        self.assertEqual(len(problems), 1)
+                        self.assertIn('not written as `template commit`', problems[0])
+                lookup.assert_any_call(token)
+
+    def test_full_head_commit_uses_real_lookup_and_requires_the_label(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+        commit = subprocess.run(['git', '-C', str(rp.ROOT), 'rev-parse', 'HEAD'], env=env,
+                                capture_output=True, text=True, check=True, timeout=60).stdout.strip()
+        self.assertRegex(commit, r'^[0-9a-f]{40}$')
         self.assertEqual(problems_of('x.md', 'template commit `%s`' % commit), [])
-        self.assertEqual(problems_of('x.md', 'a short one: template commit `%s`' % commit[:10]), [])
-        for text in ('see `%s`' % commit, 'the commit `%s`' % commit, 'lab commit `%s`' % commit, 'see `%s`' % commit[:10]):
+        self.assertEqual(problems_of('x.md', 'see `%s`' % commit),
+                         ['x.md: the commit `%s` is not written as `template commit` and the id' % commit])
+
+    @patch(__name__ + '.object_type', return_value='commit')
+    def test_numeric_commit_prefix_keeps_full_labels_and_excludes_short_tokens(self, lookup):
+        # The observed HEAD had a digits-only ten-character prefix.
+        commit = '047581385965453d7105384af4bc99e36e7c77ab'
+        self.assertTrue(commit[:10].isdigit())
+        self.assertEqual(problems_of('x.md', 'template commit `%s`' % commit), [])
+        for text in ('see `%s`' % commit, 'the commit `%s`' % commit, 'lab commit `%s`' % commit):
             with self.subTest(text=text):
-                self.assertEqual(len(problems_of('x.md', text)), 1)
+                problems = problems_of('x.md', text)
+                self.assertEqual(len(problems), 1)
+                self.assertIn('not written as `template commit`', problems[0])
+        lookup.assert_any_call(commit)
+        lookup.reset_mock()
+        for text in ('see `%s`' % commit[:10], 'template commit `%s`' % commit[:10], 'lab commit `%s`' % commit[:10]):
+            with self.subTest(text=text):
+                self.assertEqual(problems_of('x.md', text), [])
+        lookup.assert_not_called()
 
     def test_a_labeled_id_that_does_not_resolve_still_fails(self):
         self.assertEqual(len(problems_of('x.md', 'template commit `' + 'a1' * 20 + '`')), 1)

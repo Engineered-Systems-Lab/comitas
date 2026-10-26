@@ -4,6 +4,8 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**Citation-label conformance fixtures are independent of the current commit hash.** A commit whose short prefix contains only digits could fail a test that expected that prefix to be a citation, although short digits-only tokens are intentionally excluded. The label tests now use deterministic commit samples alongside a real full-HEAD lookup, with explicit coverage of the numeric-prefix case. Citation rules are unchanged; no adopter workaround is needed. See [labeled commit citations](DECISIONS.md#g051---the-commit-of-another-repository-is-cited-by-a-declared-label-2026-10-20-accepted).
+
 **Project-artifact conformance fixtures work with populated adopter configuration and absent optional settings.** The selector tests use independent minimal project fixtures, so their present/absent cases no longer leave a project profile or impact invariant referring to a removed dependency. The optional Mission Control settings tests likewise supply their own fixtures. Production overlay validation is unchanged; no adopter workaround is needed. See [the project overlay](CHECKPOINT-TOOL.md#the-project-overlay).
 
 ## 0.6.0 (2026-10-25)
