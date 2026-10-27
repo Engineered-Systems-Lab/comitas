@@ -1,4 +1,5 @@
 {
   "version": 1,
-  "port": 8765
+  "port": 8765,
+  "tagline": "Governed work for AI agents"
 }

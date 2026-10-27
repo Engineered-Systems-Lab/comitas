@@ -4,6 +4,7 @@ import http.client
 from http.server import ThreadingHTTPServer
 import io
 import json
+import os
 from pathlib import Path
 import socket
 import struct
@@ -61,6 +62,29 @@ class Fixture(unittest.TestCase):
 
 
 class PreviewTest(Fixture):
+    def test_both_index_routes_render_inert_utf8_project_text_without_datasets(self):
+        name = 'Projeto café & <img src=x onerror=alert(1)> "demo"'
+        with mock.patch.object(serve, 'project_identity', return_value=(name, 'Primary checkout folder name')):
+            for path in ('/ui/', '/ui/index.html'):
+                with self.subTest(path=path):
+                    status, body, response = self.request('GET', path)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(response.getheader('Content-Type'), 'text/html; charset=utf-8')
+                    self.assertIn('Projeto café &amp; &lt;img src=x onerror=alert(1)&gt; &quot;demo&quot;', body.decode('utf-8'))
+                    self.assertNotIn(b'<img src=x', body)
+                    self.assertNotIn(b'replace with your project name', body)
+                    self.assertEqual(response.getheader('Cache-Control'), 'no-store')
+                    head_status, head_body, head = self.request('HEAD', path)
+                    self.assertEqual((head_status, head_body), (200, b''))
+                    self.assertEqual(head.getheader('Content-Length'), str(len(body)))
+
+    def test_failed_discovery_is_visible_and_its_error_is_escaped(self):
+        with mock.patch.object(serve.local_jobs, 'roots', side_effect=ValueError('missing "primary" <checkout>')):
+            status, body, _ = self.request('GET', '/ui/')
+        self.assertEqual(status, 200)
+        self.assertIn(b'>Project unavailable</p>', body)
+        self.assertIn(b'Primary checkout discovery failed: missing &quot;primary&quot; &lt;checkout&gt;', body)
+
     def test_without_a_local_copy_there_are_no_datasets_and_no_committed_fallback(self):
         for kind in ('decisions', 'commits', 'devlog', 'rationale', 'documents'):
             for method in ('GET', 'HEAD'):
@@ -482,6 +506,22 @@ class PortSettingTest(unittest.TestCase):
         self.assertEqual(serve.port_setting(self.root('{"port": 9124}')), (9124, None))
         self.assertEqual(serve.port_setting(self.root('{"version": 1}')), (8765, None))
 
+    def test_the_optional_tagline_is_trimmed_and_does_not_change_the_port(self):
+        for tagline in ('Governed work for AI agents', '', '   ', '  café & <demo>  '):
+            with self.subTest(tagline=tagline):
+                root = self.root(json.dumps({'port': 9123, 'tagline': tagline}))
+                self.assertEqual(serve.project_settings(root), ({'port': 9123, 'tagline': tagline.strip()}, None))
+                self.assertEqual(serve.port_setting(root), (9123, None))
+        for text in (None, '{}', '{"port": 9123}'):
+            self.assertEqual(serve.project_settings(self.root(text))[0]['tagline'], '')
+
+    def test_invalid_taglines_use_the_existing_invalid_file_fallback(self):
+        for tagline in (None, 3, True, [], {}, 'two\nlines', 'two\rlines'):
+            with self.subTest(tagline=tagline):
+                settings, problem = serve.project_settings(self.root(json.dumps({'port': 9123, 'tagline': tagline})))
+                self.assertEqual(settings, {'port': 8765, 'tagline': ''})
+                self.assertIn('"tagline" must be a single-line string', problem)
+
     def test_an_invalid_setting_falls_back_to_8765_and_says_why(self):
         for text in ('not json', '[8000]', '{"port": "9000"}', '{"port": 0}', '{"port": 65536}', '{"port": true}',
                      '{"port": 9000.0}', '{"version": 2, "port": 9000}', '{"version": true, "port": 9000}',
@@ -502,6 +542,7 @@ class PortSettingTest(unittest.TestCase):
         text = (rp.ROOT / 'governance' / 'PROJECT-GOVERNANCE.md').read_text(encoding='utf-8')
         row = '| `config/' + Path(serve.PORT_SETTING).name + '` | `port` | `' + str(serve.DEFAULT_PORT) + '` |'
         self.assertIn(row, text.splitlines())
+        self.assertIn('| `config/mission-control.json` | `tagline` | `""` |', text.splitlines())
 
     def test_the_shipped_setting_is_valid(self):
         self.assertTrue((rp.ROOT / serve.PORT_SETTING).is_file())
@@ -548,6 +589,57 @@ class ExclusiveBindTest(unittest.TestCase):
         self.assertIn(serve.PORT_SETTING, lines[0])
         self.assertIn('--port', lines[0])
         self.assertNotIn('http://', done.stdout)
+
+
+class ProjectIdentityTest(Fixture):
+    def test_primary_and_linked_checkouts_share_the_primary_folder_name(self):
+        environment = {key: value for key, value in os.environ.items() if not key.upper().startswith('GIT_')}
+        environment.update(GIT_AUTHOR_NAME='Test', GIT_AUTHOR_EMAIL='noreply@example.invalid',
+                           GIT_COMMITTER_NAME='Test', GIT_COMMITTER_EMAIL='noreply@example.invalid')
+        with TemporaryDirectory(prefix='mc-project-') as folder, mock.patch.dict(os.environ, environment, clear=True):
+            primary = Path(folder).resolve() / 'Projeto café & demo'
+            linked = Path(folder).resolve() / 'different mission'
+            def git(*args):
+                return subprocess.run(['git', *args], check=True, capture_output=True, env=environment)
+            git('init', '-q', '-b', 'main', str(primary))
+            git('-C', str(primary), 'commit', '-q', '--allow-empty', '-m', 'fixture')
+            git('-C', str(primary), 'worktree', 'add', '-q', '--detach', str(linked))
+            for checkout in (primary, linked):
+                with self.subTest(checkout=checkout):
+                    self.assertEqual(serve.project_identity(checkout),
+                                     (primary.name, 'Primary checkout folder name'))
+                    with mock.patch.object(serve, 'REPO', checkout):
+                        status, body, _ = self.request('GET', '/ui/')
+                    self.assertEqual(status, 200)
+                    self.assertIn('>Projeto café &amp; demo</p>', body.decode('utf-8'))
+                    self.assertNotIn(b'>different mission</p>', body)
+            for checkout in (primary, linked):
+                setting = checkout / serve.PORT_SETTING
+                setting.parent.mkdir(parents=True)
+                setting.write_text(json.dumps({'tagline': 'mission override'}), encoding='utf-8')
+            setting = primary / serve.PORT_SETTING
+            for tagline in ('Governed work for AI agents', 'café & <demo> "quoted"', '', '   '):
+                setting.write_text(json.dumps({'tagline': tagline}), encoding='utf-8')
+                for checkout in (primary, linked):
+                    with self.subTest(tagline=tagline, checkout=checkout), mock.patch.object(serve, 'REPO', checkout):
+                        expected = primary.name + (' · ' + tagline.strip() if tagline.strip() else '')
+                        self.assertEqual(serve.project_identity(checkout)[0], expected)
+                        status, body, _ = self.request('GET', '/ui/')
+                        self.assertEqual(status, 200)
+                        self.assertNotIn(b'mission override', body)
+                        if tagline.strip():
+                            self.assertIn(' · ', body.decode('utf-8'))
+                        else:
+                            self.assertIn('>Projeto café &amp; demo</p>', body.decode('utf-8'))
+                        self.assertNotIn(b'<demo>', body)
+
+    def test_discovery_failures_never_substitute_the_launch_folder_name(self):
+        for error in (ValueError('No primary checkout found; bare repositories are unsupported'),
+                      OSError('Git unavailable'), subprocess.CalledProcessError(128, ['git'])):
+            with self.subTest(error=error), mock.patch.object(serve.local_jobs, 'roots', side_effect=error):
+                name, detail = serve.project_identity(Path('mission-folder'))
+                self.assertEqual(name, 'Project unavailable')
+                self.assertIn(str(error), detail)
 
 
 if __name__ == '__main__':

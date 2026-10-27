@@ -2,6 +2,14 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
+## Unreleased
+
+**Mission Control names the project automatically.** The masthead shows the primary checkout folder name, including
+when launched from a linked worktree. No project-name setting is needed. The optional `tagline` in
+`project-governance/config/mission-control.json` follows the folder name and a middle dot; missing or blank means the
+folder name alone. Comitas ships `Governed work for AI agents`. Restart a running server after upgrading;
+see the [terminal instructions](extensions/mission_control/ui/README.md#run-locally).
+
 ## 0.6.2 (2026-10-26)
 
 **Runtime post-commit verification reads the merged reconstruction contract.** Facts declared only in the project's

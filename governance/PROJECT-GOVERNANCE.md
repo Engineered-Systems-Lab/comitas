@@ -25,7 +25,7 @@ With every project file absent, the tools behave exactly as with the framework a
 | `config/devlog.json` | override of code defaults | the defaults below |
 | `config/frozen-manifest.json` | the checksums of the frozen files | no frozen file may exist: every file under a `frozen` row needs an entry ([the manifest](#the-frozen-manifest)) |
 | `config/mission-control-inputs.json` | the project's part of the inventory of the Mission Control extension | the terminal shows the framework alone |
-| `config/mission-control.json` | override of a code default of the Mission Control extension | the default port |
+| `config/mission-control.json` | override of code defaults of the Mission Control extension | the default port and no tagline |
 | `config/reconstruction-contract.json` | overlay of the framework's reconstruction contract | the framework's part alone |
 | `config/selector-expectations.json` | the project's expectations of which checks its paths select | none ([selector expectations](#selector-expectations)) |
 | `CONSTRAINTS.md` | the project's rules | no project rules |
@@ -47,6 +47,7 @@ The code supplies these. The table is read by a conformance test that compares e
 | `config/checkpoint-features.toml` | `parallel_tests` | `false` |
 | `config/checkpoint-features.toml` | `test_workers` | `0` |
 | `config/mission-control.json` | `port` | `8765` |
+| `config/mission-control.json` | `tagline` | `""` |
 
 The starter files Comitas ships hold the values Comitas itself runs with, which are not always the defaults (for example `early_approval_reach` is `"medium"` and `parallel_tests` is `true` there). A project keeps the values it wants. An upgrade that adds an optional key announces it in the [changelog](CHANGELOG.md), and the default in the code keeps old project files working.
 
@@ -173,7 +174,7 @@ These two files belong to the optional Mission Control [extension](extensions/RE
 
 The optional `groups` key, `[{"label": "<group name>", "paths": ["<exact document path>", ...]}, ...]`, names the display groups of the Status briefing for the project's own documents; without it they all show under Other implementation. A group holds the documents whose exact path it lists, in the order the groups are declared, and only changes how the briefing is arranged. The groups of the project follow those of Mission Control and of the other installed extensions, which each declare theirs in their own manifest (the `group` of `extension.json`). Mission Control refuses, with one message and until the file is corrected, a label used twice in any of these sources, a path in two groups, a path that is not a relative forward-slash repository path and a path of the project that is not among the inputs of Mission Control (a document in a declared folder counts), and no group is shown meanwhile. The version stays 1.
 
-`config/mission-control.json` is `{"version": 1, "port": 8765}`. Several projects on one host need distinct ports, because the server binds exclusively and stops with one line when the port is taken, without trying another. `--port` overrides the file. A file that cannot be read, or that holds another key or a port that is not a whole number from 1 to 65535, means the default, and the server says so in one line.
+`config/mission-control.json` may hold `{"version": 1, "port": 8765, "tagline": "Governed work for AI agents"}`. Every key is optional. Several projects on one host need distinct ports, because the server binds exclusively and stops with one line when the port is taken, without trying another. `--port` overrides the file. `tagline` is an optional single-line string, trimmed for display after the primary checkout folder name and a middle dot. A missing, empty or whitespace-only tagline shows only the folder name. The tagline is read from the primary checkout's setting, including when the server runs from a linked worktree; it is not extracted from the README or fetched from GitHub. A file that cannot be read, or that holds another key, an invalid port or a tagline of another type or containing a line break, means the defaults (port 8765 and no tagline), with the problem reported. The version stays 1.
 
 ## Rules, decisions and rationale
 

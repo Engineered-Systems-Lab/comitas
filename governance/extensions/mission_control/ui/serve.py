@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timezone
 from functools import partial
+from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -20,6 +21,7 @@ for entry in (ROOT.parents[1] / 'tools', ROOT.parents[2]):  # absolute and resol
 import data_launcher
 import declared_inputs
 import repo_paths as rp
+from governance.tools.coordination import local_jobs
 
 REPO = rp.ROOT
 
@@ -56,6 +58,17 @@ JOB_FIELDS = ('handle', 'status', 'activity', 'description', 'work_kind', 'waiti
               'unsatisfied_dependencies', 'missing_dependencies', 'awaiting_lead', 'pending_count')
 
 
+def project_identity(root):
+    """Use the queue/data helper's primary checkout discovery; never fall back to a mission's folder name."""
+    try:
+        primary = local_jobs.roots(root)[1]
+        settings, problem = project_settings(primary)
+        name = primary.name + (' · ' + settings['tagline'] if settings['tagline'] else '')
+        return name, problem or 'Primary checkout folder name'
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return 'Project unavailable', 'Primary checkout discovery failed: ' + str(error)
+
+
 def poll_seconds(value):
     """0 (no timer) unless the value is a positive whole number, which is raised to the minimum."""
     try:
@@ -65,26 +78,32 @@ def poll_seconds(value):
     return 0 if seconds <= 0 else max(seconds, MIN_POLL_SECONDS)
 
 
-def port_setting(root):
-    """(port, problem): the port the project setting at `root` names, or DEFAULT_PORT and why not.
-
-    One rule: the file is optional and both its keys are optional ("version", 1, and "port", a whole number from 1 to
-    65535); a missing file or key means DEFAULT_PORT. Anything else (a file that cannot be read, is not a JSON object, holds
-    another key or another value) also means DEFAULT_PORT, and `problem` then says what is wrong so the server can print it."""
+def project_settings(root):
+    """(settings, problem): optional project settings, or code defaults with the existing invalid-file diagnostic."""
+    defaults = {'port': DEFAULT_PORT, 'tagline': ''}
     path = Path(root) / PORT_SETTING
     if not path.is_file():
-        return DEFAULT_PORT, None
+        return defaults, None
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
     except (ValueError, OSError) as error:  # includes UnicodeError and json.JSONDecodeError
-        return DEFAULT_PORT, f'{PORT_SETTING} cannot be read ({error})'
-    if not isinstance(data, dict) or not set(data) <= {'version', 'port'} or data.get('version', 1) != 1 \
+        return defaults, f'{PORT_SETTING} cannot be read ({error})'
+    if not isinstance(data, dict) or not set(data) <= {'version', 'port', 'tagline'} or data.get('version', 1) != 1 \
             or type(data.get('version', 1)) is not int:
-        return DEFAULT_PORT, f'{PORT_SETTING} may hold only "version" (1) and "port"'
+        return defaults, f'{PORT_SETTING} may hold only "version" (1), "port" and "tagline"'
     port = data.get('port', DEFAULT_PORT)
     if type(port) is not int or not 1 <= port <= 65535:
-        return DEFAULT_PORT, f'{PORT_SETTING}: "port" must be a whole number from 1 to 65535'
-    return port, None
+        return defaults, f'{PORT_SETTING}: "port" must be a whole number from 1 to 65535'
+    tagline = data.get('tagline', '')
+    if not isinstance(tagline, str) or any(character in tagline for character in '\r\n'):
+        return defaults, f'{PORT_SETTING}: "tagline" must be a single-line string'
+    return {'port': port, 'tagline': tagline.strip()}, None
+
+
+def port_setting(root):
+    """(port, problem): preserve the port interface and its fallback for invalid project settings."""
+    settings, problem = project_settings(root)
+    return settings['port'], problem
 
 
 def chosen_port(explicit, root):
@@ -243,6 +262,19 @@ class Preview(SimpleHTTPRequestHandler):
             return
         self.send_body(200, body, 'application/json', head, X_MC_Data_Source=label)
 
+    def index(self, head):
+        name, detail = project_identity(REPO)
+        try:
+            template = (ROOT / 'ui' / 'index.html').read_text(encoding='utf-8')
+        except OSError:
+            self.send_error(404, 'UI unavailable')
+            return
+        placeholder = '<p class="tagline" id="project-name">Project unavailable</p>'
+        rendered = template.replace(placeholder,
+                                    '<p class="tagline" id="project-name" title="' + escape(detail, quote=True) +
+                                    '">' + escape(name) + '</p>', 1)
+        self.send_body(200, rendered.encode('utf-8'), 'text/html; charset=utf-8', head)
+
     def do_GET(self):
         path = self.path_only()
         if path in ('/', '/ui'):
@@ -255,6 +287,8 @@ class Preview(SimpleHTTPRequestHandler):
             self.send_json(200, self.groups_source())
         elif path in DATASETS:
             self.dataset(False)
+        elif path in ('/ui/', '/ui/index.html'):
+            self.index(False)
         elif path in ALLOWED:
             super().do_GET()
         else:
@@ -266,6 +300,8 @@ class Preview(SimpleHTTPRequestHandler):
             self.send_error(405, 'GET only' if path != REFRESH else 'POST only')
         elif path in DATASETS:
             self.dataset(True)
+        elif path in ('/ui/', '/ui/index.html'):
+            self.index(True)
         elif path in ALLOWED:
             super().do_HEAD()
         else:
