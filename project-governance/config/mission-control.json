@@ -1,5 +1,6 @@
 {
   "version": 1,
   "port": 8765,
+  "project_name": "Comitas",
   "tagline": "Governed work for AI agents"
 }

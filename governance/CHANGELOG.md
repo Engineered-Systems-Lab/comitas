@@ -4,10 +4,10 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
-**Mission Control names the project automatically.** The masthead shows the primary checkout folder name, including
-when launched from a linked worktree. No project-name setting is needed. The optional `tagline` in
-`project-governance/config/mission-control.json` follows the folder name and a middle dot; missing or blank means the
-folder name alone. Comitas ships `Governed work for AI agents`. Restart a running server after upgrading;
+**Mission Control shows the project's name and optional tagline.** Set `project_name` in the primary checkout's
+`project-governance/config/mission-control.json`; missing or blank falls back to the primary folder name, including
+when launched from a linked worktree. The optional `tagline` follows the name and a middle dot; missing or blank means
+the name alone. Comitas ships `Comitas · Governed work for AI agents`. Restart a running server after upgrading;
 see the [terminal instructions](extensions/mission_control/ui/README.md#run-locally).
 
 ## 0.6.2 (2026-10-26)

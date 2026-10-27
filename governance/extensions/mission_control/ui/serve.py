@@ -63,8 +63,8 @@ def project_identity(root):
     try:
         primary = local_jobs.roots(root)[1]
         settings, problem = project_settings(primary)
-        name = primary.name + (' · ' + settings['tagline'] if settings['tagline'] else '')
-        return name, problem or 'Primary checkout folder name'
+        name = (settings['project_name'] or primary.name) + (' · ' + settings['tagline'] if settings['tagline'] else '')
+        return name, problem or ('Configured project name' if settings['project_name'] else 'Primary checkout folder name')
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         return 'Project unavailable', 'Primary checkout discovery failed: ' + str(error)
 
@@ -80,7 +80,7 @@ def poll_seconds(value):
 
 def project_settings(root):
     """(settings, problem): optional project settings, or code defaults with the existing invalid-file diagnostic."""
-    defaults = {'port': DEFAULT_PORT, 'tagline': ''}
+    defaults = {'port': DEFAULT_PORT, 'project_name': '', 'tagline': ''}
     path = Path(root) / PORT_SETTING
     if not path.is_file():
         return defaults, None
@@ -88,16 +88,19 @@ def project_settings(root):
         data = json.loads(path.read_text(encoding='utf-8'))
     except (ValueError, OSError) as error:  # includes UnicodeError and json.JSONDecodeError
         return defaults, f'{PORT_SETTING} cannot be read ({error})'
-    if not isinstance(data, dict) or not set(data) <= {'version', 'port', 'tagline'} or data.get('version', 1) != 1 \
+    if not isinstance(data, dict) or not set(data) <= {'version', 'port', 'project_name', 'tagline'} or data.get('version', 1) != 1 \
             or type(data.get('version', 1)) is not int:
-        return defaults, f'{PORT_SETTING} may hold only "version" (1), "port" and "tagline"'
+        return defaults, f'{PORT_SETTING} may hold only "version" (1), "port", "project_name" and "tagline"'
     port = data.get('port', DEFAULT_PORT)
     if type(port) is not int or not 1 <= port <= 65535:
         return defaults, f'{PORT_SETTING}: "port" must be a whole number from 1 to 65535'
-    tagline = data.get('tagline', '')
-    if not isinstance(tagline, str) or any(character in tagline for character in '\r\n'):
-        return defaults, f'{PORT_SETTING}: "tagline" must be a single-line string'
-    return {'port': port, 'tagline': tagline.strip()}, None
+    settings = {'port': port}
+    for key in ('project_name', 'tagline'):
+        value = data.get(key, '')
+        if not isinstance(value, str) or any(character in value for character in '\r\n'):
+            return defaults, f'{PORT_SETTING}: "{key}" must be a single-line string'
+        settings[key] = value.strip()
+    return settings, None
 
 
 def port_setting(root):

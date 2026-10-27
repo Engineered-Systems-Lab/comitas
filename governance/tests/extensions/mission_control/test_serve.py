@@ -510,7 +510,7 @@ class PortSettingTest(unittest.TestCase):
         for tagline in ('Governed work for AI agents', '', '   ', '  café & <demo>  '):
             with self.subTest(tagline=tagline):
                 root = self.root(json.dumps({'port': 9123, 'tagline': tagline}))
-                self.assertEqual(serve.project_settings(root), ({'port': 9123, 'tagline': tagline.strip()}, None))
+                self.assertEqual(serve.project_settings(root), ({'port': 9123, 'project_name': '', 'tagline': tagline.strip()}, None))
                 self.assertEqual(serve.port_setting(root), (9123, None))
         for text in (None, '{}', '{"port": 9123}'):
             self.assertEqual(serve.project_settings(self.root(text))[0]['tagline'], '')
@@ -519,8 +519,25 @@ class PortSettingTest(unittest.TestCase):
         for tagline in (None, 3, True, [], {}, 'two\nlines', 'two\rlines'):
             with self.subTest(tagline=tagline):
                 settings, problem = serve.project_settings(self.root(json.dumps({'port': 9123, 'tagline': tagline})))
-                self.assertEqual(settings, {'port': 8765, 'tagline': ''})
+                self.assertEqual(settings, {'port': 8765, 'project_name': '', 'tagline': ''})
                 self.assertIn('"tagline" must be a single-line string', problem)
+
+    def test_optional_project_name_preserves_port_and_tagline(self):
+        for name in ('Comitas', '  GraphQL Federation Laboratory  ', '', '   ', 'café & <demo>'):
+            with self.subTest(name=name):
+                root = self.root(json.dumps({'port': 9123, 'project_name': name, 'tagline': 'Governed work'}))
+                self.assertEqual(serve.project_settings(root),
+                                 ({'port': 9123, 'project_name': name.strip(), 'tagline': 'Governed work'}, None))
+                self.assertEqual(serve.port_setting(root), (9123, None))
+        for text in (None, '{}', '{"port": 9123, "tagline": "legacy setting"}'):
+            self.assertEqual(serve.project_settings(self.root(text))[0]['project_name'], '')
+
+    def test_invalid_project_names_use_the_existing_invalid_file_fallback(self):
+        for name in (None, 3, True, [], {}, 'two\nlines', 'two\rlines'):
+            with self.subTest(name=name):
+                settings, problem = serve.project_settings(self.root(json.dumps({'port': 9123, 'project_name': name})))
+                self.assertEqual(settings, {'port': 8765, 'project_name': '', 'tagline': ''})
+                self.assertIn('"project_name" must be a single-line string', problem)
 
     def test_an_invalid_setting_falls_back_to_8765_and_says_why(self):
         for text in ('not json', '[8000]', '{"port": "9000"}', '{"port": 0}', '{"port": 65536}', '{"port": true}',
@@ -543,6 +560,7 @@ class PortSettingTest(unittest.TestCase):
         row = '| `config/' + Path(serve.PORT_SETTING).name + '` | `port` | `' + str(serve.DEFAULT_PORT) + '` |'
         self.assertIn(row, text.splitlines())
         self.assertIn('| `config/mission-control.json` | `tagline` | `""` |', text.splitlines())
+        self.assertIn('| `config/mission-control.json` | `project_name` | `""` |', text.splitlines())
 
     def test_the_shipped_setting_is_valid(self):
         self.assertTrue((rp.ROOT / serve.PORT_SETTING).is_file())
@@ -616,7 +634,7 @@ class ProjectIdentityTest(Fixture):
             for checkout in (primary, linked):
                 setting = checkout / serve.PORT_SETTING
                 setting.parent.mkdir(parents=True)
-                setting.write_text(json.dumps({'tagline': 'mission override'}), encoding='utf-8')
+                setting.write_text(json.dumps({'project_name': 'mission name', 'tagline': 'mission override'}), encoding='utf-8')
             setting = primary / serve.PORT_SETTING
             for tagline in ('Governed work for AI agents', 'café & <demo> "quoted"', '', '   '):
                 setting.write_text(json.dumps({'tagline': tagline}), encoding='utf-8')
@@ -632,6 +650,22 @@ class ProjectIdentityTest(Fixture):
                         else:
                             self.assertIn('>Projeto café &amp; demo</p>', body.decode('utf-8'))
                         self.assertNotIn(b'<demo>', body)
+            for name in ('Comitas', '  GraphQL Federation Laboratory  ', '', '   ', 'café & <img src=x onerror=alert(1)>'):
+                setting.write_text(json.dumps({'project_name': name, 'tagline': 'Governed work'}), encoding='utf-8')
+                for checkout in (primary, linked):
+                    with self.subTest(name=name, checkout=checkout), mock.patch.object(serve, 'REPO', checkout):
+                        self.assertEqual(serve.project_identity(checkout)[0], (name.strip() or primary.name) + ' · Governed work')
+                        status, body, _ = self.request('GET', '/ui/index.html')
+                        self.assertEqual(status, 200)
+                        self.assertNotIn(b'mission name', body)
+                        self.assertNotIn(b'mission override', body)
+                        self.assertNotIn(b'<img src=x', body)
+                        if 'img' in name:
+                            self.assertIn('café &amp; &lt;img src=x onerror=alert(1)&gt; · Governed work', body.decode('utf-8'))
+                        elif name.strip():
+                            self.assertIn('>' + name.strip() + ' · Governed work</p>', body.decode('utf-8'))
+                        else:
+                            self.assertIn('>Projeto café &amp; demo · Governed work</p>', body.decode('utf-8'))
 
     def test_discovery_failures_never_substitute_the_launch_folder_name(self):
         for error in (ValueError('No primary checkout found; bare repositories are unsupported'),
