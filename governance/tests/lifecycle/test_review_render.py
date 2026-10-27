@@ -133,11 +133,7 @@ Class: tooling
 Worker: Human
 ```
 
-SHA-256 `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`, 61 bytes. Escaped form, which shows trailing spaces and line endings:
-
-```
-'Add the thing\\n\\n## Part\\n- do it\\n\\nClass: tooling\\nWorker: Human\\n'
-```
+SHA-256 `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`, 61 bytes.
 
 ### Decision
 
@@ -310,11 +306,7 @@ Class: tooling
 Worker: Human
 ```
 
-SHA-256 `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`, 61 bytes. Escaped form, which shows trailing spaces and line endings:
-
-```
-'Add the thing\\n\\n## Part\\n- do it\\n\\nClass: tooling\\nWorker: Human\\n'
-```
+SHA-256 `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`, 61 bytes.
 
 ### Early approval
 
@@ -400,6 +392,59 @@ class PreviewRenderTest(unittest.TestCase):
         text = r.render_preview(facts)
         self.assertIn('````\nSubject\n\n```\n- a | b\n````', text)
         self.assertIn('gov\\|ernance', text)
+
+
+class MessageDisplayTest(unittest.TestCase):
+    def render_both(self, message):
+        value, facts = packet(), preview_facts()
+        value['message_b64'] = base64.b64encode(message.encode('utf-8')).decode('ascii')
+        facts['message'] = message
+        before = copy.deepcopy((value, facts))
+        texts = (r.render(value, DIGEST), r.render_preview(facts))
+        self.assertEqual((value, facts), before)
+        for text in texts:
+            self.assertIn(r.fence(message), text)
+            self.assertIn(f'{len(message.encode("utf-8"))} bytes.', text)
+            self.assertIn('SHA-256 `' + 'b' * 64 + '`', text)
+        return texts
+
+    def test_ordinary_lf_messages_have_no_duplicate_escaped_form(self):
+        for message in (MESSAGE, 'Subject\n', 'Subject\n\nBody with café and 日本語\n',
+                        'Subject\n\n```\n- a | b\n```\n'):
+            with self.subTest(message=message):
+                for text in self.render_both(message):
+                    self.assertNotIn('Escaped form', text)
+                    self.assertNotIn(r.fence(repr(message)), text)
+
+    def test_hidden_bytes_get_an_explanation_and_lossless_escaped_form(self):
+        cases = (
+            ('Subject  \n', 'Trailing spaces or tabs on line(s): 1.'),
+            ('Subject\nBody \n', 'Trailing spaces or tabs on line(s): 2.'),
+            ('Subject\t\n', 'Tab characters on line(s): 1.'),
+            ('Sub\tject\n', 'Tab characters on line(s): 1.'),
+            ('Subject\r\nBody\n', 'Carriage returns (CR)'),
+            ('Subject\r', 'Carriage returns (CR)'),
+            ('Subject\x00\n', 'U+0000'),
+            ('Subject\u200b\n', 'U+200B'),
+            ('Subject\u2028Body\n', 'U+2028'),
+            ('Subject', 'No final LF newline'),
+            ('Subject\n\n', 'Extra final LF newlines'),
+            ('Subject\n\n\n', 'Extra final LF newlines'),
+        )
+        for message, explanation in cases:
+            with self.subTest(message=message):
+                for text in self.render_both(message):
+                    self.assertIn('Escaped form is shown because the normal block can hide these bytes:', text)
+                    self.assertIn(explanation, text)
+                    self.assertIn(r.fence(repr(message)), text)
+
+    def test_several_findings_share_one_escaped_copy(self):
+        message = 'Subject \r\nBody\t\n\n'
+        for text in self.render_both(message):
+            self.assertEqual(text.count('Escaped form'), 1)
+            self.assertEqual(text.count(r.fence(repr(message))), 1)
+            for finding in ('Trailing spaces', 'Tab characters', 'Carriage returns', 'Extra final LF'):
+                self.assertIn(finding, text)
 
 
 class TransactionTest(unittest.TestCase):

@@ -6,6 +6,7 @@ the packet: it is not sealed, grants nothing and never changes the digest. Stand
 """
 import base64
 import re
+import unicodedata
 
 from governance.tools.lifecycle import approval_words
 from governance.tools.lifecycle import early_approval
@@ -28,6 +29,34 @@ def fence(text, info=''):
     longest = max((len(run) for run in re.findall(r'`+', text)), default=0)
     ticks = '`' * max(3, longest + 1)
     return f'{ticks}{info}\n{text.rstrip(chr(10))}\n{ticks}'
+
+
+def message_display(message, sha):
+    """Readable message plus diagnostics only for bytes a normal fence can hide. Never rewrite the input."""
+    out = [fence(message), '', f'SHA-256 {code(sha)}, {len(message.encode("utf-8"))} bytes.']
+    findings = []
+    lines = message.split('\n')
+    trailing = [str(n) for n, line in enumerate(lines, 1) if line.rstrip('\r').endswith((' ', '\t'))]
+    tabs = [str(n) for n, line in enumerate(lines, 1) if '\t' in line]
+    if trailing:
+        findings.append('Trailing spaces or tabs on line(s): ' + ', '.join(trailing) + '.')
+    if tabs:
+        findings.append('Tab characters on line(s): ' + ', '.join(tabs) + '.')
+    if '\r' in message:
+        findings.append('Carriage returns (CR) can change how the line endings display.')
+    hidden = sorted({f'U+{ord(char):04X}' for char in message
+                     if char not in '\n\r\t' and unicodedata.category(char) in ('Cc', 'Cf', 'Zl', 'Zp')})
+    if hidden:
+        findings.append('Other nonprinting characters: ' + ', '.join(hidden) + '.')
+    if not message.endswith('\n'):
+        findings.append('No final LF newline; the normal block adds a display newline.')
+    elif message.endswith('\n\n'):
+        findings.append('Extra final LF newlines; the normal block hides trailing blank lines.')
+    if findings:
+        out += ['', 'Escaped form is shown because the normal block can hide these bytes:']
+        out += ['- ' + finding for finding in findings]
+        out += ['', fence(repr(message))]
+    return out
 
 
 def table(header, rows):
@@ -177,9 +206,7 @@ def render(packet, digest, controls=(('Approve', 'approve'), ('Reject', 'reject'
         out += [f'- {code(entry)}' for entry in outside]
 
     message = base64.b64decode(packet['message_b64']).decode('utf-8')
-    out += ['', '### Exact commit message', '', fence(message),
-            '', f'SHA-256 {code(packet.get("message_sha256", NONE))}, {len(message.encode("utf-8"))} bytes. '
-                'Escaped form, which shows trailing spaces and line endings:', '', fence(repr(message))]
+    out += ['', '### Exact commit message', ''] + message_display(message, packet.get("message_sha256", NONE))
     early = packet.get('early_approval')
     if early:
         out += ['', '### Early approval', '']
@@ -264,9 +291,7 @@ def render_preview(facts):
     out += ['', 'Limits: ' + (data.get('limitations') or NONE)]
 
     message = facts['message']
-    out += ['', '### Draft commit message', '', fence(message),
-            '', f'SHA-256 {code(body.get("message_sha256", NONE))}, {len(message.encode("utf-8"))} bytes. '
-                'Escaped form, which shows trailing spaces and line endings:', '', fence(repr(message))]
+    out += ['', '### Draft commit message', ''] + message_display(message, body.get("message_sha256", NONE))
 
     out += ['', '### Early approval', '']
     if body.get('eligible'):

@@ -2,10 +2,11 @@
 import base64
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +24,24 @@ def git(root, *args):
 
 def write(root, name, data):
     (Path(root) / name).write_bytes(data if isinstance(data, bytes) else data.encode('utf-8'))
+
+
+class PageLinkTest(unittest.TestCase):
+    def test_link_text_and_target_both_equal_the_encoded_file_uri(self):
+        cases = (
+            PureWindowsPath('C:/review/diff.html'),
+            PureWindowsPath('C:/review folder/diff (1) [x].html'),
+            PurePosixPath('/review/café [x]#%.html'),
+            PurePosixPath('/review/a>b\nc.html'),
+        )
+        for path in cases:
+            with self.subTest(path=path):
+                line = render.page_link(path)
+                match = re.fullmatch(r'Diff page: \[(.*?)\]\((.*?)\)', line)
+                self.assertIsNotNone(match)
+                self.assertEqual(match.group(1), path.as_uri())
+                self.assertEqual(match.group(2), path.as_uri())
+        self.assertIn('diff%20%281%29%20%5Bx%5D.html', render.page_link(cases[1]))
 
 
 class Fixture(unittest.TestCase):
@@ -329,7 +348,12 @@ class PreviewRecordTest(Fixture):
         target = render.run_preview(args)
         self.assertEqual(target, self.review / ('diff-preview-%s.html' % ('p' * 32)))
         self.assertIn('PREVIEW (no approval)', target.read_text(encoding='utf-8'))
-        self.assertEqual(render.main(['--repo', str(self.root), '--job', 'demo_job', 'preview', '--preview', str(path)]), 0)
+        output = io.StringIO()
+        with mock.patch('sys.stdout', output):
+            self.assertEqual(render.main(['--repo', str(self.root), '--job', 'demo_job', 'preview', '--preview', str(path)]), 0)
+        self.assertEqual(output.getvalue().splitlines()[-1], f'Diff page: [{target.as_uri()}]({target.as_uri()})')
+        self.assertEqual(len(output.getvalue().splitlines()), 2)
+        self.assertNotIn('Link:', output.getvalue())
 
     def test_an_edited_or_foreign_record_is_refused(self):
         path = self.signed(self.record(), key=b'x' * 32)
@@ -358,6 +382,10 @@ class SealedTest(Fixture):
         self.assertIn('SEALED REVIEW', text)
         self.assertIn('demo_job', text)
         self.assertIn('s' * 64, text)
+        output = io.StringIO()
+        with mock.patch('sys.stdout', output):
+            self.assertEqual(render.main(['--repo', str(self.root), '--output-dir', str(self.review), 'sealed']), 0)
+        self.assertEqual(output.getvalue().splitlines()[-1], f'Diff page: [{target.as_uri()}]({target.as_uri()})')
 
     def test_a_packet_diff_that_differs_is_refused_and_nothing_is_written(self):
         args = self.sealed(render.candidate_diff(self.root, self.parent, self.tree) + 'extra\n')

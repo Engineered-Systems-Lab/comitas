@@ -475,6 +475,12 @@ def run_sealed(args):
     return write(folder, 'diff-sealed-%s.html' % packet['id'], text)
 
 
+def page_link(path):
+    """The lead-tested desktop link: the file URI is both visible text and target."""
+    uri = path.as_uri()
+    return f'Diff page: [{uri}]({uri})'
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Write a self-contained HTML diff of the recorded preview or sealed candidate.')
     parser.add_argument('--repo', default='.', help='the mission checkout (default: the current folder)')
@@ -490,7 +496,7 @@ def main(argv=None):
         print('FAIL: ' + str(error), file=sys.stderr)
         return 1
     print('%s page: %s' % (LABELS[args.kind], path))
-    print('Link: ' + path.as_uri())
+    print(page_link(path))
     return 0
 
 

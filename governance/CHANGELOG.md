@@ -2,6 +2,16 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
+## Unreleased
+
+**Checkpoint reviews show readable messages and a `Diff page:` line linking the `file://` URI, which opens in both
+the Claude and Codex desktop apps.** Workers copy the diff viewer's generated Markdown line verbatim.
+The desktop app chooses how it opens; the visible URI can also be pasted into a browser.
+Normal messages no longer repeat an escaped copy; hidden whitespace or unusual line endings get an explained
+escaped view. Exact-byte validation and approval binding are unchanged. See
+[Sealed review](CHECKPOINT-TOOL.md#sealed-review) and the
+[diff viewer instructions](extensions/diff_viewer/README.md#where-the-link-goes).
+
 ## 0.7.0 (2026-10-27)
 
 **Selector expectations can exclude exact filenames.** After upgrading, replace broad character-class workarounds
