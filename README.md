@@ -56,6 +56,10 @@ Python 3.13 or later and Git are the only requirements of the tools; Node.js is 
 
 This README is yours to rewrite and an upgrade never replaces it, so the steps are kept in that page and not here. The export carries `LICENSE` and `governance/NOTICE`; keep both ([License](#license)).
 
+## Contributions
+
+External contributions are not accepted at this time. Please do not submit code or patches. Questions and bug reports are welcome through Issues.
+
 ## License
 
 Comitas is licensed under the PolyForm Noncommercial License 1.0.0, with the Required Notice in the first line of [LICENSE](LICENSE). This summary does not replace the license text:
