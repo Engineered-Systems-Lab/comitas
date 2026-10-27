@@ -4,6 +4,11 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**Selector expectations can exclude exact filenames.** After upgrading, replace broad character-class workarounds
+with an optional per-expectation `exclude` list so future files remain checked. Stale entries and exclusions leaving
+nothing to check fail conformance; existing declarations need no change. See
+[Selector expectations](PROJECT-GOVERNANCE.md#selector-expectations).
+
 **Commit-history coverage now uses repository-owned boundaries.** Existing adopters must add their own reviewed
 declaration; fresh exports and template copies must replace the inherited Comitas IDs. Migration: initialize
 `project-governance/config/commit-history.json` after the first commit exists, following

@@ -466,6 +466,16 @@ The project may keep `project-governance/config/selector-expectations.json`, an 
 
 See the [rationale](RATIONALE.md#project-selector-expectations-g056) and [project governance](PROJECT-GOVERNANCE.md#selector-expectations).
 
+### G056 exact filename exclusions extension (2026-10-27)
+
+Version `1` expectations may also hold optional `exclude`, a list of distinct exact repository-relative filenames,
+defaulting to `[]`. This extends the allowed keys above: subtract these names from that expectation's tracked matches,
+then apply its unchanged `selects` floor and `never` ban. Refuse malformed or noncanonical filenames, names outside
+those matches and exclusions leaving no checked file; spell names exactly as Git reports them. The full filename
+syntax and diagnostics are in [Selector expectations](PROJECT-GOVERNANCE.md#selector-expectations).
+Exclusions are local to one expectation, never patterns or directory prefixes. They add no global coverage requirement
+and change no production selection. Existing declarations retain their behavior; older readers reject the new key.
+
 ## G057 - How a release is made (2026-10-25, Accepted)
 
 **Changes collect under `## Unreleased`; a release Job cuts them, and readiness precedes the public tag.** A change adds its changelog entry without changing [VERSION](VERSION). The release Job sets VERSION, dates the release heading and includes a Migration note when an adopter must act. A fix that blocks an adopting project ships at once as a patch. Fixes and wording take a patch version; a project gaining something new takes a minor version.

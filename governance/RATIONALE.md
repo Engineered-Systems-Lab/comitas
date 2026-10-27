@@ -40,6 +40,22 @@ This copy of the guide ships with Comitas. It keeps the explanations of the fram
 
 **Revisit when.** A project needs to assert the profile name, or a symbol-map row needs a changed-symbol case.
 
+## Exact filename exclusions: G056 exact filename exclusions extension
+
+**Rationale status.** Explicit.
+
+**Decision / what we do.** Keep the enumerating pathspec and subtract an optional exact `exclude` list per expectation.
+
+**Why.** Source-stated: the laboratory migration report described `[!Rp]*` exempting README.md and pom.xml while silently hiding future R/p names; this was reported context, not an inspection of that repository. Agent-reasoned: exact names preserve future-file coverage, and refusing stale entries and empty remaining scopes keeps mistakes visible. The lead developer approved this design before implementation.
+
+**Alternatives.** Proposed by the worker and accepted by the lead developer: one optional exact list. Pattern exclusions and permissive stale entries were deferred as unnecessary for the stated need. A global exclusion list or replacing the pathspec with per-file expectations was rejected by the worker because either broadens the exemption or loses future-file coverage.
+
+**Tradeoffs or costs.** Renames and deletions require declaration cleanup. Full paths repeat directory names. Version `1` declarations without exclusions keep their behavior, but a framework upgrade is required before an older reader accepts the new key. Excluded files need not be covered by another expectation; production selection is unchanged.
+
+**Evidence.** `governance/tools/continuity/artifact_classification.py` (`selector_expectations`), `governance/config/conformance/test_selector_expectations.py` (`judge` and disposable regressions), and [Selector expectations](PROJECT-GOVERNANCE.md#selector-expectations).
+
+**Revisit when.** A concrete project needs pattern exclusions or a different stale-entry policy.
+
 ## Freezing is always allowed: G054
 
 **Rationale status.** Explicit.
@@ -91,6 +107,7 @@ The audit covers every entry in the decision registry as of October 7, 2026 (G03
 | G054 | explicit | The lead developer stated the principle, chose the manifest and settled its file, command and release in the Coordinator's session of 2026-10-21, with their words quoted in the Job scope; the reasons are in the section below. |
 | G055 | explicit | The Job scope of 2026-10-22 relays the laboratory's request and asks for a decision record because G045 gains a clarification; the narrowing opt-in is the Worker's design, labeled agent-reasoned in the section below. |
 | G056 | explicit | The Job scope of 2026-10-22 relays the laboratory's request, asks for an optional declaration checked by the conformance folder and leaves the shape and the decision record to the preview; the shape is the Worker's design, labeled agent-reasoned in the section below. |
+| G056 exact filename exclusions extension | explicit | Exact exceptions preserve future R/p filename coverage; see Exact filename exclusions. |
 | G057 | explicit | The lead developer chose Unreleased entries, readiness before tagging and immutable public tags; their words and the inspected release commits are in Release procedure: G057. |
 | G058 | explicit | The lead developer required a display of the recorded candidate with no change to approval, kept rename detection in the page and chose the link's position; see Review aids and approval: G058. |
 | G059 | explicit | The lead developer chose exact repository-owned boundaries, optional equality for the second epoch and explicit post-first-commit initialization; see Repository-owned history boundaries: G059. |

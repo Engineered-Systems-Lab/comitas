@@ -1,7 +1,8 @@
 """A project's expectations of which checks its paths select, held to the real selection (G056).
 
 `project-governance/config/selector-expectations.json` is optional. Each expectation names a git pathspec and the checks
-that every tracked file it matches must select (`selects`) and must not select (`never`). The check is made here, against
+that every tracked file it matches, except exact filenames in optional `exclude`, must select (`selects`) and must not
+select (`never`). Stale exclusions and empty remaining coverage fail. The check is made here, against
 the selection the checkpoint tool makes for one file as its whole manifest: the project's rows, profiles, narrowable checks
 and impact invariants are all in it. A failing expectation names each file and what its selection lacks or must not hold.
 A project edits only its declaration; this test and the reader stay the framework's.
@@ -52,6 +53,17 @@ def judge(tool, policy, profiles, expectations, files):
         matched = files(tool.root, expectation['paths'])
         if not matched:
             found.append(head + ' matches no tracked file, so it checks nothing; correct the pathspec or remove it')
+            continue
+        excluded = set(expectation.get('exclude', []))
+        unmatched = sorted(excluded - set(matched))
+        if unmatched:
+            found.append(head + ' excludes filenames not among its tracked matches: ' +
+                         ', '.join(repr(path) for path in unmatched) + '; correct or remove these exclusions')
+            continue
+        matched = [path for path in matched if path not in excluded]
+        if not matched:
+            found.append(head + ' excludes every matched tracked file, so it checks nothing; narrow the exclusions '
+                         'or remove the expectation')
             continue
         lines = []
         for path in matched:
@@ -216,6 +228,102 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn('1 of 3 tracked files', found[0])
         self.assertIn('notes/api/b.md', found[0])
+
+    def test_omitted_and_empty_exclusions_preserve_the_existing_verdict(self):
+        expectation = {'paths': 'notes/*.md', 'selects': ['docs-check']}
+        self.assertEqual(self.run_check(expectation), self.run_check(dict(expectation, exclude=[])))
+
+    def test_named_exceptions_do_not_hide_future_R_or_p_names(self):
+        rows = ['| `assets/` | record | docs | - | - | - | - | - | - |',
+                '| `assets/README.md` | record | record-only | - | - | - | - | - | - |',
+                '| `assets/pom.xml` | record | record-only | - | - | - | - | - | - |']
+        self.write(ac.PROJECT_TABLE, '\n'.join([ac.HEADER, ac.SEPARATOR, *rows]) + '\n')
+        for name in ('assets/Main.java', 'assets/README.md', 'assets/pom.xml'):
+            self.write(name, 'x\n')
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True, capture_output=True)
+        expectation = {'paths': ':(glob)assets/*', 'selects': ['docs-check'],
+                       'exclude': ['assets/README.md', 'assets/pom.xml']}
+        self.assertEqual(self.run_check(expectation), [])
+        # New files have wrong rows. The old character-class workaround hides both; exact exclusions do not.
+        for name in ('assets/Report.java', 'assets/parser.java'):
+            self.write(name, 'x\n')
+            rows.append('| `%s` | record | record-only | - | - | - | - | - | - |' % name)
+        self.write(ac.PROJECT_TABLE, '\n'.join([ac.HEADER, ac.SEPARATOR, *sorted(rows, key=lambda row: row.split('`')[1])]) + '\n')
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True, capture_output=True)
+        self.assertEqual(self.run_check({'paths': ':(glob)assets/[!Rp]*', 'selects': ['docs-check']}), [])
+        found = self.run_check(expectation)
+        self.assertEqual(len(found), 1)
+        self.assertIn('2 of 3 tracked files', found[0])
+        for name in ('assets/Report.java', 'assets/parser.java'):
+            self.assertIn(name + ' (profile record-only) does not select docs-check', found[0])
+        self.assertNotIn('README.md (profile', found[0])
+        self.assertNotIn('pom.xml (profile', found[0])
+
+    def test_exclusions_are_local_to_one_expectation_and_one_exact_filename(self):
+        self.write('notes/api/draft.md', 'x\n')
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True, capture_output=True)
+        found = self.run_check({'paths': 'notes/*.md', 'selects': ['docs-check'],
+                                'exclude': ['notes/draft.md', 'notes/api/b.md']},
+                               {'paths': 'notes/draft.md', 'selects': ['docs-check']})
+        self.assertEqual(len(found), 2)
+        self.assertIn('notes/api/draft.md', found[0])
+        self.assertIn('Expectation 2', found[1])
+        self.assertIn('notes/draft.md', found[1])
+
+    def test_exclusions_do_not_change_production_selection_or_other_assertions(self):
+        before = self.tool.select_profile(['notes/draft.md'], self.policy, self.profiles, 'auto')
+        self.assertEqual(self.run_check({'paths': 'notes/*.md', 'selects': ['continuity'],
+                                         'never': ['docs-lint'], 'exclude': ['notes/api/b.md']}), [])
+        with patch.object(self.tool, 'select_profile', wraps=self.tool.select_profile) as selected:
+            found = self.run_check({'paths': 'notes/*.md', 'never': ['continuity'],
+                                    'exclude': ['notes/draft.md', 'notes/api/b.md']})
+        self.assertEqual(len(found), 1)
+        self.assertIn('1 of 1 tracked files', found[0])
+        self.assertIn('notes/a.md', found[0])
+        self.assertEqual([call.args[0] for call in selected.call_args_list], [['notes/a.md']])
+        self.assertEqual(self.tool.select_profile(['notes/draft.md'], self.policy, self.profiles, 'auto'), before)
+
+    def test_stale_untracked_wrong_case_outside_scope_and_directory_exclusions_fail(self):
+        self.write('notes/untracked.md', 'x\n')  # present on disk, absent from the index
+        for name in ('notes/gone.md', 'notes/untracked.md', 'notes/Draft.md', 'other/c.txt', 'notes/api'):
+            with self.subTest(name=name):
+                found = self.run_check({'paths': 'notes/*.md', 'selects': ['continuity'], 'exclude': [name]})
+                self.assertEqual(len(found), 1)
+                self.assertIn('Expectation 1', found[0])
+                self.assertIn('not among its tracked matches', found[0])
+                self.assertIn(name, found[0])
+        subprocess.run(['git', '-C', str(self.root), 'mv', 'notes/draft.md', 'notes/renamed.md'],
+                       check=True, capture_output=True)
+        self.assertIn('not among its tracked matches', self.run_check(
+            {'paths': 'notes/*.md', 'selects': ['continuity'], 'exclude': ['notes/draft.md']})[0])
+
+    def test_excluding_all_matches_fails_distinctly_from_an_empty_positive_match(self):
+        found = self.run_check({'paths': 'notes/a.md', 'selects': ['continuity'], 'exclude': ['notes/a.md']})
+        self.assertEqual(len(found), 1)
+        self.assertIn('excludes every matched tracked file', found[0])
+        self.assertIn('checks nothing', found[0])
+        self.assertIn('matches no tracked file', self.run_check(
+            {'paths': 'nowhere/*', 'selects': ['continuity'], 'exclude': ['notes/a.md']})[0])
+
+    def test_exclusions_preserve_spaces_Unicode_and_exact_Git_spelling(self):
+        name = 'notes/ caf\u00e9 page .md'
+        self.write(name, 'x\n')
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True, capture_output=True)
+        expectation = {'paths': 'notes/*', 'selects': ['continuity'], 'exclude': [name]}
+        self.assertEqual(self.declare(expectation)[0]['exclude'], [name])
+        self.assertEqual(self.run_check(expectation), [])
+        expectation['exclude'] = [name.replace('\u00e9', 'e\u0301')]
+        self.assertIn('not among its tracked matches', self.run_check(expectation)[0])
+
+    def test_the_reader_refuses_malformed_exclusions_instead_of_normalizing_them(self):
+        bad_lists = (None, 'notes/a.md', {}, [None], [3], [[]], ['notes/a.md', 'notes/a.md'])
+        bad_paths = ('', '/notes/a.md', 'C:/notes/a.md', 'C:notes/a.md', '//server/notes/a.md',
+                     r'notes\a.md', './notes/a.md', 'notes/../a.md', '../notes/a.md', 'notes//a.md',
+                     'notes/a.md/', 'notes/*', 'notes/?.md', 'notes/[ab].md', ':(literal)notes/a.md',
+                     'notes/a\n.md', 'notes/a\r.md', 'notes/a\t.md', 'notes/a\x00.md')
+        for excluded in (*bad_lists, *([path] for path in bad_paths)):
+            with self.subTest(excluded=excluded), self.assertRaisesRegex(ValueError, 'expectation 1: "exclude"'):
+                self.declare({'paths': 'notes/*', 'selects': ['continuity'], 'exclude': excluded})
 
     def test_the_reader_refuses_what_would_switch_the_guard_off(self):
         good = {'paths': 'notes/*', 'selects': ['continuity']}
