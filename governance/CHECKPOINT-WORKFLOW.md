@@ -22,6 +22,13 @@ New checkpoints MUST end with a blank-line-separated trailer block containing ex
 
 The subject/body style is a drafting/review convention, not deterministic semantic enforcement. A worker may draft the prose; the Coordinator or another reviewer may challenge or edit it. The lead developer MUST explicitly approve the FULL EXACT final message under the approval boundary below. The tool `governance/tools/checkpoint.py` only preserves, seals and verifies the exact approved message bytes; it MUST NOT generate, reinterpret or rewrite commit prose.
 
+### History coverage
+
+The history test uses the project's exclusive boundaries in
+[`commit-history.json`](PROJECT-GOVERNANCE.md#commit-history), as [G059](DECISIONS.md#g059---repository-owned-commit-history-boundaries-2026-10-26-accepted)
+defines. The two epochs preserve contemporary exemptions rather than imposing today's rules on older history.
+This does not weaken the current message checks for a new checkpoint or authorize rewriting any historical commit.
+
 ### Referring to work
 
 The local coordination assignment is called a **Job**, owned by a worker and tracked by the **Coordinator** under the [local coordination procedure](LOCAL-COORDINATION.md). This replaces work-item terminology for current coordination, not historical quotes or transaction identifiers. Job records supply context and no checkpoint authority. Status and worker activity remain separate; move pending material out of a worktree before its removal.

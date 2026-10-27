@@ -21,7 +21,7 @@ There are two routes. Take one.
 
 ### Route A: "Use this template" on GitHub
 
-On the Comitas repository page on GitHub, click "Use this template" and create the new repository; leave "Include all branches" off. Then clone it. GitHub gives the new repository one commit with the tracked files of `main`, so it needs no adoption helper: the shell scripts already carry the executable bit, and `project-governance/config/citations.json` already declares the label `template`. Do not run `adopt.py`; it refuses, because a commit exists. Go on to [phase 2](#2-set-up): run the checks, then claim the Coordinator role.
+On the Comitas repository page on GitHub, click "Use this template" and create the new repository; leave "Include all branches" off. Then clone it. GitHub gives the new repository one commit with the tracked files of `main`, so it needs no adoption helper: the shell scripts already carry the executable bit, and `project-governance/config/citations.json` already declares the label `template`. Do not run `adopt.py`; it refuses, because a commit exists. Go on to [phase 2](#2-set-up): initialize the repository history declaration, run the checks, then claim the Coordinator role.
 
 ### Route B: export the tracked files
 
@@ -60,6 +60,7 @@ Make the copy yours, then check that it works.
 1. **Rewrite your own files.** Rewrite `docs/ARCHITECTURE.md`, `docs/PLAN.md` and `docs/PROGRESS.md`, and the root `README.md`. Edit `AGENTS.md` to say what your project is and to map your own documents; the pointer line at its top stays. Keep `LICENSE`. If your project licenses its own work under other terms, keep Comitas's license and its Required Notice line for the material you retain from Comitas and say which files each license covers. Never remove a notice from retained material ([licensing and provenance](CONSTRAINTS.md#licensing-and-provenance)). Remove an extension you do not want as in [phase 5](#5-change).
 2. **Fill `project-governance/`.** [Project governance files](PROJECT-GOVERNANCE.md) is the one source for every file in it: its keys, its defaults and what the tools refuse. Comitas ships a starter of each. The minimum a project does:
    - `ARTIFACT-CLASSIFICATION.md` and `config/artifact-classification-golden.json`: one row per path of your project, with its pin. Comitas ships the rows of its own documents: replace them. Every tracked file needs a row in one of the two tables, and a new file needs its row in the commit that adds it. `python -B governance/tools/show_classification.py <path> --checks` shows how any path resolves and which checks it would select.
+   - `config/commit-history.json`: initialize it after the first commit exists, following [Commit history](PROJECT-GOVERNANCE.md#commit-history).
    - `CONSTRAINTS.md`: your own rules, next to the framework's, which they never override.
    - `DECISIONS.md` and `RATIONALE.md`: your own decisions, numbered with the prefix D from any free number (the framework's are G), and the reasons for them.
    - `config/mission-control.json`: your own Mission Control port, `{"version": 1, "port": <port>}`, because several projects on one host would otherwise collide on the default.
@@ -182,11 +183,15 @@ This is how Comitas itself makes a release, so an adopter knows what a version n
    git branch -M main
    ```
 
+   In each copy, confirm the history test fails before initialization, complete
+   [Commit history](PROJECT-GOVERNANCE.md#commit-history) setup, then run the explicit history check below.
+
    In each of the two, run:
 
    ```sh
    python -B governance/tools/validate_continuity.py
    python -B governance/tools/run_tests.py -s governance/config -p 'test_*.py'
+   python -B governance/tools/run_tests.py -s governance/tests -p 'test_commit_history_conformance.py'
    ```
 
 3. Any scenario the release calls for, such as a case of an adopting project that a fix addresses, passes in the export.

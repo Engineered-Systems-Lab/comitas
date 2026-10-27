@@ -352,12 +352,14 @@
       "profile": "tooling",
       "boundary": [],
       "bound": false,
-      "invariants": null,
+      "invariants": [
+        "selector"
+      ],
       "subclass": [
         "checkpoint"
       ],
       "reachable": false,
-      "why": "pins the commit-message convention on the history after the boundary commit",
+      "why": "repository history coverage uses the existing metadata check through selector validation",
       "approval_sensitivity": "low"
     },
     "governance/tests/lifecycle/test_early_approval.py": {
@@ -724,6 +726,21 @@
       "reachable": false,
       "approval_sensitivity": "high",
       "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/config/commit-history.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "approval_sensitivity": "high",
+      "why": "repository history coverage uses the existing metadata check through selector validation"
     },
     "project-governance/config/devlog.json": {
       "class": "tooling",

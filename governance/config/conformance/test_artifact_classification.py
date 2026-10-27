@@ -216,6 +216,7 @@ APPROVAL_HIGH = (
     'project-governance/config/artifact-classification-golden.json', 'project-governance/config/checkpoint-features.toml',
     'project-governance/config/checkpoint-policy.json', 'project-governance/config/checkpoint-profiles.json',
     'project-governance/ARTIFACT-CLASSIFICATION.md', 'project-governance/config/citations.json',
+    'project-governance/config/commit-history.json',
     'project-governance/config/devlog.json', 'project-governance/config/frozen-manifest.json',
     'project-governance/config/reconstruction-contract.json', 'project-governance/config/selector-expectations.json',
 )

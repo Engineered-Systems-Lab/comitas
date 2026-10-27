@@ -123,8 +123,8 @@ def report(summary):
         lines.append('The label %r is already declared in %s; staged it.' % (LABEL, summary['citations']))
     if not summary['executable'] and not summary['label_written']:
         lines.append('Nothing needed to change: the helper has already been run.')
-    lines.append('Next: make the first commit (git commit), then run the checks and claim the Coordinator role: README steps '
-                 '5 and 6. Do not run this helper again after the first commit; it refuses.')
+    lines.append('Next: make the first commit, then initialize ' + ac.COMMIT_HISTORY
+                 + ' following governance/PROJECT-GOVERNANCE.md#commit-history; do not run this helper after the first commit.')
     return '\n'.join(lines)
 
 

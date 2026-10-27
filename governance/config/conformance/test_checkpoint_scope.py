@@ -1,5 +1,6 @@
 """Manifest selection and unchanged approval boundaries, without runtime execution."""
 import copy
+from fnmatch import fnmatchcase
 import json
 from pathlib import Path
 import tempfile
@@ -67,6 +68,18 @@ class ScopeTest(unittest.TestCase):
     def core_ids(self, paths):
         """The checks of the core: those an installed extension owns (its manifest says which) are left out."""
         return self.ids(paths) - extension_checks()
+
+    def test_each_metadata_filter_matches_a_lifecycle_test_module(self):
+        argv = self.policy['commands']['commit-metadata']
+        patterns = [argv[i + 1] for i, value in enumerate(argv[:-1]) if value == '-k']
+        self.assertTrue(patterns)
+        modules = ['governance.tests.lifecycle.' + path.stem
+                   for path in (REPO / rp.TESTS / 'lifecycle').glob('test_*.py')]
+        for pattern in patterns:
+            match = pattern if '*' in pattern else '*' + pattern + '*'
+            with self.subTest(pattern=pattern):
+                self.assertTrue(any(fnmatchcase(module, match) for module in modules),
+                                'Metadata filter matches no lifecycle test module: ' + pattern)
 
     def test_record_only_including_index_and_progress(self):
         paths = ['devlog/new.md', rp.PROGRESS]
@@ -564,6 +577,7 @@ class ProjectArtifactScopeTest(unittest.TestCase):
         'config/checkpoint-profiles.json': ('tooling', 'tooling', SELECTOR),
         'config/checkpoint-features.toml': ('tooling', 'tooling', WORKTREES | {'early-approval-tests', 'test-runner-tests'}),
         'config/citations.json': ('tooling', 'tooling', set()),
+        'config/commit-history.json': ('tooling', 'tooling', SELECTOR),
         'config/devlog.json': ('tooling', 'tooling', WORKTREES),
         'config/frozen-manifest.json': ('tooling', 'tooling', set()),
         'config/reconstruction-contract.json': ('tooling', 'tooling', WORKTREES),
@@ -619,6 +633,7 @@ class ProjectArtifactScopeTest(unittest.TestCase):
                 'config/checkpoint-profiles.json': '{"version": 4, "profiles": {}}',
                 'config/checkpoint-features.toml': '',
                 'config/citations.json': '{"version": 1, "external_repositories": []}',
+                'config/commit-history.json': json.dumps({'version': 1, 'convention_after': 'a' * 40}),
                 'config/devlog.json': '{"enabled": false}',
                 'config/frozen-manifest.json': '{"version": 1, "files": {}}',
                 'config/reconstruction-contract.json': '{"version": 1}',

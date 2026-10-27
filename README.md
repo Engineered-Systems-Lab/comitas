@@ -47,7 +47,7 @@ Python 3.13 or later and Git are the only requirements of the tools; Node.js is 
 
 [Project lifecycle](governance/PROJECT-LIFECYCLE.md) is the one page for the lead developer, in six phases, each with the commands you run yourself and links to the sections that own the details:
 
-1. **Adopt.** Either click "Use this template" on GitHub (leave "Include all branches" off) and clone the new repository, which needs no adoption helper, or export the tracked files of `main` into a new empty folder (do not copy Comitas, which would take its `.git` history), run `git init -b main` and `git add -A`, run the adoption helper `python -B governance/tools/adopt.py` once, and make the first commit.
+1. **Adopt.** Either click "Use this template" on GitHub (leave "Include all branches" off) and clone the new repository, which needs no adoption helper, or export the tracked files of `main` into a new empty folder (do not copy Comitas, which would take its `.git` history), run `git init -b main` and `git add -A`, run the adoption helper `python -B governance/tools/adopt.py` once, and make the first commit. After either route, initialize `project-governance/config/commit-history.json` following [Commit history](governance/PROJECT-GOVERNANCE.md#commit-history).
 2. **Set up.** Make the files yours (`AGENTS.md`, `docs/`, this README and `project-governance/`), run the continuity check and the test suite, and claim the Coordinator role with `local_jobs.py claim-coordinator`.
 3. **Run.** Give orders to the Coordinator, watch the work with `governance/scripts/claims.sh` and Mission Control, give the go and the Approve in the workers' own sessions, and push.
 4. **Repair.** Clear stale claims, check the claims database and remove a stale lock.

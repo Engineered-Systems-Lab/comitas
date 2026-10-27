@@ -4,6 +4,11 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**Commit-history coverage now uses repository-owned boundaries.** Existing adopters must add their own reviewed
+declaration; fresh exports and template copies must replace the inherited Comitas IDs. Migration: initialize
+`project-governance/config/commit-history.json` after the first commit exists, following
+[Commit history](PROJECT-GOVERNANCE.md#commit-history).
+
 **Mission Control shows the project's name and optional tagline.** Set `project_name` in the primary checkout's
 `project-governance/config/mission-control.json`; missing or blank falls back to the primary folder name, including
 when launched from a linked worktree. The optional `tagline` follows the name and a middle dot; missing or blank means

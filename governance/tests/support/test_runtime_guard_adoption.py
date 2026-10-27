@@ -80,6 +80,17 @@ class RepairsTest(AdoptionFixture):
         self.assertEqual((self.root / CITATIONS).read_bytes(), settings)
         self.assertIn('Nothing needed to change', adoption.report(again))
 
+    def test_history_configuration_is_only_a_reminder_and_is_never_written(self):
+        history = self.root / ac.COMMIT_HISTORY
+        history.write_text('{"version": 1, "convention_after": "' + 'a' * 40 + '"}', encoding='utf-8')
+        before = history.read_bytes()
+        result = adoption.adopt(self.root)
+        self.assertEqual(history.read_bytes(), before)
+        self.assertIn(ac.COMMIT_HISTORY, adoption.report(result))
+        history.unlink()
+        adoption.adopt(self.root)
+        self.assertFalse(history.exists())
+
     def test_it_writes_no_git_configuration(self):
         config = self.root / '.git' / 'config'
         before = config.read_bytes()
@@ -170,6 +181,9 @@ class CommandTest(unittest.TestCase):
         self.assertIn('a.sh', text)
         self.assertIn('Declared the label', text)
         self.assertIn('first commit', text)
+        self.assertIn(ac.COMMIT_HISTORY, text)
+        self.assertIn('make the first commit, then initialize', text)
+        self.assertIn('governance/PROJECT-GOVERNANCE.md#commit-history', text)
 
 
 if __name__ == '__main__':

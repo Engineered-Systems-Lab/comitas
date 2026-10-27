@@ -38,6 +38,7 @@ For the evidence audit, explanations and open rationale gaps, see [Why these dec
 | G056 | 2026-10-23 | Accepted | [A project may declare which checks its paths select](#g056---a-project-may-declare-which-checks-its-paths-select-2026-10-23-accepted) |
 | G057 | 2026-10-25 | Accepted | [How a release is made](#g057---how-a-release-is-made-2026-10-25-accepted) |
 | G058 | 2026-10-25 | Accepted | [Review aids never affect approval](#g058---review-aids-never-affect-approval-2026-10-25-accepted) |
+| G059 | 2026-10-26 | Accepted | [Repository-owned commit-history boundaries](#g059---repository-owned-commit-history-boundaries-2026-10-26-accepted) |
 
 ## G018 - Delegated checkpoint authority and continuity (2026-10-01, Accepted)
 
@@ -480,3 +481,12 @@ This records the procedure first written with release 0.4.0 (template commit `c7
 The current aid is the optional [diff viewer](extensions/diff_viewer/README.md). Its page identifies a PREVIEW (no approval) or a SEALED REVIEW and the Job it shows. While `governance/extensions/diff_viewer/` exists, every worker preview or sealed-review message ends with exactly one `Diff page: <file:// link>` line, or `Diff page: not available (<reason>)` when rendering failed, placed last immediately before the go or Approve question. The page never replaces the tool-rendered review in the conversation and adds no approval control, review history or comparison between candidates. The core works unchanged when the extension is absent.
 
 The extension landed in template commit `4c4321acba3934705f22be0339898909a802f2ed`; its compact header and complete-file toggle in template commit `36a8894d7a3db83783087f5d71d4887911f69728`; display-only renames and the Job in the title and header in template commit `472515ce6afc1a6e9086f817fac7eea34883b085`; and the link-placement rule in template commit `af40c3ba3e629a6d1b5fcb73fb998f94804c54e9`. See the [rationale](RATIONALE.md#review-aids-and-approval-g058).
+
+## G059 - Repository-owned commit-history boundaries (2026-10-26, Accepted)
+
+Commit-history conformance boundaries MUST be repository-owned and exclusive.
+An absent declaration MUST fail the history test in a full-history repository.
+Fresh exports and template copies MUST initialize their declaration explicitly.
+This is an exception to the earlier absent-project-files statement, not a change to the optional overlays.
+[Commit history](PROJECT-GOVERNANCE.md#commit-history) owns the file contract, ancestry and exclusivity rules,
+failure/skip outcomes and initialization procedures.

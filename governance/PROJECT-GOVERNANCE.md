@@ -10,7 +10,9 @@ This document is the one place that says what a project keeps in `project-govern
 - **Override of code defaults.** The feature switches, the devlog settings and the Mission Control port are one file each, with no framework copy. The framework's code holds the default of every key: a key the file leaves out takes it. How a file that is missing or does not parse is treated is stated per file below.
 - **Registries and documents.** The project's rules, decisions and rationale are documents beside the framework's. Each is optional, and an absent one means none.
 
-With every project file absent, the tools behave exactly as with the framework alone.
+The optional overlays above retain framework-only behavior when absent. This does not supply history boundaries:
+`config/commit-history.json` is required by the history test in a full repository, and its absence fails that test.
+History that is genuinely unavailable is handled as described under [Commit history](#commit-history).
 
 ## The files
 
@@ -21,6 +23,7 @@ With every project file absent, the tools behave exactly as with the framework a
 | `config/checkpoint-policy.json` | overlay of the framework's policy | the framework's policy alone |
 | `config/checkpoint-profiles.json` | overlay of the framework's profiles | the framework's profiles alone |
 | `config/checkpoint-features.toml` | override of code defaults | every feature off |
+| `config/commit-history.json` | repository history declaration | fails the history test in a full repository; no framework boundary default |
 | `config/citations.json` | override of code defaults | no label (the adoption helper writes the label `template` into a new project's file) |
 | `config/devlog.json` | override of code defaults | the defaults below |
 | `config/frozen-manifest.json` | the checksums of the frozen files | no frozen file may exist: every file under a `frozen` row needs an entry ([the manifest](#the-frozen-manifest)) |
@@ -51,6 +54,43 @@ The code supplies these. The table is read by a conformance test that compares e
 | `config/mission-control.json` | `tagline` | `""` |
 
 The starter files Comitas ships hold the values Comitas itself runs with, which are not always the defaults (for example `early_approval_reach` is `"medium"` and `parallel_tests` is `true` there). A project keeps the values it wants. An upgrade that adds an optional key announces it in the [changelog](CHANGELOG.md), and the default in the code keeps old project files working.
+
+## Commit history
+
+`config/commit-history.json` is owned by the project and preserved on framework upgrades. It declares the last exempt
+commits for two forward-only convention epochs ([G059](DECISIONS.md#g059---repository-owned-commit-history-boundaries-2026-10-26-accepted)):
+
+```json
+{"version": 1, "convention_after": "<full lowercase 40-hex commit ID>"}
+```
+
+`version` is exactly the integer `1`; `convention_after` is required. The only optional field is
+`trailer_allowlist_after`; omission means equal to `convention_after`. A present value is another full lowercase
+40-hex commit ID. Null, abbreviated IDs, `HEAD`, branch/tag names, unknown keys and other defaults are refused.
+Both IDs must name commit objects ancestral to a single captured HEAD, and `convention_after` must be ancestral to
+or equal to `trailer_allowlist_after`. A boundary excludes itself and its ancestors. Every reachable commit in
+`convention_after..HEAD`, including merged side branches, receives strict metadata and Status-placement checks.
+Only commits in `convention_after..trailer_allowlist_after` may retain historical extra trailer keys; the rest may
+hold only Class, Subclass and Worker. Equal boundaries enable both rules together. A boundary equal to HEAD is valid:
+the check reports an explicit zero count rather than inventing coverage.
+
+Present configuration is checked before history availability. Unreadable, malformed, nonregular or indirect files
+fail even in an archive or shallow clone. Non-Git exports, unborn repositories and shallow clones skip history with
+an explicit unavailable-history reason; synthetic checks still run. A shallow clone makes no completeness claim even
+when a boundary is present. Missing configuration in full history, either missing/non-commit/non-ancestor object,
+reversed epochs and unexpected Git failures fail, never becoming a skip or changing exemptions. Missing Git is an
+explicit unavailable-tooling failure. Obtain complete history before resolving unavailable shallow ancestry.
+
+For an existing project, choose boundaries from its contemporary adoption and rule-start evidence. Do not choose its
+root or current HEAD automatically, rewrite history or advance boundaries to hide a failed commit. Comitas exempts
+its initial import, with both epochs starting afterwards; that declaration is specific to Comitas.
+
+A fresh export or GitHub template copy inherits Comitas's IDs and **fails the history test until those IDs are
+replaced**. After the first commit exists, read its ID with `git rev-parse HEAD`, replace `convention_after` with that
+ID and omit `trailer_allowlist_after` to start both epochs together. Commit this project configuration during the
+subsequent setup transaction. The first commit cannot contain its own hash; the later setup commit records it.
+`adopt.py` reminds an export adopter of this step but still runs only before the first commit and never initializes
+history metadata after HEAD exists. The template route already has its first commit and does not run `adopt.py`.
 
 ## The project's classification table
 

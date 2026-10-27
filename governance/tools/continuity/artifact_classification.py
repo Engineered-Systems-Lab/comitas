@@ -90,6 +90,8 @@ DEVLOG_DEFAULTS = {'folder': 'devlog', 'date_format': '%Y-%m-%dT%H:%MZ', 'enable
 # must resolve here. The code default is no label, and a missing file or one that does not parse means the default.
 CITATIONS = PROJECT_CONFIG + '/citations.json'
 CITATIONS_DEFAULTS = {'external_repositories': []}
+# Required by the history conformance test in a repository with complete history; no framework IDs are defaults.
+COMMIT_HISTORY = PROJECT_CONFIG + '/commit-history.json'
 # The project's expectations of which checks its paths select (G056). One optional file in the project's configuration folder,
 # with no framework copy: {"version": 1, "expectations": [{"paths": <git pathspec>, "selects": [<checks>], "never": [<checks>]}]}.
 # The conformance test of the framework reads it against every tracked file a pathspec matches. Unlike the settings above, a

@@ -149,9 +149,13 @@
       "-B",
       "governance/tools/run_tests.py",
       "-s",
-      "governance/tests",
+      "governance/tests/lifecycle",
       "-p",
-      "test_checkpoint_metadata.py",
+      "test_*.py",
+      "-k",
+      "test_checkpoint_metadata",
+      "-k",
+      "test_commit_history_conformance",
       "-v"
     ],
     "governance-runtime": [

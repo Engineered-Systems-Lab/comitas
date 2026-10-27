@@ -80,11 +80,26 @@ class DocumentedDefaultsTest(unittest.TestCase):
     def test_the_document_names_every_project_file_the_tools_read(self):
         text = DOCUMENT.read_text(encoding='utf-8')
         for path in (ac.PROJECT_TABLE, ac.PROJECT_POLICY, ac.PROJECT_PROFILES, ac.PROJECT_CONTRACT, ac.PROJECT_CONSTRAINTS,
-                     ac.PROJECT_DECISIONS, ac.PROJECT_RATIONALE, ac.FEATURES, ac.DEVLOG, ac.CITATIONS, ac.FROZEN_MANIFEST, ac.SELECTOR_EXPECTATIONS,
+                     ac.PROJECT_DECISIONS, ac.PROJECT_RATIONALE, ac.FEATURES, ac.DEVLOG, ac.CITATIONS, ac.COMMIT_HISTORY, ac.FROZEN_MANIFEST, ac.SELECTOR_EXPECTATIONS,
                      rp.PROJECT_GOLDEN):
             with self.subTest(path=path):
                 self.assertTrue(path.startswith(FOLDER))
                 self.assertIn('`' + path[len(FOLDER):] + '`', text)
+
+
+    def test_absent_optional_overlays_do_not_supply_required_history_boundaries(self):
+        from governance.tests.lifecycle import test_commit_history_conformance as history
+        text = DOCUMENT.read_text(encoding='utf-8')
+        self.assertIn('its absence fails that test', text)
+        self.assertNotIn('With every project file absent, the tools behave exactly as with the framework alone.', text)
+        with tempfile.TemporaryDirectory(prefix='history-overlay-') as folder:
+            root = Path(folder)
+            self.assertIsNone(history.history_settings(root))
+            history.git(root, 'init', '-b', 'main')
+            history.git(root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                        'commit', '--allow-empty', '--no-gpg-sign', '-m', 'Initial fixture')
+            with self.assertRaisesRegex(ValueError, 'missing; initialize'):
+                history.history_range(root)
 
 
 if __name__ == '__main__':
