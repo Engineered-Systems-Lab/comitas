@@ -231,24 +231,24 @@ class WatchTest(ClaimsCase):
         self.assertTrue(lines and all(l.startswith('EVENT ') for l in lines), lines)
         self.assertTrue(any('EVENT opened' in l for l in lines) and any('EVENT closed' in l for l in lines))
 
-    def test_a_window_whose_command_died_prints_once_and_again_only_after_it_clears_and_returns(self):
+    def test_an_unknown_or_dead_command_warning_prints_once_and_again_only_after_it_clears_and_returns(self):
         self.mission('m1', 'preparing', lock=True)
         pid, started = dead_process()
         self.declare('m1', pid=pid, started=started)
         watch = w.Watch(self.root)
         [line] = watch.step()
-        self.assertRegex(line, r'^ATTENTION prepare window command died \(pid \d+ is not running\) and the window is still open: owner m1, job job_a')
+        self.assertRegex(line, r'^ATTENTION prepare window command is unknown or dead \(pid \d+\); the window is still open: owner m1, job job_a')
         self.assertEqual(watch.step(), [])
         claims.close_windows(self.common, 'm1', 'prepare')
         self.assertEqual(watch.step(), [], 'a declared-less window is only undeclared; nothing died')
         self.declare('m1', pid=pid, started=started)
         self.assertEqual(len(watch.step()), 1)
 
-    def test_a_declared_window_with_a_dead_command_and_no_transaction_is_attention(self):
+    def test_a_declared_window_with_an_unknown_or_dead_command_and_no_transaction_is_attention(self):
         pid, started = dead_process()
         self.declare('ghost', pid=pid, started=started)
         [line] = w.Watch(self.root).step()
-        self.assertIn('ATTENTION prepare window is declared but its command died and no transaction shows it: owner ghost', line)
+        self.assertIn('ATTENTION prepare window is declared but its command is unknown or dead and no transaction shows it: owner ghost', line)
 
     def test_a_blocked_or_stopped_job_with_an_open_window_is_attention_and_a_working_job_is_not(self):
         self.mission('m1', 'preparing', lock=True)
@@ -391,7 +391,7 @@ class ClearTest(ClearCase):
         self.assertRegex(out, r'c%d\s+STALE\s+prepare\s+ghost2' % self.stale_window)
         self.assertIn('worktree not registered; branch gone', out)
         self.assertIn('worktree registered; branch exists; packet none', out)
-        self.assertIn('command pid %d not running' % self.pid, out)
+        self.assertIn('command pid %d unknown or dead' % self.pid, out)
         self.assertIn('DRY RUN: would clear c%d, c%d' % (self.ghost, self.stale_window), out)
         self.assertIn('Nothing was cleared', out)
         self.assertEqual(self.open_ids(), before)
@@ -458,7 +458,7 @@ class ClearTest(ClearCase):
         self.assertIn('CONFLICT: the Job record says COMPLETE while its transaction exists; the transaction wins', out)
         self.assertIn(self.live, self.open_ids(), 'the Job record alone never clears a claim')
 
-    def test_a_dead_command_whose_transaction_still_exists_is_live_and_says_clearing_will_not_unfreeze(self):
+    def test_an_unknown_or_dead_command_whose_transaction_still_exists_is_live_and_says_clearing_will_not_unfreeze(self):
         self.mission('m5', 'preparing', lock=True)
         window = claims.open_window(self.common, 'm5', 'prepare', 'validating', 'job_five', None, self.pid, self.started)
         code, out, _, _ = self.clear()

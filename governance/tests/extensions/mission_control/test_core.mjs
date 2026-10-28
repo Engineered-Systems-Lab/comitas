@@ -569,8 +569,8 @@ test('a newer minor of the same major is read, and unknown fields are ignored', 
 });
 
 test('the title lists flags, a degraded database and the read time; a healthy or missing database adds no notice', () => {
-  const degraded = core.lightModel(execution({level: 'FROZEN', database_state: 'corrupt', declared_without_evidence: 2, windows: [frozenWindow({flags: ['dead_command', 'age']})]}));
-  assert.match(degraded.title, /dead_command · age/);
+  const degraded = core.lightModel(execution({level: 'FROZEN', database_state: 'corrupt', declared_without_evidence: 2, windows: [frozenWindow({flags: ['unknown_or_dead_command', 'age']})]}));
+  assert.match(degraded.title, /unknown_or_dead_command · age/);
   assert.match(degraded.title, /claims database: corrupt; derived evidence only/);
   assert.match(degraded.title, /2 declared without evidence/);
   for (const state of ['ok', 'missing']) assert.doesNotMatch(core.lightModel(execution({database_state: state})).title, /claims database/);

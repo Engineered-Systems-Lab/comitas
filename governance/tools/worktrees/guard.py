@@ -255,7 +255,7 @@ def execution_status(root, owner=None):
                 rows.remove(match)
                 command = {'pid': match['pid'], 'running': claims.pid_state(match['pid'], match['pid_started'])}
                 if command['running'] is False:
-                    flags.append('dead_command')
+                    flags.append('unknown_or_dead_command')
                 entry = dict(entry, owner=match['owner'] if entry['owner'] is None else entry['owner'],
                              job_handle=match['job_handle'] or entry['job_handle'], since=match['since'] or entry['since'],
                              worktree=match['worktree'] or entry['worktree'],
@@ -442,14 +442,14 @@ class Watch:
                     lines += self.event_lines(row)
             self.last_event = newest
         for window in status['windows']:
-            if 'dead_command' in window['flags']:
+            if 'unknown_or_dead_command' in window['flags']:
                 lines += self.once(('dead', window['owner'], window['scope'], window['since']),
-                                   '%s window command died (pid %s is not running) and the window is still open'
+                                   '%s window command is unknown or dead (pid %s); the window is still open'
                                    % (window['scope'], window['command']['pid']), window['owner'], window['job_handle'])
         for window in status['declared_without_evidence']:
             if window['command']['running'] is False:
                 lines += self.once(('stale', window['owner'], window['scope'], window['since']),
-                                   '%s window is declared but its command died and no transaction shows it' % window['scope'],
+                                   '%s window is declared but its command is unknown or dead and no transaction shows it' % window['scope'],
                                    window['owner'], window['job_handle'])
         for window in status['windows']:
             job = window['job_handle']
@@ -533,7 +533,7 @@ def claim_evidence(root, common, rows):
             facts.append('derived window ' + ('shows it' if wanted else 'absent'))
         running = claims.pid_state(row['pid'], row['pid_started']) if row['pid'] else None
         if row['pid']:
-            facts.append('command pid %s %s' % (row['pid'], {True: 'running', False: 'not running', None: 'unknown'}[running]))
+            facts.append('command pid %s %s' % (row['pid'], {True: 'running', False: 'unknown or dead', None: 'unknown'}[running]))
             if live and running is False:
                 facts.append('the derived evidence still freezes the refs: clearing the claim does not unfreeze them')
         job = job_state(common, row['job_handle']) if row['job_handle'] else None

@@ -135,7 +135,7 @@ class CrossCheckTest(StatusCase):
         self.assertEqual((status['level'], status['windows']), ('CLEAR', []))
         self.assertEqual([(d['owner'], d['state']) for d in status['declared_without_evidence']], [('m1', 'validating')])
 
-    def test_a_dead_command_with_evidence_is_flagged_and_the_window_stays_frozen(self):
+    def test_an_unknown_or_dead_command_with_evidence_is_flagged_and_the_window_stays_frozen(self):
         self.mission('m1', 'preparing', lock=True)
         child = subprocess.Popen([sys.executable, '-B', '-c', 'pass'])
         started = claims.process_start(child.pid)
@@ -143,7 +143,7 @@ class CrossCheckTest(StatusCase):
         self.declare('m1', pid=child.pid, started=started)
         [window] = self.status()['windows']
         self.assertEqual(window['command']['running'], False)
-        self.assertIn('dead_command', window['flags'])
+        self.assertIn('unknown_or_dead_command', window['flags'])
         self.assertEqual(self.status()['level'], 'FROZEN')
 
     def test_the_lifecycle_window_names_its_owner_and_operation(self):

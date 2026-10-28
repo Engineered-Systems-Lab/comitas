@@ -4,6 +4,12 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**Process warnings say "unknown or dead" when inspection cannot establish liveness.**
+The status flag is now `unknown_or_dead_command` instead of `dead_command`; watch and diagnostic messages
+use the same wording. Process inspection, `running` values and ref freezes are unchanged. Investigate
+before concluding that a command exited; this warning does not authorize cleanup. See
+[process liveness](CHECKPOINT-TOOL.md#claims-and-execution-status).
+
 **Checkpoint reviews show readable messages and a `Diff page:` line linking the `file://` URI, which opens in both
 the Claude and Codex desktop apps.** Workers copy the diff viewer's generated Markdown line verbatim.
 The desktop app chooses how it opens; the visible URI can also be pasted into a browser.
