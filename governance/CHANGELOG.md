@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.7.1 (2026-10-27)
 
 **Authorized implementation defaults to guarded integration and owned cleanup after exact-candidate approval and successful verification.**
 Workers need no routine additional integration approval; explicit earlier stopping points remain effective until the lead developer
@@ -14,6 +14,9 @@ The status flag is now `unknown_or_dead_command` instead of `dead_command`; watc
 use the same wording. Process inspection, `running` values and ref freezes are unchanged. Investigate
 before concluding that a command exited; this warning does not authorize cleanup. See
 [process liveness](CHECKPOINT-TOOL.md#claims-and-execution-status).
+
+Migration. Update custom status consumers that read `dead_command` to read `unknown_or_dead_command` after
+upgrading. Treat this flag as uncertain liveness and investigate before any cleanup.
 
 **Checkpoint reviews show readable messages and a `Diff page:` line linking the `file://` URI, which opens in both
 the Claude and Codex desktop apps.** Workers copy the diff viewer's generated Markdown line verbatim.
