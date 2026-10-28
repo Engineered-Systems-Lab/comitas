@@ -14,7 +14,7 @@ You are a worker if you were given one Job, or if nobody told you your role (the
 - When a Job needs follow-up, report the remaining work and pending material to the Coordinator. You MUST NOT spawn a successor worker or assign a follow-up Job on your own. Transfer pending material to the designated Job before disposing of the original notes. A report does not authorize the follow-up.
 - Set the optional `awaiting_lead` key of your Job when you show a preview or present a sealed review, and remove it once the lead developer has answered ([the key](LOCAL-COORDINATION.md#job-state-and-reported-worker-activity)).
 - Before worktree removal, record or transfer pending material under [Updates, handoff and disposal](LOCAL-COORDINATION.md#updates-handoff-and-disposal). Report completion and transfer pending or scheduled terminal notes; do not edit the shared plan yourself.
-- An explicit lifecycle delegation may cover the approved exact candidate through guarded integration and owned cleanup ([the delegation](LOCAL-COORDINATION.md#delegation-and-worker-reassignment)); exact sealed approval and all gates still apply.
+- Follow [default completion and explicit stopping points](CHECKPOINT-WORKFLOW.md#default-completion-and-explicit-stopping-points) when carrying an authorized implementation through integration and owned cleanup; exact-candidate approval and all gates still apply.
 
 ## Execution status
 

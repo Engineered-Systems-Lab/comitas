@@ -1277,6 +1277,16 @@ class BriefTest(unittest.TestCase):
         self.assertTrue(shown.index('READ FIRST') < shown.index(j.COORDINATION_TITLE) < shown.index('IF MAIN MOVES')
                         < shown.index('RULES THAT STAY') < shown.index('\nSCOPE\n'))
 
+    def test_completion_reminder_references_the_owner_and_preserves_explicit_stops(self):
+        shown = j.brief(self.root, 'sample_job')
+        self.assertIn('governance/CHECKPOINT-WORKFLOW.md#default-completion-and-explicit-stopping-points', shown)
+        self.assertIn('authorized implementation defaults to completion after exact-candidate approval '
+                      'and successful required verification', shown)
+        self.assertIn('honor explicit earlier stopping points until the lead developer authorizes advancing', shown)
+        self.assertNotIn('- At the end: integrate', shown)
+        self.assertIn('This brief reads only:', shown)
+        self.assertIn('gives no approval or authority.', shown)
+
     def test_changing_the_document_changes_the_brief(self):
         self.assertIn(self.OLD, j.brief(self.root, 'sample_job'))
         self.assertIn(self.OLD, self.text())

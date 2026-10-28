@@ -94,7 +94,7 @@ Each entry names who it concerns (worker, Coordinator or both), what happens, wh
 
 - **Concerns:** Coordinator.
 - **What happens:** a prompt that says "stop after integration" leaves the worker's worktree standing. A pasted brief or long scope in chat is long, goes stale and hides the record.
-- **Do:** keep the scope in the Job record (`note`). The prompt is one line that tells the worker to run `local_jobs.py brief <handle>`. End it with: "integrate, remove your owned worktree and branch and any superseded ones, report, and leave Job closure to the Coordinator." A superseded mission is removed by its owner with `worktree.py remove --superseded-by` ([G048](DECISIONS.md#g048---the-owner-removes-its-superseded-mission-2026-10-19-accepted)). Do not add `--stagger` by habit.
+- **Do:** keep the scope in the Job record (`note`). The prompt is one line that tells the worker to run `local_jobs.py brief <handle>`. End it with: "integrate, remove your owned worktree and branch and any superseded ones, report, and leave Job closure to the Coordinator." A superseded mission is removed by its owner with `worktree.py remove --superseded-by` ([G048](DECISIONS.md#g048---the-owner-removes-its-superseded-mission-2026-10-19-accepted)). A "stop after integration" instruction includes cleanup unless the lead developer explicitly says to keep the worktree; follow [default completion and explicit stopping points](CHECKPOINT-WORKFLOW.md#default-completion-and-explicit-stopping-points). Do not add `--stagger` by habit.
 - **Taught by:** two worktrees left standing.
 
 ## H13. Numbering and loss when closing a Job

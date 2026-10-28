@@ -4,6 +4,11 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**Authorized implementation defaults to guarded integration and owned cleanup after exact-candidate approval and successful verification.**
+Workers need no routine additional integration approval; explicit earlier stopping points remain effective until the lead developer
+authorizes advancing. Preview and exact approval safeguards are unchanged. See
+[default completion and explicit stopping points](CHECKPOINT-WORKFLOW.md#default-completion-and-explicit-stopping-points).
+
 **Process warnings say "unknown or dead" when inspection cannot establish liveness.**
 The status flag is now `unknown_or_dead_command` instead of `dead_command`; watch and diagnostic messages
 use the same wording. Process inspection, `running` values and ref freezes are unchanged. Investigate

@@ -680,7 +680,10 @@ def brief(primary, name, stagger=False, extra_file=None):
               'reading every pending entry.',
               "- Stale lock files, killing a process, or touching branches and worktrees other than your own: only with "
               "the lead developer's word.",
-              '- At the end: integrate, remove your owned worktree and branch and any superseded ones, report, and leave '
+              '- Follow governance/CHECKPOINT-WORKFLOW.md#default-completion-and-explicit-stopping-points: authorized '
+              'implementation defaults to completion after exact-candidate approval and successful required verification; '
+              'honor explicit earlier stopping points until the lead developer authorizes advancing. Then integrate, '
+              'remove your owned worktree and branch and any superseded ones, report, and leave '
               'Job closure to the Coordinator. A mission of yours that a landed mission of the same Job replaced is removed '
               'with `worktree.py remove --superseded-by <landed full commit>`, without asking the lead developer.', '']
     if stagger:
