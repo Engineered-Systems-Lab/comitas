@@ -608,7 +608,7 @@ class EarlyApprovalTest(unittest.TestCase):
         self.assertIn('| `b.txt` | tooling | - | medium | approval-medium, broad | +2 -1 |', text)
         self.assertIn('| `docs/x.md` | governance | - | low | broad | new +2 |', text)
         self.assertIn('Exact subject\n\n## Topic\n- Make an edit.\n', text)  # the full message in a fence
-        self.assertIn(repr(self.message.read_bytes().decode()), text)  # and its escaped form
+        self.assertNotIn(repr(self.message.read_bytes().decode()), text)  # ordinary LF messages have no escaped duplicate
         self.assertIn(envelope['body']['message_sha256'], text)
         self.assertIn('`' + self.parent[:7] + '`', text)
         self.assertIn('`' + envelope['body']['tree'][:7] + '`', text)
