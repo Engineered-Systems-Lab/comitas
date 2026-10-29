@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.7.2 (2026-10-29)
 
 **The diff viewer highlights changed words within similar lines.** Grey partially changed rows use muted
 red for removed text, green for added text and blue for replacements, in both themes and both file views. Whole added and removed lines keep their full-width green
