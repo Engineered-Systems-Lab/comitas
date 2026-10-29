@@ -2,6 +2,17 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
+## Unreleased
+
+**The diff viewer highlights changed words within similar lines.** Grey partially changed rows use muted
+red for removed text, green for added text and blue for replacements, in both themes and both file views. Whole added and removed lines keep their full-width green
+and red backgrounds. Uncertain
+or expensive comparisons retain whole-text highlights. Clear corresponding lines can be paired
+across blocks with different line counts, including assignments with a changed value and
+rewritten lines with a shared opening word. Same-color edits form continuous phrases across
+preserved spacing and punctuation. This is a rendering change; recorded
+candidates and approval safeguards are unchanged. See [changes within a line](extensions/diff_viewer/README.md#changes-within-a-line).
+
 ## 0.7.1 (2026-10-27)
 
 **Authorized implementation defaults to guarded integration and owned cleanup after exact-candidate approval and successful verification.**

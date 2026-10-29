@@ -15,11 +15,19 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import unicodedata
 
 ROOT = Path(__file__).resolve().parents[3]
 PREVIEW, SEALED = 'preview', 'sealed'
 LABELS = {PREVIEW: 'PREVIEW (no approval)', SEALED: 'SEALED REVIEW'}
 CONTEXT = 3
+MAX_INTRALINE_LENGTH = 4096  # characters per line; larger lines keep whole-text highlights
+MAX_INTRALINE_PRODUCT = 1_000_000  # upper bound on character comparisons for one pair
+MAX_INTRALINE_WORK = 8_000_000  # shared comparison budget per file, reused by both views
+MIN_INTRALINE_SIMILARITY = .6
+MAX_PAIR_LINES = 80  # maximum lines per side of a replacement block to align
+MAX_PAIR_COMPARISONS = 1600  # maximum old/new candidate pairs in one block
+PAIR_MARGIN = .05  # near-tied alternatives are too ambiguous for precise pairing
 MAX_LINES = 3000  # per side of one file; more is cut and the page says so
 MAX_BYTES = 1_000_000  # per side of one file, read before the lines are counted
 MAX_FILES = 300  # files shown side by side; the list always holds every file
@@ -211,17 +219,151 @@ def mode_text(item):
     return 'mode %s to %s' % (item['old_mode'], item['new_mode'])
 
 
+def words(line):
+    """Letter/digit runs, whitespace runs and individual punctuation, without normalization."""
+    parts, previous = [], None
+    for char in line:
+        kind = ('word' if char.isalnum() or unicodedata.category(char).startswith('M')
+                else 'space' if char.isspace() else None)
+        if parts and kind is not None and kind == previous:
+            parts[-1] += char
+        else:
+            parts.append(char)
+        previous = kind
+    return parts
+
+
+def assignment_name(line):
+    """A simple assignment target is a useful anchor even when its value changes completely."""
+    left, separator, right = line.strip().partition('=')
+    name = left.strip()
+    return name if separator and name.isidentifier() and not right.startswith('=') else None
+
+
+def shared_opening(old, new):
+    """A complete shared opening word is useful when the rest of a line is rewritten.
+
+    Ignore indentation for pairing only; quotes/comment markers must still agree.
+    The preferred-pair margin rejects repeated ambiguous openings in a block.
+    """
+    for left, right in zip(words(old.strip()), words(new.strip())):
+        if left != right:
+            break
+        if sum(char.isalnum() for char in left) >= 3:
+            return True
+    return False
+
+
+def phrase_spans(line, spans):
+    """Join same-kind edits across spacing/punctuation, keeping words and operators as boundaries."""
+    merged = []
+    for start, stop, tag in spans:
+        if (merged and merged[-1][2] == tag and
+                all(char.isspace() or unicodedata.category(char).startswith('P')
+                    for char in line[merged[-1][1]:start])):
+            merged[-1] = (merged[-1][0], stop, tag)
+        else:
+            merged.append((start, stop, tag))
+    return merged
+
+
+def intraline(old, new):
+    """A pairing score and changed word ranges; None means no confident correspondence."""
+    before_words, after_words = words(old), words(new)
+    before_offsets = list(itertools.accumulate(map(len, before_words), initial=0))
+    after_offsets = list(itertools.accumulate(map(len, after_words), initial=0))
+    matcher = difflib.SequenceMatcher(None, before_words, after_words, autojunk=False)
+    blocks = matcher.get_matching_blocks()
+    similarity = difflib.SequenceMatcher(None, old.strip(), new.strip(), autojunk=False).ratio()
+    name = assignment_name(old)
+    if name is not None and name == assignment_name(new):
+        similarity = max(similarity, .9 + .1 * similarity)
+    elif shared_opening(old, new):
+        similarity = max(similarity, .65 + .35 * similarity)
+    if similarity < MIN_INTRALINE_SIMILARITY or not any(
+            any(any(char.isalnum() for char in part) for part in before_words[a:a + size]) for a, _, size in blocks):
+        return None
+    before, after = [], []
+    for tag, a0, a1, b0, b1 in matcher.get_opcodes():
+        if tag != 'equal':
+            if a0 != a1:
+                before.append((before_offsets[a0], before_offsets[a1], tag))
+            if b0 != b1:
+                after.append((after_offsets[b0], after_offsets[b1], tag))
+    return similarity, (phrase_spans(old, before), phrase_spans(new, after))
+
+
+def replacement_pairs(old, new, a0, a1, b0, b1, budget):
+    """Bounded ordered alignment of uniquely preferred line matches, plus remaining work budget.
+
+    Incomplete comparisons cannot establish a preferred match: keep the whole block's fallback.
+    Indentation alone, repeated near-ties, huge blocks and expensive lines supply no anchors.
+    """
+    n, m = a1 - a0, b1 - b0
+    if max(n, m) > MAX_PAIR_LINES or n * m > MAX_PAIR_COMPARISONS:
+        return [], budget
+    candidates = {}
+    for i in range(n):
+        for j in range(m):
+            left, right = old[a0 + i], new[b0 + j]
+            cost = len(left) * len(right)
+            if max(len(left), len(right)) > MAX_INTRALINE_LENGTH or cost > MAX_INTRALINE_PRODUCT or 2 * cost > budget:
+                return [], budget
+            budget -= 2 * cost
+            match = intraline(left, right)
+            if match is not None:
+                candidates[i, j] = match
+    unique = {}
+    for (i, j), match in candidates.items():
+        if not any((x == i or y == j) and (x, y) != (i, j) and other[0] >= match[0] - PAIR_MARGIN
+                   for (x, y), other in candidates.items()):
+            unique[i, j] = match
+    best = [[0.] * (m + 1) for _ in range(n + 1)]
+    for i in range(n - 1, -1, -1):
+        for j in range(m - 1, -1, -1):
+            score = unique.get((i, j), (0., None))[0]
+            best[i][j] = max(best[i + 1][j], best[i][j + 1], score + best[i + 1][j + 1])
+    pairs, i, j = [], 0, 0
+    while i < n and j < m:
+        match = unique.get((i, j))
+        if match is not None and best[i][j] == match[0] + best[i + 1][j + 1]:
+            pairs.append((a0 + i, b0 + j, match[1]))
+            i, j = i + 1, j + 1
+        elif best[i + 1][j] >= best[i][j + 1]:
+            i += 1
+        else:
+            j += 1
+    return pairs, budget
+
+
 def opcode_rows(old, new, opcodes):
-    """Aligned rows (old number, old line, new number, new line, class) for the given opcodes."""
-    rows = []
+    """Aligned old/new numbers and text, row class, then old/new changed ranges.
+
+    Clear pairs retain segment ranges; unmatched intervals keep positional whole-text fallback.
+    Every source line is emitted once, in its original side's order.
+    """
+    rows, budget = [], MAX_INTRALINE_WORK
+
+    def append(i, j, spans=(None, None)):
+        rows.append((None if i is None else i + 1, None if i is None else old[i],
+                     None if j is None else j + 1, None if j is None else new[j],
+                     'change' if i is not None and j is not None else 'removed' if i is not None else 'added', *spans))
+
     for tag, a0, a1, b0, b1 in opcodes:
         if tag == 'equal':
-            rows += [(a0 + i + 1, old[a0 + i], b0 + i + 1, new[b0 + i], 'same') for i in range(a1 - a0)]
-        else:
-            for i, j in itertools.zip_longest(range(a0, a1), range(b0, b1)):
-                rows.append((None if i is None else i + 1, None if i is None else old[i],
-                             None if j is None else j + 1, None if j is None else new[j],
-                             'change' if i is not None and j is not None else 'removed' if i is not None else 'added'))
+            rows += [(a0 + i + 1, old[a0 + i], b0 + i + 1, new[b0 + i], 'same', [], []) for i in range(a1 - a0)]
+            continue
+        pairs = []
+        if tag == 'replace':
+            pairs, budget = replacement_pairs(old, new, a0, a1, b0, b1, budget)
+        left, right = a0, b0
+        for i, j, spans in pairs:
+            for x, y in itertools.zip_longest(range(left, i), range(right, j)):
+                append(x, y)
+            append(i, j, spans)
+            left, right = i + 1, j + 1
+        for i, j in itertools.zip_longest(range(left, a1), range(right, b1)):
+            append(i, j)
     return rows
 
 
@@ -230,22 +372,41 @@ def full_rows(matcher, old, new):
     return opcode_rows(old, new, matcher.get_opcodes())
 
 
-def side_rows(matcher, old, new):
-    """Hunks of aligned rows, grouped with a few lines of context; with each hunk the lines of the old side skipped before it."""
+def side_rows(matcher, old, new, everything=None):
+    """Hunks reuse the complete view's ranges and budget, with skipped parent lines counted."""
+    if everything is None:
+        everything = full_rows(matcher, old, new)
     hunks, shown = [], 0
     for group in matcher.get_grouped_opcodes(CONTEXT):
-        rows = opcode_rows(old, new, group)
-        hunks.append((group[0][1] - shown, rows))  # lines of the old side skipped since the last hunk
+        rows = []
+        for row in everything:
+            if ((row[0] is not None and group[0][1] < row[0] <= group[-1][2]) or
+                    (row[2] is not None and group[0][3] < row[2] <= group[-1][4])):
+                rows.append(row)
+        hunks.append((group[0][1] - shown, rows))
         shown = group[-1][2]
     if hunks and len(old) > shown:
         hunks.append((len(old) - shown, []))
     return hunks
 
 
-def cell(number, line, css):
+def highlighted(line, ranges):
+    """Escape every original fragment exactly once; markup never enters the source text."""
+    out, end = [], 0
+    for span in ranges:
+        start, stop = span[:2]
+        change = ' data-change="replace"' if len(span) == 3 and span[2] == 'replace' else ''
+        out += [show(line[end:start]), '<span class="segment"%s>%s</span>' % (change, show(line[start:stop]))]
+        end = stop
+    return ''.join(out) + show(line[end:])
+
+
+def cell(number, line, css, ranges=None):
     if number is None:
         return '<td class="empty"></td>'
-    return '<td class="%s"><span class="n">%d</span>%s</td>' % (css, number, show(line))
+    if ranges is None:
+        ranges = [] if css.endswith('same') else [(0, len(line), 'replace' if css.endswith('change') else 'whole')]
+    return '<td class="%s"><span class="n">%d</span>%s</td>' % (css, number, highlighted(line, ranges))
 
 
 NAV = '<span class="nav"><button type="button" data-nav="prev" title="Previous change" aria-label="Previous change" disabled>&uarr;</button><button type="button" data-nav="next" title="Next change" aria-label="Next change">&darr;</button></span>'
@@ -259,7 +420,7 @@ def side_table(rows, parent, tree):
             lines += '<tr>%s</tr>' % (2 * ('<th class="gap">... %d unchanged line%s</th>' % (row[0], '' if row[0] == 1 else 's')))
             before = 'same'
         else:
-            lines += '<tr%s>%s%s</tr>' % (' data-c' if row[4] != 'same' and before == 'same' else '', cell(row[0], row[1], 'old ' + row[4]), cell(row[2], row[3], 'new ' + row[4]))
+            lines += '<tr%s>%s%s</tr>' % (' data-c' if row[4] != 'same' and before == 'same' else '', cell(row[0], row[1], 'old ' + row[4], row[5]), cell(row[2], row[3], 'new ' + row[4], row[6]))
             before = row[4]
     panes = '<tr><th class="pane">Parent %s</th><th class="pane">Candidate %s</th></tr>' % (show(parent[:8]), show(tree[:8]))
     return ('<div class="scroll" tabindex="0"><div class="frame"><table class="side"><colgroup><col class="l"><col class="r"></colgroup>%s%s</table>'
@@ -300,7 +461,7 @@ def file_section(repo, item, number, parent, tree, back='<a class="back" href="#
             body += '<p class="note">Large file: only the first %s of each side is shown (%s).</p>' % (' and '.join(sorted(set(cut_old + cut_new))), sizes)
         matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
         everything = full_rows(matcher, old, new)  # first: get_grouped_opcodes trims the matcher's cached opcodes in place
-        hunks = side_rows(matcher, old, new)
+        hunks = side_rows(matcher, old, new, everything)
         unchanged = not hunks and not (cut_old or cut_new)
         if unchanged:
             body += '<p class="note">%s</p>' % ('Moved with no content change: the old and the new path hold the same bytes.' if item['status'] == 'R' else 'No content change.')
@@ -318,8 +479,8 @@ def file_section(repo, item, number, parent, tree, back='<a class="back" href="#
     return '<section id="f%s"><div class="bar">%s%s</div>%s</section>' % (number, head, toggle, body)
 
 
-STYLE = """:root{--bg:#fff;--fg:#1d2129;--mute:#5b6472;--line:#d5d9e0;--panel:#f4f6f9;--del:#fde8e8;--add:#e3f6e6;--chg:#fff3d6;--preview:#8a1f11;--sealed:#1b4f8f;--bannerfg:#fff;--link:#0b5cad;--split:.5}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--fg:#e3e6eb;--mute:#9aa3b0;--line:#323844;--panel:#1c2027;--del:#4a1f22;--add:#1b3d26;--chg:#4a3d17;--preview:#b8321f;--sealed:#2f6dbd;--link:#8ab4f8}}
+STYLE = """:root{--bg:#fff;--fg:#1d2129;--mute:#5b6472;--line:#d5d9e0;--panel:#f4f6f9;--del:#fde8e8;--add:#e3f6e6;--chg:#fff3d6;--changed:#edf0f3;--segment-del:#edb7b7;--segment-add:#b9d9b0;--segment-mod:#bdd3ef;--preview:#8a1f11;--sealed:#1b4f8f;--bannerfg:#fff;--link:#0b5cad;--split:.5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--fg:#e3e6eb;--mute:#9aa3b0;--line:#323844;--panel:#1c2027;--del:#4a1f22;--add:#1b3d26;--chg:#4a3d17;--changed:#252a30;--segment-del:#713b40;--segment-add:#3d5d35;--segment-mod:#304e73;--preview:#b8321f;--sealed:#2f6dbd;--link:#8ab4f8}}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
 main{padding:0 16px 6px}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:start}
 nav{position:sticky;top:0;max-height:100vh;overflow:auto;padding:12px 0;font-size:13px}nav ul{list-style:none;margin:0;padding-left:14px}nav>ul{padding-left:0}nav a{color:inherit;text-decoration:none;display:block;padding:1px 4px;border-radius:3px;word-break:break-all}nav a:hover{background:var(--panel)}nav summary{color:var(--mute);padding:1px 4px;cursor:pointer}nav details>ul{padding-left:14px}.treebar{display:flex;gap:6px;margin:0 0 6px}.treebar button{font:12px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 8px;cursor:pointer}
@@ -342,7 +503,12 @@ a,a:visited{color:var(--link)}nav a,nav a:visited{color:inherit}.frame{position:
 table.side th.pane{position:sticky;top:0;z-index:2;background:var(--panel);text-align:left;padding:3px 8px;font-weight:600}table.side th.gap{background:var(--panel);text-align:center;padding:2px 8px;color:var(--mute);font-weight:400;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
 table.side td{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 6px}
 span.n{display:inline-block;width:3.2em;margin:0 8px 0 -6px;padding-right:6px;text-align:right;color:var(--mute);background:var(--panel);user-select:none}
-td.old.removed{background:var(--del)}td.new.added,td.new.change{background:var(--add)}td.old.change{background:var(--del)}td.new.removed{background:var(--panel)}
+td.old.change,td.new.change{background:var(--changed)}
+td.old.removed{background:var(--del)}td.new.added{background:var(--add)}
+td.old .segment{background:var(--segment-del)}td.new .segment{background:var(--segment-add)}
+td .segment[data-change="replace"]{background:var(--segment-mod)}
+td.old.removed .segment,td.new.added .segment{background:transparent}
+.segment{border-radius:2px;box-decoration-break:clone}
 td.empty{background:var(--panel)}
 label.toggle{margin-left:auto;cursor:pointer;user-select:none;white-space:nowrap}.nav{display:inline-flex;gap:4px;margin-left:auto}.toggle+.nav{margin-left:0}.nav button{font:13px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 9px;cursor:pointer}.nav button:disabled{opacity:.35;cursor:default}
 section:has(.collapse:checked) .fullview,section:has(.collapse:not(:checked)) .hunkview{display:none}

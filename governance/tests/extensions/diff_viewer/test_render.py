@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import io
+from html.parser import HTMLParser
 import json
 import os
 import re
@@ -267,7 +268,7 @@ class CollapseToggleTest(Fixture):
         self.assertEqual(text.count('<script'), 1)  # still the divider alone
 
     def test_a_modified_file_holds_the_changes_with_context_and_the_complete_file(self):
-        collapsed, complete = views_of(section_of(self.build(), 'a.txt'))
+        collapsed, complete = views_of(section_of(unmark(self.build()), 'a.txt'))
         self.assertIn('unchanged line', collapsed)
         self.assertNotIn('<span class="n">1</span>one', collapsed)  # the first line is left out of the collapsed view
         self.assertNotIn('unchanged line', complete)
@@ -279,7 +280,7 @@ class CollapseToggleTest(Fixture):
         self.assertEqual(complete.count('<td class="old same">') + complete.count('<td class="old change">'), 10)
 
     def test_added_and_deleted_files_have_one_table_with_one_side_and_a_binary_has_none(self):
-        text = self.build()
+        text = unmark(self.build())
         added, deleted, binary = section_of(text, 'new.txt'), section_of(text, 'gone.txt'), section_of(text, 'bin.dat')
         self.assertIn('<td class="new added"><span class="n">1</span>brand new</td>', added)
         self.assertIn('<td class="old removed"><span class="n">1</span>bye</td>', deleted)
@@ -435,7 +436,7 @@ class RenameTest(unittest.TestCase):
         self.assertRegex(text, r'kind renamed">renamed</span></td><td><a href="#f\d+">old/moved.txt → new/moved.txt \(100%\)</a></td><td></td><td>\+0 -0</td>')
 
     def test_a_move_with_an_edit_shows_its_similarity_and_only_the_edited_lines(self):
-        section = section_of(self.build(), 'old/edited.txt →')
+        section = section_of(unmark(self.build()), 'old/edited.txt →')
         self.assertRegex(section, r'old/edited.txt → new/edited.txt \(9\d%\)</h3>')
         collapsed, complete = views_of(section)
         self.assertEqual(collapsed.count('<tr data-c>'), 1)
@@ -456,7 +457,7 @@ class RenameTest(unittest.TestCase):
         self.assertIn('<h2>Files (4)</h2>', text)
 
     def test_the_page_labels_the_pairing_and_links_each_side_as_its_own_file(self):
-        text = self.build()
+        text = unmark(self.build())
         section = section_of(text, 'old/moved.txt →')
         self.assertIn('Display aid', section)
         self.assertIn('Display aid', text.split('<div class="overview">', 1)[1].split('</div>', 1)[0])
@@ -489,6 +490,308 @@ class RenameTest(unittest.TestCase):
         self.assertIn('diff.renames=true', render.RENAME_OPTIONS)
         env = render.display_env()
         self.assertEqual((env['GIT_CONFIG_GLOBAL'], env['GIT_CONFIG_NOSYSTEM']), (os.devnull, '1'))
+
+
+
+def unmark(text):
+    return re.sub(r'<span class="segment"(?: data-change="replace")?>(.*?)</span>', r'\1', text, flags=re.S)
+
+
+class CellText(HTMLParser):
+    """Read cell content and highlights, excluding the generated line-number span."""
+    def __init__(self, markup):
+        super().__init__()
+        self.content, self.segments, self.kind = [], [], None
+        self.changes = []
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'span':
+            self.kind = dict(attrs).get('class')
+            if self.kind == 'segment':
+                self.segments.append('')
+                self.changes.append(dict(attrs).get('data-change'))
+
+    def handle_endtag(self, tag):
+        if tag == 'span':
+            self.kind = None
+
+    def handle_data(self, data):
+        if self.kind != 'n':
+            self.content.append(data)
+        if self.kind == 'segment':
+            self.segments[-1] += data
+
+
+class IntralineTest(unittest.TestCase):
+    def pair(self, old, new):
+        matcher = render.difflib.SequenceMatcher(None, [old], [new], autojunk=False)
+        row = render.full_rows(matcher, [old], [new])[0]
+        return (CellText(render.cell(row[0], row[1], 'old ' + row[4], row[5])),
+                CellText(render.cell(row[2], row[3], 'new ' + row[4], row[6])))
+
+    def test_screenshot_list_insertion_colors_only_candidate_added_text(self):
+        old = "['corpus', 'corpus2', 'mcp', 'analysis', 'launch', 'preflight']"
+        new = old.replace("'launch'", "'analysis2', 'launch'")
+        before, after = self.pair(old, new)
+        self.assertEqual(before.segments, [])
+        self.assertEqual(after.segments, ["analysis2', '"])
+        self.assertEqual(after.changes, [None])
+        self.assertEqual(''.join(before.content), old)
+        self.assertEqual(''.join(after.content), new)
+
+    def test_removal_and_replacement_use_the_corresponding_sides(self):
+        before, after = self.pair('run(alpha, beta)', 'run(alpha)')
+        self.assertEqual(before.segments, [', beta'])
+        self.assertEqual(before.changes, [None])
+        self.assertEqual(after.segments, [])
+        before, after = self.pair('color = "red"', 'color = "green"')
+        self.assertEqual(''.join(before.content), 'color = "red"')
+        self.assertEqual(''.join(after.content), 'color = "green"')
+        self.assertEqual(before.segments, ['red'])
+        self.assertEqual(after.segments, ['green'])
+        self.assertEqual(before.changes, ['replace'])
+        self.assertEqual(after.changes, ['replace'])
+
+    def test_alphanumeric_segments_and_unicode_words_are_never_split_into_letters(self):
+        for old, new, removed, added in (
+                ('run(analysis)', 'run(analysis2)', 'analysis', 'analysis2'),
+                ('run(old_name)', 'run(new_name)', 'old', 'new'),
+                ('old_only_call()', 'new_only_call()', 'old', 'new'),
+                ('run(Alpha2)', 'run(alpha2)', 'Alpha2', 'alpha2'),
+                ('name = "café"', 'name = "cafés"', 'café', 'cafés'),
+                ('name = "e\u0301"', 'name = "e\u0300"', 'e\u0301', 'e\u0300')):
+            with self.subTest(old=old, new=new):
+                before, after = self.pair(old, new)
+                self.assertEqual(before.segments, [removed])
+                self.assertEqual(after.segments, [added])
+
+    def test_standalone_punctuation_and_whitespace_edits_stay_visible(self):
+        before, after = self.pair('value = left + right', 'value = left - right')
+        self.assertEqual(before.segments, ['+'])
+        self.assertEqual(after.segments, ['-'])
+        before, after = self.pair('value = left', 'value  = left')
+        self.assertEqual(before.segments, [' '])
+        self.assertEqual(after.segments, ['  '])
+
+    def test_added_and_removed_punctuation_and_spaces_are_covered_with_words(self):
+        for old, new in (
+                ('call(alpha)', 'call(alpha, beta)'),
+                ('items = ["alpha"]', 'items = ["alpha", "beta"]')):
+            with self.subTest(old=old, new=new):
+                before, after = self.pair(old, new)
+                self.assertEqual(before.segments, [])
+                # All additional characters, including quotes, separators and spaces, are colored.
+                self.assertEqual(len(''.join(after.segments)), len(new) - len(old))
+                self.assertEqual(after.changes, [None])
+                removed, remaining = self.pair(new, old)
+                self.assertEqual(len(''.join(removed.segments)), len(new) - len(old))
+                self.assertEqual(remaining.segments, [])
+
+    def test_multiple_separate_changes_keep_surrounding_text_readable(self):
+        before, after = self.pair('alpha = 123; beta = 456', 'alpha = 789; beta = 012')
+        self.assertEqual(before.segments, ['123', '456'])
+        self.assertEqual(after.segments, ['789', '012'])
+
+    def test_whitespace_unicode_controls_and_markup_reconstruct_exact_display(self):
+        cases = [
+            ('name = "café 😀"', 'name = "café 🦊"'),
+            ('prefix\tvalue  suffix', 'prefix\tvalue   suffix'),
+            ('value = "<a>&\x01"', 'value = "<b>&\x02"'),
+            ('text = "e\u0301"', 'text = "e\u0300"'),
+        ]
+        for old, new in cases:
+            with self.subTest(old=old, new=new):
+                before, after = self.pair(old, new)
+                self.assertEqual(''.join(before.content), old.translate(render.PICTURES))
+                self.assertEqual(''.join(after.content), new.translate(render.PICTURES))
+        self.assertNotIn('<b>', render.highlighted(cases[2][1], [(0, len(cases[2][1]))]))
+
+    def test_unequal_blocks_find_clear_pairs_without_highlighting_unrelated_lines_precisely(self):
+        old, new = ['alpha(value)'], ['unrelated()', 'alpha(value, extra)']
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        rows = render.full_rows(matcher, old, new)
+        self.assertIsNone(rows[0][0])
+        self.assertEqual(rows[0][3], 'unrelated()')
+        self.assertEqual(rows[1][0:4], (1, old[0], 2, new[1]))
+        self.assertEqual(CellText(render.cell(2, rows[1][3], 'new change', rows[1][6])).segments, [', extra'])
+        before, after = self.pair('    aaa', '    bbb')
+        self.assertEqual(before.segments, ['    aaa'])
+        self.assertEqual(after.segments, ['    bbb'])
+
+    def test_long_repetitive_lines_and_comparison_budget_fall_back(self):
+        old = ['x' * 1100]
+        new = ['x' * 1099 + 'y']
+        with mock.patch.object(render, 'intraline', side_effect=AssertionError('must not compare')):
+            rows = render.full_rows(render.difflib.SequenceMatcher(None, old, new), old, new)
+        self.assertEqual(rows[0][5:], (None, None))
+        with mock.patch.object(render, 'MAX_INTRALINE_LENGTH', 5), mock.patch.object(render, 'intraline', side_effect=AssertionError('must not compare')):
+            self.assertEqual(self.pair('long old', 'long new')[0].segments, ['long old'])
+        old, new = ['key = 1', 'key = 2'], ['key = 3', 'key = 4']
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        with mock.patch.object(render, 'MAX_INTRALINE_WORK', 98):
+            rows = render.full_rows(matcher, old, new)
+        self.assertTrue(all(row[5:] == (None, None) for row in rows))  # incomplete block comparison cannot prove a match
+
+    def test_both_views_reuse_ranges_even_when_earlier_changes_spend_budget(self):
+        old = ['key = 1'] + ['same %d' % n for n in range(12)] + ['key = 2']
+        new = ['key = 3'] + old[1:-1] + ['key = 4']
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        with mock.patch.object(render, 'MAX_INTRALINE_WORK', 98):
+            rows = render.full_rows(matcher, old, new)
+        collapsed = [row for _, group in render.side_rows(matcher, old, new, rows) for row in group]
+        self.assertEqual([row for row in rows if row[4] != 'same'], [row for row in collapsed if row[4] != 'same'])
+        self.assertIsNone(collapsed[-1][5])
+
+    def test_reported_assignment_in_unequal_block_highlights_only_its_value(self):
+        old = [
+            '        rows = opcode_rows(old, new, group)',
+            '        hunks.append((group[0][1] - shown, rows))  # skipped lines',
+        ]
+        new = [
+            '        rows = []',
+            '        for _, a0, a1, b0, b1 in group:',
+            '            for i, j in itertools.zip_longest(range(a0, a1), range(b0, b1)):',
+            '                rows.append(row)',
+            '        hunks.append((group[0][1] - shown, rows))',
+        ]
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        rows = render.full_rows(matcher, old, new)
+        before = CellText(render.cell(rows[0][0], rows[0][1], 'old change', rows[0][5]))
+        after = CellText(render.cell(rows[0][2], rows[0][3], 'new change', rows[0][6]))
+        self.assertEqual(before.segments, ['opcode_rows(old, new, group)'])
+        self.assertEqual(after.segments, ['[]'])
+        self.assertEqual(before.changes, ['replace'])
+        self.assertEqual(after.changes, ['replace'])
+        self.assertEqual([row[1] for row in rows if row[0] is not None], old)
+        self.assertEqual([row[3] for row in rows if row[2] is not None], new)
+        self.assertEqual([row[4] for row in rows], ['change', 'added', 'added', 'added', 'change'])
+        self.assertEqual([row for _, group in render.side_rows(matcher, old, new, rows) for row in group], rows)
+
+    def test_rewritten_docstring_keeps_shared_hunks_and_other_equal_words_unmarked(self):
+        old = '    """Hunks of aligned rows, grouped with a few lines of context; with each hunk the lines of the old side skipped before it."""'
+        new = '    """Hunks reuse the complete view\'s ranges and budget, with skipped parent lines counted."""'
+        before, after = self.pair(old, new)
+        self.assertEqual(''.join(before.content), old)
+        self.assertEqual(''.join(after.content), new)
+        self.assertNotIn('Hunks', ''.join(before.segments))
+        self.assertNotIn('Hunks', ''.join(after.segments))
+        matcher = render.difflib.SequenceMatcher(None, [old], [new, '    if everything is None:', '        everything = full_rows(matcher, old, new)'])
+        rows = render.full_rows(matcher, [old], [new, '    if everything is None:', '        everything = full_rows(matcher, old, new)'])
+        self.assertEqual(rows[0][3], new)
+        self.assertIsNotNone(rows[0][5])
+        for side, spans in ((old, rows[0][5]), (new, rows[0][6])):
+            # Every equal word block, including the opening quotes and Hunks, stays outside spans.
+            prefix_end = side.index('Hunks') + len('Hunks')
+            self.assertTrue(all(start >= prefix_end for start, _, _ in spans))
+
+    def test_reported_aligned_docstring_groups_the_requested_phrase(self):
+        old = '    """Aligned rows (old number, old line, new number, new line, class) for the given opcodes."""'
+        new = '    """Aligned old/new numbers and text, row class, then old/new changed ranges.'
+        before, after = self.pair(old, new)
+        self.assertEqual(after.segments[0], 'old/new numbers and text, row class')
+        self.assertEqual(after.changes[0], 'replace')
+        self.assertEqual(after.segments[1], 'then old/')
+        self.assertIsNone(after.changes[1])  # a separate insertion keeps green
+        self.assertNotIn('Aligned', ''.join(before.segments))
+        self.assertNotIn('Aligned', ''.join(after.segments))
+        self.assertEqual(''.join(before.content), old)
+        self.assertEqual(''.join(after.content), new)
+
+    def test_preserved_spaces_and_tabs_join_adjacent_replacements(self):
+        for separator in (' ', '\t', ', '):
+            old, new = 'label old' + separator + 'red done', 'label new' + separator + 'blue done'
+            with self.subTest(separator=separator):
+                before, after = self.pair(old, new)
+                self.assertEqual(before.segments, ['old' + separator + 'red'])
+                self.assertEqual(after.segments, ['new' + separator + 'blue'])
+                self.assertEqual(before.changes, ['replace'])
+                self.assertEqual(after.changes, ['replace'])
+
+    def test_preserved_words_and_operators_still_separate_changed_phrases(self):
+        for separator in (' stable ', ' + '):
+            old, new = 'label old' + separator + 'red done', 'label new' + separator + 'blue done'
+            with self.subTest(separator=separator):
+                before, after = self.pair(old, new)
+                self.assertEqual(before.segments, ['old', 'red'])
+                self.assertEqual(after.segments, ['new', 'blue'])
+                self.assertEqual(''.join(before.content), old)
+                self.assertEqual(''.join(after.content), new)
+
+    def test_shared_opening_applies_to_comments_and_indentation_without_normalizing_text(self):
+        for old, new, opening in (
+                ('  # Summary of the old procedure and its inputs', '    # Summary now describes the shorter replacement', 'Summary'),
+                ('    return extremely_long_old_expression(value)', '  return []', 'return')):
+            with self.subTest(old=old, new=new):
+                before, after = self.pair(old, new)
+                self.assertNotIn(opening, ''.join(before.segments))
+                self.assertNotIn(opening, ''.join(after.segments))
+                self.assertEqual(''.join(before.content), old)
+                self.assertEqual(''.join(after.content), new)
+
+    def test_repeated_docstring_openings_remain_ambiguous(self):
+        old = ['    """Hunks explain the original procedure."""']
+        new = ['    """Hunks explain a different replacement A."""', '    """Hunks explain a different replacement B."""']
+        rows = render.full_rows(render.difflib.SequenceMatcher(None, old, new), old, new)
+        self.assertTrue(all(row[5:] == (None, None) for row in rows))
+
+    def test_shifted_pairs_keep_line_numbers_and_both_views_share_alignment(self):
+        context = ['context %d' % n for n in range(12)]
+        old = context + ['alpha = one(value)', 'beta = two(value)'] + context
+        new = context + ["log('start')", 'alpha = one(extra)', 'beta = two(extra)'] + context
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        rows = render.full_rows(matcher, old, new)
+        changed = [row for row in rows if row[4] != 'same']
+        self.assertEqual([(row[0], row[2]) for row in changed], [(None, 13), (13, 14), (14, 15)])
+        collapsed = [row for _, group in render.side_rows(matcher, old, new, rows) for row in group if row[4] != 'same']
+        self.assertEqual(collapsed, changed)
+        self.assertEqual([row[0] for row in rows if row[0] is not None], list(range(1, len(old) + 1)))
+        self.assertEqual([row[2] for row in rows if row[2] is not None], list(range(1, len(new) + 1)))
+
+    def test_repeated_ambiguous_assignments_keep_whole_text_fallback(self):
+        old, new = ['value = old'], ['value = new_a', 'value = new_b']
+        rows = render.full_rows(render.difflib.SequenceMatcher(None, old, new), old, new)
+        self.assertTrue(all(row[5:] == (None, None) for row in rows))
+
+    def test_alignment_never_crosses_or_duplicates_source_lines(self):
+        old, new = ['alpha = old', 'beta = old'], ['beta = new', 'alpha = new']
+        rows = render.full_rows(render.difflib.SequenceMatcher(None, old, new), old, new)
+        self.assertEqual([row[0] for row in rows if row[0] is not None], [1, 2])
+        self.assertEqual([row[2] for row in rows if row[2] is not None], [1, 2])
+        self.assertEqual([row[1] for row in rows if row[0] is not None], old)
+        self.assertEqual([row[3] for row in rows if row[2] is not None], new)
+
+    def test_pair_count_and_block_length_caps_fall_back_without_comparing(self):
+        for old, new in ((['old %d' % i for i in range(41)], ['new %d' % i for i in range(41)]),
+                         (['old'], ['new %d' % i for i in range(81)])):
+            with mock.patch.object(render, 'intraline', side_effect=AssertionError('must not compare')):
+                rows = render.full_rows(render.difflib.SequenceMatcher(None, old, new), old, new)
+            self.assertTrue(all(row[5:] == (None, None) for row in rows))
+
+    def test_whole_line_add_remove_and_empty_lines_keep_exact_text(self):
+        for css in ('new added', 'old removed'):
+            parsed = CellText(render.cell(1, 'whole <line>', css))
+            self.assertEqual(parsed.segments, ['whole <line>'])
+            self.assertEqual(''.join(parsed.content), 'whole <line>')
+            empty = CellText(render.cell(2, '', css))
+            self.assertEqual(''.join(empty.content), '')
+        self.assertIn('td.old.change,td.new.change{background:var(--changed)}', render.STYLE)
+        self.assertIn('td.old.removed{background:var(--del)}td.new.added{background:var(--add)}', render.STYLE)
+        self.assertIn('td.old.removed .segment,td.new.added .segment{background:transparent}', render.STYLE)
+        for token in ('--segment-add:', '--segment-del:', '--segment-mod:', '--changed:'):
+            self.assertEqual(render.STYLE.count(token), 2)
+
+
+class IntralinePageTest(Fixture):
+    def test_preview_and_sealed_views_share_highlights_and_unchanged_security_script(self):
+        for kind in (render.PREVIEW, render.SEALED):
+            text = self.build(kind)
+            collapsed, complete = views_of(section_of(text, 'a.txt'))
+            self.assertIn('class="segment"', collapsed)
+            self.assertIn('class="segment"', complete)
+            self.assertEqual(text.count('<script>'), 1)
+            self.assertIn('<script>' + render.SCRIPT + '</script>', text)
+            self.assertNotIn('THE WORKING TREE CHANGED LATER', text)
 
 
 if __name__ == '__main__':
