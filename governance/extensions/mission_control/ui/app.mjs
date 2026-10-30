@@ -244,7 +244,7 @@ function sessionNode(awaiting) {
 }
 function queueTable(rows) {
   const table = el('table', 'jq-table'), thead = el('thead'), head = el('tr');
-  for (const [cls, label] of [['jq-pri', 'Pri'], ['jq-kind', 'Kind'], ['jq-handle', 'Handle'], ['jq-desc', 'Description'], ['jq-state', 'State / waiting / dependencies']]) head.append(el('th', cls, label));
+  for (const [cls, label] of [['jq-pri', 'Pri'], ['jq-kind', 'Kind'], ['jq-size', 'Est. size'], ['jq-handle', 'Handle'], ['jq-desc', 'Description'], ['jq-state', 'State / waiting / dependencies']]) head.append(el('th', cls, label));
   thead.append(head);
   const body = el('tbody');
   for (const row of rows) {
@@ -253,7 +253,7 @@ function queueTable(rows) {
     for (const chip of row.chips) if (chip.tone !== 'you') state.append(el('span', `jq-chip jq-chip-${chip.tone}`, chip.text));
     if (row.awaiting) state.append(sessionNode(row.awaiting));
     for (const line of row.lines) state.append(el('div', 'jq-line', line));
-    tr.append(el('td', 'jq-pri', row.priority), el('td', 'jq-kind', row.workKind), el('td', 'jq-handle', (row.role === 'member' ? '→ ' : '') + row.handle), el('td', 'jq-desc', row.description), state);
+    tr.append(el('td', 'jq-pri', row.priority), el('td', 'jq-kind', row.workKind), el('td', 'jq-size', row.estSize), el('td', 'jq-handle', (row.role === 'member' ? '→ ' : '') + row.handle), el('td', 'jq-desc', row.description), state);
     body.append(tr);
   }
   table.append(thead, body);

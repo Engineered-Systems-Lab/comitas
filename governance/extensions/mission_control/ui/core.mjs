@@ -245,6 +245,14 @@ export function sessionLink(session) {
 const AWAITING_FOR = ['preview', 'approval'];
 const STATUS_TONES = {BLOCKED: 'blocked', AWAITING_RESPONSE: 'wait', WIP: 'active', COMPLETE: 'done', CANCELLED: 'done'};
 const text = value => typeof value === 'string' ? value : '';
+// The display label of each estimated size; the keys equal the helper's ESTIMATED_SIZES, which a test pins.
+export const SIZE_LABELS = new Map([['small', 'Small'], ['small-medium', 'Small–medium'], ['medium', 'Medium'],
+  ['medium-large', 'Medium–large'], ['large', 'Large'], ['uncertain', 'Uncertain']]);
+// The value's label, then the note after it; empty when no known value is set, so a note never stands alone.
+export const sizeText = (size, note) => {
+  const label = typeof size === 'string' ? SIZE_LABELS.get(size) : undefined;
+  return label ? (text(note) ? `${label}: ${text(note)}` : label) : '';
+};
 const list = value => Array.isArray(value) && value.every(item => typeof item === 'string') ? value : [];
 function jobRow(job, role, priority) {
   if (!job || typeof job.handle !== 'string' || !job.handle) throw new Error('Queue entry without a handle');
@@ -262,14 +270,14 @@ function jobRow(job, role, priority) {
   if (unmet.length) lines.push('waiting on: ' + unmet.map(name => missing.has(name) ? `${name} (no record)` : name).join(', '));
   if (['WIP', 'AWAITING_RESPONSE', 'BLOCKED'].includes(job.status) && text(job.activity)) lines.push(`reported activity: ${job.activity}`);
   if (Number.isInteger(job.pending_count) && job.pending_count > 0) lines.push(`${job.pending_count} pending ${job.pending_count === 1 ? 'note' : 'notes'}`);
-  return {role, priority: role === 'member' ? '' : priority, workKind: text(job.work_kind), handle: job.handle,
+  return {role, priority: role === 'member' ? '' : priority, workKind: text(job.work_kind), estSize: sizeText(job.estimated_size, job.estimated_size_note), handle: job.handle,
           description: text(job.description), chips, lines, awaiting};
 }
 const priorityText = value => Number.isInteger(value) ? String(value) : 'unset';
 export function epicRow(entry) {
   const counts = new Map();
   for (const job of entry.jobs) { const key = job?.status ?? 'no record'; counts.set(key, (counts.get(key) ?? 0) + 1); }
-  return {role: 'epic', priority: priorityText(entry.priority), workKind: '', handle: `${entry.handle} (Epic)`,
+  return {role: 'epic', priority: priorityText(entry.priority), workKind: '', estSize: '', handle: `${entry.handle} (Epic)`,
           description: `${entry.jobs.length} ${entry.jobs.length === 1 ? 'Job' : 'Jobs'}`, chips: [],
           lines: [entry.jobs.length ? [...counts].map(([status, count]) => `${count} ${status}`).join(' · ')
                                    : `empty; awaiting ${entry.closure_policy === 'explicit' ? 'explicit closure' : 'automatic pruning'}`,

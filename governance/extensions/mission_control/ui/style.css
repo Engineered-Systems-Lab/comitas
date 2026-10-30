@@ -67,6 +67,7 @@
 .jq-table th{font-size:12px;color:var(--muted);font-weight:500;background:rgba(70,120,210,0.13)}
 .jq-table .jq-pri{width:1%;white-space:nowrap;text-align:center}
 .jq-table .jq-kind{width:1%;white-space:nowrap;color:var(--muted)}
+.jq-table .jq-size{max-width:14em;color:var(--muted)}
 .jq-table .jq-handle{width:1%;white-space:nowrap;font-family:var(--mono);font-size:12.5px}
 .jq-table .jq-state{width:28%}
 .jq-table tr.jq-epic td{background:rgba(128,128,128,0.14)}

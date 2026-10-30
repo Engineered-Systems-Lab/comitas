@@ -54,7 +54,7 @@ HELPER = [sys.executable, '-B', 'governance/tools/local_jobs.py', '--repo', str(
 REFRESH_COMMAND = [sys.executable, '-B', 'governance/extensions/mission_control/data_launcher.py', 'refresh-local']
 # The fields the page may see. Anything else the helper returns, such as record paths, the worker,
 # the current step or pending text, never leaves the server.
-JOB_FIELDS = ('handle', 'status', 'activity', 'description', 'work_kind', 'waiting', 'dependencies',
+JOB_FIELDS = ('handle', 'status', 'activity', 'description', 'work_kind', 'estimated_size', 'estimated_size_note', 'waiting', 'dependencies',
               'unsatisfied_dependencies', 'missing_dependencies', 'awaiting_lead', 'pending_count')
 
 

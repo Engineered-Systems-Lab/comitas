@@ -470,6 +470,27 @@ test('queue rows keep Epic bands, dependency-ordered members, empty member prior
   assert.equal(model.readAt, '2026-10-10T12:00:00Z');
 });
 
+test('the estimated size shows its label, then the note, and stays empty for Epics and unset Jobs', () => {
+  const model = core.queueModel(payload({
+    queue: [{handle: 'sample_epic', kind: 'epic', priority: 1, jobs: [job('member_one', {estimated_size: 'large'})]},
+            {...job('sized_job', {estimated_size: 'uncertain', estimated_size_note: 'small review; fix size uncertain'}), kind: 'job', priority: 2},
+            {...job('plain_job', {estimated_size: 'small-medium'}), kind: 'job', priority: 3},
+            {...job('unset_job'), kind: 'job', priority: 4},
+            {...job('odd_job', {estimated_size: 'huge', estimated_size_note: 'ignored'}), kind: 'job', priority: 5}]}));
+  assert.deepEqual(model.queue.map(r => [r.handle, r.estSize]), [
+    ['sample_epic (Epic)', ''], ['member_one', 'Large'], ['sized_job', 'Uncertain: small review; fix size uncertain'],
+    ['plain_job', 'Small–medium'], ['unset_job', ''], ['odd_job', '']]);
+  assert.equal(core.sizeText('medium-large', ''), 'Medium–large');
+  assert.equal(core.sizeText(null, 'a note alone'), '');
+});
+
+test('the page labels exist for exactly the sizes the helper validates', async () => {
+  const helper = await readFile(new URL('../../../tools/coordination/local_jobs.py', import.meta.url), 'utf8');
+  const block = /^ESTIMATED_SIZES = \{([^}]*)\}$/m.exec(helper);
+  assert.ok(block);
+  assert.deepEqual([...block[1].matchAll(/^\s+'([a-z-]+)':/gm)].map(m => m[1]), [...core.SIZE_LABELS.keys()]);
+});
+
 test('an empty explicit Epic stays visible with its closure policy', () => {
   const model = core.queueModel(payload({queue: [{handle: 'more_work', kind: 'epic', priority: 1,
     closure_policy: 'explicit', jobs: []}]}));

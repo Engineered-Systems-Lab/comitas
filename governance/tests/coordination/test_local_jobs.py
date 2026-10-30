@@ -550,6 +550,43 @@ class LocalJobsTest(JobsFixture):
         with self.assertRaisesRegex(ValueError, 'Unexpected'):
             j.validate(dict(record(), category='fix'))
 
+    def test_estimated_size_and_note_are_optional_and_validated(self):
+        j.validate(record())
+        for size in j.ESTIMATED_SIZES:
+            j.validate(dict(record(), estimated_size=size))
+            j.validate(dict(record(), estimated_size=size, estimated_size_note='small review; fix size uncertain'))
+        j.validate(dict(record(), estimated_size='large', estimated_size_note='x' * j.SIZE_NOTE_LIMIT))
+        bad = [{'estimated_size': 'huge'}, {'estimated_size': None}, {'estimated_size': ''}, {'estimated_size': ['small']},
+               {'estimated_size': 'Small'}, {'estimated_size_note': 'a note alone'},
+               {'estimated_size': 'small', 'estimated_size_note': ''}, {'estimated_size': 'small', 'estimated_size_note': None},
+               {'estimated_size': 'small', 'estimated_size_note': ' padded'}, {'estimated_size': 'small', 'estimated_size_note': 'two\nlines'},
+               {'estimated_size': 'small', 'estimated_size_note': 'x' * (j.SIZE_NOTE_LIMIT + 1)}]
+        for fields in bad:
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                j.validate(dict(record(), **fields))
+
+    def test_estimated_size_is_not_accepted_on_the_coordinator_record(self):
+        for field in ('estimated_size', 'estimated_size_note'):
+            with self.assertRaisesRegex(ValueError, 'Unexpected'):
+                j.validate(self.coordinator(**{field: 'small'}))
+
+    def test_queue_rows_carry_the_estimated_size_and_note(self):
+        j.put(self.primary, dict(record(), estimated_size='uncertain', estimated_size_note='small review; fix size uncertain'), None)
+        j.put(self.primary, dict(record(), handle='plain_job'), None)
+        j.put(self.primary, self.coordinator(queue=['sample_job', 'plain_job', 'ghost_job']), None)
+        rows = {row['handle']: row for row in j.queued(self.primary)['queue']}
+        self.assertEqual((rows['sample_job']['estimated_size'], rows['sample_job']['estimated_size_note']),
+                         ('uncertain', 'small review; fix size uncertain'))
+        for name in ('plain_job', 'ghost_job'):
+            self.assertEqual((rows[name]['estimated_size'], rows[name]['estimated_size_note']), (None, None))
+
+    def test_kinds_sizes_prints_the_size_list(self):
+        result = subprocess.run([sys.executable, '-B', str(rp.ROOT / 'governance/tools/local_jobs.py'), 'kinds', '--sizes'],
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), j.ESTIMATED_SIZES)
+        self.assertEqual(list(j.ESTIMATED_SIZES), ['small', 'small-medium', 'medium', 'medium-large', 'large', 'uncertain'])
+        self.assertTrue(all(isinstance(text, str) and text for text in j.ESTIMATED_SIZES.values()))
+
     def test_awaiting_lead_is_optional_structured_and_validated(self):
         session = '0b8f3a52-4c1d-4e6a-9f27-3d5c8a1e7b90'
         for what in j.AWAITING:

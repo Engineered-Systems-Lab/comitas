@@ -26,7 +26,18 @@ KINDS = {
     'record': 'a historical record such as a devlog entry',
     'decision': 'mainly waiting on a lead developer decision',
 }
+# The one list of estimated sizes, a rough judgment of the expected total effort (investigation, implementation,
+# validation and review), never a file count: a record's optional `estimated_size` must be a key here, and `kinds --sizes` prints it.
+ESTIMATED_SIZES = {
+    'small': 'little total effort: a quick look, a small change and a short review',
+    'small-medium': 'between small and medium',
+    'medium': 'moderate total effort across investigation, implementation, validation and review',
+    'medium-large': 'between medium and large',
+    'large': 'substantial total effort, such as a long investigation or several rounds of work and review',
+    'uncertain': 'the total effort cannot be judged yet; say why in the note',
+}
 DESCRIPTION_LIMIT = 160
+SIZE_NOTE_LIMIT = 80
 IDENTITY_LIMIT = 120
 RELEASED = 'RELEASED by '
 CLAIM_SOURCE = 'claim-coordinator command in governance/tools/local_jobs.py'
@@ -224,7 +235,8 @@ def validate(data):
         entries = data['context']
     else:
         required = common | {'handle', 'status', 'activity', 'step', 'waiting', 'pending', 'commits', 'records'}
-        require(required <= set(data) <= required | {'description', 'kind', 'created_at', 'awaiting_lead', 'disposed'},
+        require(required <= set(data) <= required | {'description', 'kind', 'created_at', 'awaiting_lead', 'disposed',
+                                                          'estimated_size', 'estimated_size_note'},
                 'Unexpected job fields')
         if 'awaiting_lead' in data:
             awaiting(data['awaiting_lead'])
@@ -238,6 +250,14 @@ def validate(data):
                     and len(text) <= DESCRIPTION_LIMIT,
                     'Description must be one trimmed line of at most %d characters' % DESCRIPTION_LIMIT)
         require('kind' not in data or (isinstance(data['kind'], str) and data['kind'] in KINDS), 'Unknown work kind')
+        require('estimated_size' not in data or (isinstance(data['estimated_size'], str) and data['estimated_size'] in ESTIMATED_SIZES),
+                'Unknown estimated size')
+        if 'estimated_size_note' in data:
+            note_text = data['estimated_size_note']
+            require('estimated_size' in data, 'An estimated size note needs an estimated size')
+            require(isinstance(note_text, str) and note_text and note_text == note_text.strip() and note_text.isprintable()
+                    and len(note_text) <= SIZE_NOTE_LIMIT,
+                    'Estimated size note must be one trimmed line of at most %d characters' % SIZE_NOTE_LIMIT)
         require(data['status'] in STATES, 'Unknown job status')
         require(data['activity'] in ('UNKNOWN', 'ACTIVE', 'PAUSED', 'STOPPED'), 'Unknown reported activity')
         require(isinstance(data['step'], str) and data['step'].strip(), 'Current step required')
@@ -414,6 +434,8 @@ def queued(directory):
                 'description': data.get('description') if data else None,
                 'created_at': data.get('created_at') if data else None,
                 'work_kind': data.get('kind') if data else None,
+                'estimated_size': data.get('estimated_size') if data else None,
+                'estimated_size_note': data.get('estimated_size_note') if data else None,
                 'waiting': data['waiting'] if data else None,
                 'awaiting_lead': data.get('awaiting_lead') if data else None,
                 'pending_count': len(data['pending']) if data else None,
@@ -1124,7 +1146,8 @@ def main():
                        help="Take over a record that has a holder; only with the lead developer's word")
     claim.add_argument('--reason', help="With --take-over: the lead developer's designation, in a line")
     sub.add_parser('prune')
-    sub.add_parser('kinds', help='Print the closed list of work kinds with their meanings')
+    kinds = sub.add_parser('kinds', help='Print the closed list of work kinds with their meanings')
+    kinds.add_argument('--sizes', action='store_true', help='Print the closed list of estimated sizes instead')
     move = sub.add_parser('rename', help='Rename a live Job in primary storage, record and queue together')
     move.add_argument('old')
     move.add_argument('new')
@@ -1161,7 +1184,7 @@ def main():
     require(not getattr(args, 'recorded', False), '--recorded was removed: give each pending entry a disposition with '
             'the dispose command, or route it with --route <n>=<handle>')
     if args.command == 'kinds':
-        print(json.dumps(KINDS, indent=2))
+        print(json.dumps(ESTIMATED_SIZES if args.sizes else KINDS, indent=2))
         return
     root, primary = roots(args.repo)
     if args.command == 'paths':

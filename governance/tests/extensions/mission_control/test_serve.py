@@ -220,7 +220,8 @@ def completed(stdout='', stderr='', code=0):
 
 
 JOB = {'handle': 'a_job', 'status': 'WIP', 'activity': 'ACTIVE', 'worker': 'Secret worker', 'step': 'Private step',
-       'description': 'Does a thing.', 'created_at': '2026-10-10T01:00:00Z', 'work_kind': 'fix', 'waiting': None,
+       'description': 'Does a thing.', 'created_at': '2026-10-10T01:00:00Z', 'work_kind': 'fix', 'estimated_size': 'uncertain',
+       'estimated_size_note': 'small review; fix size uncertain', 'waiting': None,
        'record': 'C:/somewhere/a_job.json', 'dependencies': [], 'unsatisfied_dependencies': [],
        'dependency_ready': True, 'missing_dependencies': [], 'awaiting_lead': None, 'pending_count': 2,
        'pending': [{'kind': 'finding', 'text': 'Private pending text', 'source': 'x'}]}
@@ -258,6 +259,7 @@ class QueuePayloadTest(unittest.TestCase):
             self.assertNotIn(secret, wire)
         job, epic = payload['queue']
         self.assertEqual((job['handle'], job['priority'], job['pending_count'], job['has_record']), ('a_job', 1, 2, True))
+        self.assertEqual((job['estimated_size'], job['estimated_size_note']), ('uncertain', 'small review; fix size uncertain'))
         self.assertEqual(epic['jobs'][0]['handle'], 'member_job')
         self.assertEqual(epic['closure_policy'], 'automatic')
         self.assertFalse(payload['unqueued'][0]['has_record'])
