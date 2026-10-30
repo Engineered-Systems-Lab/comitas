@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.8.0 (2026-10-30)
 
 **Two missions that add to the same list no longer conflict.** The carry and the go carry now merge pure appends to the changelog's Unreleased list, the decision registry, the end of the decisions, the rationale's audit table and its end, after proving from the two diffs that each side only added lines inside a declared region; any other edit of those files still refuses, and the diff, message, selection and check gates are unchanged. The lists are declared in `governance/config/append-lists.json`. To cover your own list, such as a devlog index, add `project-governance/config/append-lists.json` in the same format (a sealed Approve, as for the other project configuration); nothing else changes and nothing needs migrating. `execution-status` no longer reports a shared file that both missions only add to as a same-file overlap. See [append-only lists](CHECKPOINT-TOOL.md#append-only-lists).
 
