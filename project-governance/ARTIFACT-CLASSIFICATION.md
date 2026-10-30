@@ -8,6 +8,7 @@ Comitas ships the rows of its own documents. A project that starts from it keeps
 
 | Path | Class | Profile | Boundary | Bound | Invariants | Subclass | Reachable | Approval-sensitivity |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `.github/FUNDING.yml` | tooling | tooling | - | - | guidance | - | - | - |
 | `LICENSE` | record | record-only | - | - | - | - | - | - |
 | `README.md` | record | record-only | - | - | guidance | - | yes | - |
 | `devlog/*.md` | record | record-only | - | - | - | devlog | - | - |
