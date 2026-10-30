@@ -117,7 +117,8 @@ class RuntimeOverlayRecoveryTest(unittest.TestCase):
         self.prepare(tool, ['src/app.txt'], 'runtime')
         return tool.commit()
 
-    def records(self, tool, runtime):
+    def draft(self, tool, runtime):
+        """Write the Progress line, the devlog entry and its index line into the worktree; return the entry's path."""
         from datetime import datetime, timezone
         progress = tool.root / 'docs/PROGRESS.md'
         progress.write_text(progress.read_text(encoding='utf-8').replace(self.old_checkpoint, runtime), encoding='utf-8')
@@ -129,6 +130,10 @@ class RuntimeOverlayRecoveryTest(unittest.TestCase):
             'Status: Historical / non-normative\nProvenance: Fixture\nRepository checkpoint: `' + runtime + '`\n', encoding='utf-8')
         index = tool.root / 'devlog/README.md'
         index.write_text(index.read_text(encoding='utf-8') + '\n[New runtime](' + name + ')\n', encoding='utf-8')
+        return entry
+
+    def records(self, tool, runtime):
+        entry = self.draft(tool, runtime)
         self.prepare(tool, ['docs/PROGRESS.md', 'devlog/README.md', entry], 'record')
         result = tool.commit()
         self.assertEqual(result['state'], 'verified')
@@ -142,6 +147,88 @@ class RuntimeOverlayRecoveryTest(unittest.TestCase):
         self.assertEqual(json.loads((self.root / ac.CONTRACT).read_text())['facts'], {})
         self.assertEqual(self.tool.continue_records()['result_sha'], result['result_sha'])
         self.records(self.tool, result['result_sha'])
+
+    def pending_with_conventions(self):
+        """A follow-up-pending runtime commit in a repository whose table classes devlog/CONVENTIONS.md as governance."""
+        table = self.root / ac.TABLE
+        text = table.read_text(encoding='utf-8')
+        folder = next(line for line in text.splitlines(True) if line.startswith('| `devlog/` |'))
+        table.write_text(text.replace(folder, folder + '| `devlog/CONVENTIONS.md` | governance | test | - | - | - | - | - | - |\n'),
+                         encoding='utf-8')
+        (self.root / 'devlog/CONVENTIONS.md').write_text('# Conventions\n', encoding='utf-8')
+        self.tool.git('add', '-A')
+        self.tool.git('commit', '-qm', 'Classify the devlog conventions')
+        return self.runtime()
+
+    def test_drafted_records_pass_continue_records_and_the_next_prepare(self):
+        result = self.pending_with_conventions()
+        entry = self.draft(self.tool, result['result_sha'])
+        self.assertEqual(self.tool.continue_records()['result_sha'], result['result_sha'])
+        self.assertEqual(self.tool.continue_records()['state'], 'follow-up-pending')  # the second run is unchanged
+        self.prepare(self.tool, ['docs/PROGRESS.md', 'devlog/README.md', entry], 'record')
+        self.assertEqual(self.tool.commit()['state'], 'verified')
+        self.tool.finish()
+
+    def assert_refused(self, change, expected):
+        result = self.pending_with_conventions()
+        self.draft(self.tool, result['result_sha'])
+        change()
+        with self.assertRaisesRegex(ValueError, expected):
+            self.tool.continue_records()
+        self.assertTrue((self.tool.store / 'transaction.json').exists())
+        self.assertFalse((self.tool.store / 'pending.json').exists())
+
+    def test_continue_records_refuses_and_names_a_tracked_file_that_is_not_a_continuity_record(self):
+        self.assert_refused(lambda: (self.root / 'AGENTS.md').write_text('changed\n', encoding='utf-8'),
+                            r'differs from the sealed transaction at: .*AGENTS\.md')
+
+    def test_continue_records_refuses_and_names_a_stray_untracked_file(self):
+        self.assert_refused(lambda: (self.root / 'stray.txt').write_text('x\n', encoding='utf-8'),
+                            r'differs from the sealed transaction at: .*stray\.txt')
+
+    def test_continue_records_refuses_an_edit_of_the_devlog_conventions(self):
+        self.assert_refused(lambda: (self.root / 'devlog/CONVENTIONS.md').write_text('# Changed\n', encoding='utf-8'),
+                            r'differs from the sealed transaction at: .*devlog/CONVENTIONS\.md')
+
+    def test_continue_records_refuses_a_worktree_devlog_setting_that_moves_the_folder(self):
+        def move():
+            (self.root / ac.DEVLOG).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / ac.DEVLOG).write_text('{"folder": "project-governance"}', encoding='utf-8')
+        self.assert_refused(move, r'differs from the sealed transaction at: .*devlog\.json')
+
+    def test_continue_records_refuses_a_staged_change(self):
+        result = self.pending_with_conventions()
+        entry = self.draft(self.tool, result['result_sha'])
+        self.tool.git('add', '--', entry)
+        with self.assertRaisesRegex(ValueError, 'HEAD/index changed'):
+            self.tool.continue_records()
+
+    def test_plain_verify_and_finish_keep_refusing_drafted_records(self):
+        result = self.pending_with_conventions()
+        self.draft(self.tool, result['result_sha'])
+        for step in (self.tool.verify, self.tool.finish):
+            with self.assertRaisesRegex(ValueError, r'differs from the sealed transaction at: .*PROGRESS\.md.*continue-records'):
+                step()
+
+    def test_the_continuity_record_rule_reads_the_settings_and_the_table_at_head(self):
+        self.pending_with_conventions()
+        rule = self.tool.continuity_record
+        self.assertTrue(rule('docs/PROGRESS.md') and rule('devlog/new-entry.md') and rule('devlog/README.md'))
+        self.assertFalse(rule('devlog/CONVENTIONS.md'))
+        self.assertFalse(rule('README.md') or rule('devlog.md'))
+        (self.root / ac.DEVLOG).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / ac.DEVLOG).write_text('{"folder": "project-governance"}', encoding='utf-8')
+        self.assertFalse(rule(ac.DEVLOG) or rule('project-governance/anything.md'))
+        self.assertTrue(rule('devlog/new-entry.md'))
+
+    def test_a_path_that_differs_in_only_one_of_the_two_views_is_listed(self):
+        self.pending_with_conventions()
+        packet = self.tool.load()
+        with patch.object(self.tool, 'snapshot', return_value={**packet['working'], 'devlog/a.md': 'changed'}):
+            self.assertEqual(self.tool.sealed_differences(packet), ['devlog/a.md'])
+        with patch.object(self.tool, 'residual',
+                          side_effect=lambda manifest, status=None: ['?? devlog/b.md'] if status is None else []):
+            self.assertEqual(self.tool.sealed_differences(packet), ['devlog/b.md'])
 
     def blocked(self, tool=None):
         # Reproduce 0.6.1 by substituting exactly its framework-only contract reader, not packet bytes.
@@ -1340,7 +1427,9 @@ class RequiredContinuityCheckpointTest(unittest.TestCase):
         settings = self.root / ac.DEVLOG
         settings.parent.mkdir(parents=True, exist_ok=True)
         settings.write_text('{"version": 1, "folder": "notes", "date_format": "%Y%m%d"}\n')
-        self.git('add', '--', rp.PROGRESS, ac.DEVLOG)
+        (self.root / c.TABLE).write_text(fixture_table(sorted([*FIXTURE_ROWS, ('notes/*.md', 'record', 'test', '-')])),
+                                         encoding='utf-8', newline='\n')  # the table at HEAD classes the folder
+        self.git('add', '--', rp.PROGRESS, ac.DEVLOG, c.TABLE)
         self.git('commit', '-m', 'Existing durable checkpoint and log settings')
         (self.root / 'runtime.txt').write_text('new runtime history\n')
         self.git('add', '--', 'runtime.txt')
@@ -1367,7 +1456,11 @@ class RequiredContinuityCheckpointTest(unittest.TestCase):
         for name in ('devlog/20261016-entry.md', 'a.txt'):
             with self.assertRaisesRegex(ValueError, 'only continuity records'):
                 self.tool.preparation_gate([name])
-        settings.write_text('{"enabled": true}\n')
+        settings.write_text('{"enabled": true}\n')  # a working-copy setting counts for nothing: HEAD decides
+        with self.assertRaisesRegex(ValueError, 'only continuity records'):
+            self.tool.preparation_gate(['devlog/20261016-entry.md'])
+        self.git('add', '--', ac.DEVLOG)
+        self.git('commit', '-m', 'Turn the devlog on')
         self.tool.preparation_gate(['devlog/20261016-entry.md', rp.PROGRESS])
 
     def test_completion_with_the_devlog_off_needs_no_log_entry_and_with_it_on_still_does(self):

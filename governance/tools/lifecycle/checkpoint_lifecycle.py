@@ -125,10 +125,35 @@ class Lifecycle:
         return True
 
     def continuity_record(self, name):
-        """Whether a path is a continuity record: the progress record, or an entry of the devlog folder when the
-        project keeps a devlog (a project that sets `enabled` to false has no such folder)."""
-        settings = artifact_classification.devlog_settings(self.root)
-        return name == 'docs/PROGRESS.md' or (settings['enabled'] and name.startswith(settings['folder'] + '/'))
+        """Whether a path is a continuity record: the progress record, or a path of the devlog folder that the
+        classification table calls class record, when the project keeps a devlog. Both the devlog settings and the table
+        are read as committed at HEAD, never from the working copy, so a candidate cannot move the folder or reclassify
+        a path to make itself a record. Anything that cannot be read at HEAD is not a record."""
+        if name == 'docs/PROGRESS.md':
+            return True
+        try:
+            settings = artifact_classification.devlog_settings_from(self.head_text(artifact_classification.DEVLOG))
+            table = self.head_table(artifact_classification.load_profiles(self.root))
+        except (ValueError, UnicodeError):
+            return False
+        if not settings['enabled'] or table is None or not name.startswith(settings['folder'] + '/'):
+            return False
+        known = table.classify(name)
+        return known is not None and known[0] == 'record'
+
+    def sealed_differences(self, packet):
+        """The sorted paths that differ from the sealed transaction: those whose content digest differs from the seal,
+        and those of the status lines outside the manifest that differ from the prepared ones. A collapsed untracked
+        folder is named by its files when the content view holds them."""
+        manifest = packet['manifest']
+        now, sealed = self.snapshot(manifest, packet['policy']), packet['working']
+        found = {n for n in set(now) | set(sealed) if now.get(n) != sealed.get(n)}
+        before, after = self.residual(manifest, packet['prepared_status']), self.residual(manifest)
+        for line in set(before) ^ set(after):
+            name = line[3:]
+            if not (name.endswith('/') and any(n.startswith(name) for n in found)):
+                found.add(name)
+        return sorted(found)
 
     def commit_identity(self, packet):
         # Reconstruct the original approval, including after a restarted verification.
@@ -153,7 +178,7 @@ class Lifecycle:
             require(packet['state'] == 'follow-up-pending' and self.head() == packet['result_sha']
                     and not (self.store / TRANSACTION).exists(), 'Pending continuation conflict')
             return packet
-        packet = self.verify()
+        packet = self.verify(allow_records=True)
         require(packet['state'] == 'follow-up-pending', 'Only pending runtime may continue records')
         # Atomic rename preserves the entire seal. No history archive is created.
         os.rename(self.store / TRANSACTION, pending)
@@ -537,7 +562,9 @@ class Lifecycle:
                     'Runtime commit does not anchor completion evidence')
         return 'checkpoint committed; continuity follow-up pending'
 
-    def verify(self):
+    def verify(self, allow_records=False):
+        """Verify the committed transaction. Only `continue_records` sets `allow_records`, which tolerates working-copy
+        differences at continuity-record paths; every other route, `finish` included, refuses any difference."""
         packet = self.assert_pinned(self.load())
         self.quiet_operation()
         require(self.branch() == packet['branch'] and self.configuration() == packet['configuration'],
@@ -547,8 +574,12 @@ class Lifecycle:
         self.commit_identity(packet)
         if packet['state'] in ('verified', 'follow-up-pending'):
             require(self.head() == packet['result_sha'] and not self.inventory(), 'Post-verification HEAD/index changed')
-            require(self.snapshot(packet['manifest'], packet['policy']) == packet['working'], 'Post-verification content changed')
-            require(self.residual(packet['manifest']) == self.residual(packet['manifest'], packet['prepared_status']), 'Post-verification unrelated state changed')
+            changed = self.sealed_differences(packet)
+            if allow_records:
+                changed = [n for n in changed if not self.continuity_record(n)]
+            hint = ('; a records worker runs continue-records before editing the records'
+                    if packet['state'] == 'follow-up-pending' and not allow_records else '')
+            require(not changed, 'Working copy differs from the sealed transaction at: ' + ', '.join(changed) + hint)
             atomic(self.store / HANDOFF, canonical(packet))
             return packet
         if packet['state'] == 'verification-blocked':

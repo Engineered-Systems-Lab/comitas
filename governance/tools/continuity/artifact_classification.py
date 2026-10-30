@@ -164,12 +164,22 @@ def devlog_settings(root):
     a single-segment folder name; a pattern that names a year and reads back what it writes), and a key this reader does
     not know is refused, or the tools stop: a log nobody can find or date is not a log, and a misspelt "enabled" must not
     silently keep the log on."""
-    import json
-    from datetime import datetime
     path = Path(root) / DEVLOG
     try:
-        data = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else None
-    except (ValueError, OSError):  # includes UnicodeError and json.JSONDecodeError
+        text = path.read_text(encoding='utf-8') if path.is_file() else None
+    except (ValueError, OSError):  # includes UnicodeError
+        text = None
+    return devlog_settings_from(text)
+
+
+def devlog_settings_from(text):
+    """The development log settings that the text of the settings file holds (None when the file is not there), by the
+    rules of `devlog_settings`; it lets a caller read the file as committed at HEAD instead of the working copy."""
+    import json
+    from datetime import datetime
+    try:
+        data = json.loads(text) if text is not None else None
+    except ValueError:  # includes json.JSONDecodeError
         data = None
     if not isinstance(data, dict):
         return dict(DEVLOG_DEFAULTS)

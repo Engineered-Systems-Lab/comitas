@@ -142,7 +142,10 @@ remain for the next transaction; it contains no history or outstanding obligatio
 
 A runtime commit pending continuity has not completed its lifecycle. `continue-records`
 atomically moves its verified pending packet out of the active slot within scratch,
-allowing only a separately delegated Progress/devlog transaction. Preparation must
+allowing only a separately delegated Progress/devlog transaction. The records may
+be drafted before it runs: it tolerates working-copy differences only at continuity
+records (Progress, and devlog paths the artifact classification table calls class
+record, read at HEAD) and names every other differing path in its refusal. Preparation must
 pass the full unchanged continuity checker with the proposed records. Exact G018
 approval, post-commit verification and full continuity PASS precede cleanup of both
 packets. An interrupted operation retains its evidence; no force, automatic retry,
