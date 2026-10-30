@@ -78,6 +78,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/WORKER-HAZARDS.md` | governance | governance | - | - | conformance, guidance | agent-guidance | yes | medium |
 | `governance/WORKTREE-WORKFLOW.md` | governance | governance | - | - | conformance, guidance | - | yes | medium |
 | `governance/__init__.py` | tooling | tooling | - | - | - | - | - | high |
+| `governance/config/append-lists.json` | tooling | tooling | - | - | worktrees | checkpoint | - | high |
 | `governance/config/artifact-classification-golden.json` | tooling | tooling | - | - | classification | checkpoint | - | medium |
 | `governance/config/checkpoint-policy.json` | tooling | tooling | - | - | selector | checkpoint | - | high |
 | `governance/config/checkpoint-profiles.json` | tooling | tooling | - | - | selector | checkpoint | - | medium |
@@ -211,6 +212,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/tools/worktree.py` | tooling | tooling | - | - | worktrees | - | - | high |
 | `governance/tools/worktrees/` | tooling | tooling | - | - | worktrees | - | - | high |
 | `governance/tools/worktrees/__init__.py` | tooling | tooling | - | - | - | - | - | high |
+| `governance/tools/worktrees/append_lists.py` | tooling | tooling | - | - | worktrees | - | - | high |
 | `governance/tools/worktrees/claims.py` | tooling | tooling | - | - | - | checkpoint | - | medium |
 | `governance/tools/worktrees/guard.py` | tooling | tooling | - | - | worktrees | - | - | high |
 | `governance/tools/worktrees/worktree_carry.py` | tooling | tooling | - | - | worktrees | - | - | high |
@@ -220,6 +222,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `project-governance/CONSTRAINTS.md` | governance | governance | - | yes | conformance, guidance | constraints | - | medium |
 | `project-governance/DECISIONS.md` | governance | governance | - | yes | conformance, guidance, mission-control-generator | decisions | - | medium |
 | `project-governance/RATIONALE.md` | record | record-only | - | - | conformance, mission-control-generator | rationale | - | - |
+| `project-governance/config/append-lists.json` | tooling | tooling | - | - | worktrees | checkpoint | - | high |
 | `project-governance/config/artifact-classification-golden.json` | tooling | tooling | - | - | classification | checkpoint | - | high |
 | `project-governance/config/checkpoint-features.toml` | tooling | tooling | - | - | early-approval, test-runner, worktrees | checkpoint | - | high |
 | `project-governance/config/checkpoint-policy.json` | tooling | tooling | - | - | selector | checkpoint | - | high |

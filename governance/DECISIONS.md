@@ -39,6 +39,7 @@ For the evidence audit, explanations and open rationale gaps, see [Why these dec
 | G057 | 2026-10-25 | Accepted | [How a release is made](#g057---how-a-release-is-made-2026-10-25-accepted) |
 | G058 | 2026-10-25 | Accepted | [Review aids never affect approval](#g058---review-aids-never-affect-approval-2026-10-25-accepted) |
 | G059 | 2026-10-26 | Accepted | [Repository-owned commit-history boundaries](#g059---repository-owned-commit-history-boundaries-2026-10-26-accepted) |
+| G060 | 2026-10-30 | Accepted | [Appends to declared lists merge without a conflict](#g060---appends-to-declared-lists-merge-without-a-conflict-2026-10-30-accepted) |
 
 ## G018 - Delegated checkpoint authority and continuity (2026-10-01, Accepted)
 
@@ -504,3 +505,20 @@ Fresh exports and template copies MUST initialize their declaration explicitly.
 This is an exception to the earlier absent-project-files statement, not a change to the optional overlays.
 [Commit history](PROJECT-GOVERNANCE.md#commit-history) owns the file contract, ancestry and exclusivity rules,
 failure/skip outcomes and initialization procedures.
+
+
+## G060 - Appends to declared lists merge without a conflict (2026-10-30, Accepted)
+
+**A list that missions only add to takes the additions of two missions without a conflict, by a merge the tools build and prove.**
+[`governance/config/append-lists.json`](config/append-lists.json) and the project's optional
+`project-governance/config/append-lists.json` declare, for each list file, the regions where lines may be added and the
+order of additions that land at the same place. When the carry or the go carry meets a textual conflict only in declared
+files, the tool proves from the two diffs that each side only added lines inside a declared region, builds the merged file
+from whole blocks and goes on to the unchanged gates. Any other edit of a declared file, every undeclared file and any fault
+in a declaration keep the conflict and the refusal. The declaration is read from main, never from the candidate.
+
+The diff-bound proof still decides whether an approval carries: the carried diff must equal the approved diff, the message and
+the selection must be unchanged and every selected check must run and pass again. The claims database stays advisory: the
+overlap report omits a shared file only when both missions' changes to it are proved appends, and any other edit of it is
+still a same-file overlap. The ordering of missions stays in the worker's wait, never in the commit.
+[Append-only lists](CHECKPOINT-TOOL.md#append-only-lists) owns the contract and the declaration format.

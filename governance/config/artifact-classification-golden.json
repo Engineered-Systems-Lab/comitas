@@ -219,6 +219,21 @@
       "why": "carries the integration rules",
       "approval_sensitivity": "medium"
     },
+    "governance/config/append-lists.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "worktrees"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "it declares which lists the carry may merge, so a lower mark would widen what a carry accepts",
+      "approval_sensitivity": "high"
+    },
     "governance/config/artifact-classification-golden.json": {
       "class": "tooling",
       "profile": "tooling",
@@ -650,6 +665,21 @@
       "reachable": false,
       "approval_sensitivity": "low",
       "why": "explicit framework-owned project artifact; validation and sensitivity follow its role"
+    },
+    "project-governance/config/append-lists.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "worktrees"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "why": "the project's own declaration of lists the carry may merge",
+      "approval_sensitivity": "high"
     },
     "project-governance/config/artifact-classification-golden.json": {
       "class": "tooling",

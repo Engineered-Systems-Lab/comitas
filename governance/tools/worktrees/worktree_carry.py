@@ -5,7 +5,7 @@ from governance.tools.continuity.artifact_classification import EARLY_USES, LAND
 from governance.tools.support import local_state
 from checkpoint import Checkpoint, require, digest, canonical, TRANSACTION, RECEIPT_KEY, OPERATION_LOCK, ABANDONABLE, check_ref_context
 from governance.tools import runtime_guard
-from governance.tools.worktrees import claims
+from governance.tools.worktrees import append_lists, claims
 from governance.tools.lifecycle import early_approval
 import json
 import os
@@ -133,7 +133,7 @@ class Carry:
         by_original = {}   # originally approved id -> carried id, for comparing with the approved diff
         previous_new = main_sha
         for number, ((sha, parent), entry) in enumerate(zip(chain, entries), 1):
-            result = self.carry_one(source, sha, parent, entry, previous_new, by_old, by_original, number)
+            result = self.carry_one(source, sha, parent, entry, previous_new, by_old, by_original, number, main_sha)
             results.append(result)
             original = entry['original']
             for key, mapping in ((sha, by_old), (original['result_sha'], by_original)):
@@ -154,17 +154,21 @@ class Carry:
                 'entries': entries, 'upstream': {'from': base, 'to': main_sha, 'commits': upstream, 'paths': upstream_paths},
                 'overlap': overlap, 'landing': landing, 'landing_sha256': landing_bytes}
 
-    def carry_one(self, source, sha, parent, entry, new_parent, by_old, by_original, number):
+    def carry_one(self, source, sha, parent, entry, new_parent, by_old, by_original, number, main_sha):
         """The carried commit and the merge, diff and message gates for one approved commit."""
         merge = subprocess.run(['git', '-C', str(source.root), 'merge-tree', '--write-tree', '--name-only',
                                 '--merge-base=' + parent, new_parent, sha], capture_output=True)
         lines = merge.stdout.decode('utf-8', 'replace').splitlines()
         require(merge.returncode in (0, 1), 'git merge-tree failed: ' + merge.stderr.decode('utf-8', 'replace'))
+        appended = []
         if merge.returncode != 0:
-            conflicts = [l for l in lines[1:] if l and not l.startswith(('Auto-merging', 'CONFLICT'))]
-            raise CarryRefused('merge-tree', 'the commit does not merge cleanly onto the new base' +
-                               ((': ' + ', '.join(conflicts[:5])) if conflicts else ''), sha)
-        merged = lines[0].strip()
+            merged, appended = self.append_merge(source, merge.stdout, parent, new_parent, sha, main_sha)
+            if merged is None:
+                conflicts = [l for l in lines[1:] if l and not l.startswith(('Auto-merging', 'CONFLICT'))]
+                raise CarryRefused('merge-tree', 'the commit does not merge cleanly onto the new base' +
+                                   ((': ' + ', '.join(conflicts[:5])) if conflicts else ''), sha)
+        else:
+            merged = lines[0].strip()
         rewrite = {k: v for k, v in by_old.items() if k != v}
         tree = merged
         if rewrite:  # the records of a continuity commit cite the commit before it by id, tree and parent
@@ -199,7 +203,28 @@ class Carry:
                 'new_parent': new_parent, 'new_tree': tree, 'merge_tree': merged, 'patch_id': carried_id,
                 'approved_patch_id': approved_id, 'change_sha256': digest(have), 'id_map': dict(sorted(rewrite.items())),
                 'original_seal_sha256': original.get('seal_sha256'), 'original_commit': original['result_sha'],
-                'approval_path': entry['approval_path'], 'selection_sha256': entry['selection_sha256'], 'checks': []}
+                'approval_path': entry['approval_path'], 'selection_sha256': entry['selection_sha256'], 'checks': [],
+                'appended': appended}
+
+    def append_merge(self, source, output, base, ours, theirs, main_sha):
+        """The tree of a conflicted merge when every conflict is a proved append to a list that main declares, else (None, []).
+
+        The declaration is read from main and never from the candidate, so a mission cannot declare its own list. Any fault in
+        the declaration or in the proof leaves the ordinary conflict, and the carry refuses at the merge-tree gate as before."""
+        def git(*args, data=None, env=None):
+            result = subprocess.run(['git', '-C', str(source.root), '--literal-pathspecs', *args], input=data,
+                                    env=env, capture_output=True)
+            require(result.returncode == 0, 'Git failed: ' + ' '.join(args) + '\n' + result.stderr.decode('utf-8', 'replace'))
+            return result.stdout
+
+        def read(path):
+            probe = subprocess.run(['git', '-C', str(source.root), 'cat-file', 'blob', main_sha + ':' + path], capture_output=True)
+            return probe.stdout if probe.returncode == 0 else None
+        try:
+            lists = append_lists.declarations(read)
+            return append_lists.resolve(git, output, base, ours, theirs, lists)
+        except Exception:
+            return None, []
 
     def rewrite_tree(self, source, tree, parent, sha, rewrite):
         """The merged tree with the predecessors' ids replaced in the files this commit changed, and only there."""
@@ -445,11 +470,15 @@ class Carry:
                                 '--merge-base=' + parent, main_sha, made.stdout.decode().strip()], capture_output=True)
         lines = merge.stdout.decode('utf-8', 'replace').splitlines()
         require(merge.returncode in (0, 1), 'git merge-tree failed: ' + merge.stderr.decode('utf-8', 'replace'))
+        appended = []
         if merge.returncode != 0:
-            conflicts = [l for l in lines[1:] if l and not l.startswith(('Auto-merging', 'CONFLICT'))]
-            refuse('merge-tree', 'the candidate does not merge cleanly onto the new main' +
-                   ((': ' + ', '.join(conflicts[:5])) if conflicts else ''))
-        merged = lines[0].strip()
+            merged, appended = self.append_merge(source, merge.stdout, parent, main_sha, made.stdout.decode().strip(), main_sha)
+            if merged is None:
+                conflicts = [l for l in lines[1:] if l and not l.startswith(('Auto-merging', 'CONFLICT'))]
+                refuse('merge-tree', 'the candidate does not merge cleanly onto the new main' +
+                       ((': ' + ', '.join(conflicts[:5])) if conflicts else ''))
+        else:
+            merged = lines[0].strip()
         carried = early_approval.raw_change(source, main_sha, merged)
         have, want = early_approval.stripped(carried), early_approval.stripped(early_approval.unpack(original['change']))
         carried_id = early_approval.patch_id(carried)
@@ -490,7 +519,7 @@ class Carry:
                 'packet_sha256': digest((source.store / TRANSACTION).read_bytes()) if packet else None,
                 'patch_id': carried_id, 'change_sha256': digest(have),
                 'upstream': {'from': parent, 'to': main_sha, 'commits': upstream, 'paths': upstream_paths},
-                'overlap': sorted(set(manifest) & set(upstream_paths))}
+                'overlap': sorted(set(manifest) & set(upstream_paths)), 'appended': appended}
 
     def go_move(self, source, owner, path, shared, proof, output, job_handle):
         """The short locked step: read everything again, move the worktree, then write the carried go and spend the old one."""
@@ -519,7 +548,7 @@ class Carry:
                  'move_number': len(moves) + 1, 'state': 'staged' if proof['packet'] else 'preview',
                  'old_parent': preview['parent'], 'new_parent': main_sha, 'old_tree': preview['tree'], 'new_tree': merged,
                  'old_preview': preview['id'], 'new_preview': facts['id'], 'original_preview': proof['original']['preview']['id'],
-                 'upstream': proof['upstream'], 'overlap': proof['overlap'],
+                 'upstream': proof['upstream'], 'overlap': proof['overlap'], 'appended': proof['appended'],
                  'patch_id': proof['patch_id'], 'original_patch_id': proof['original']['patch_id'],
                  'change_sha256': proof['change_sha256'],
                  'selection': {'checks_sha256': facts['checks_sha256'], 'sensitive_paths': facts['sensitive_paths'],

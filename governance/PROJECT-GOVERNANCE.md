@@ -20,6 +20,7 @@ History that is genuinely unavailable is handled as described under [Commit hist
 | --- | --- | --- |
 | `ARTIFACT-CLASSIFICATION.md` | overlay of the framework's table | no project rows, so every tracked file outside `governance/` is unclassified and blocked |
 | `config/artifact-classification-golden.json` | the independent pin of the project's rows | no pin for the project's rows (the conformance tests of Comitas expect one) |
+| `config/append-lists.json` | the project's own [append-only lists](CHECKPOINT-TOOL.md#append-only-lists) | the framework's lists alone |
 | `config/checkpoint-policy.json` | overlay of the framework's policy | the framework's policy alone |
 | `config/checkpoint-profiles.json` | overlay of the framework's profiles | the framework's profiles alone |
 | `config/checkpoint-features.toml` | override of code defaults | every feature off |

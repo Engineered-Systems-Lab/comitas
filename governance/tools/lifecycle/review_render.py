@@ -348,8 +348,18 @@ def render_carry(audit):
     out += ['', '### Files both the candidate and the upstream range touched', '']
     out.append(', '.join(code(p) for p in audit['overlap']) if audit['overlap'] else
                'None. A shared file would be a notice and not a gate; it is no proof of independence.')
+    out += appended_lines(sorted({p for c in commits for p in c.get('appended') or []}))
     out += ['', 'The proofs (merge tree, patch ids, id map, selection digest, check results) are in the authenticated landing record.']
     return '\n'.join(out) + '\n'
+
+
+def appended_lines(paths):
+    """The paths whose textual conflict was resolved as a proved append to a declared list; nothing when there were none."""
+    if not paths:
+        return []
+    return ['', '### Appends merged', '',
+            'Both sides only added lines to these declared append-only lists, so the tool merged them and kept both additions: '
+            + ', '.join(code(p) for p in paths) + '. The approved diff is unchanged.']
 
 
 def render_go_carry(audit):
@@ -374,6 +384,7 @@ def render_go_carry(audit):
     out += ['', '### Files both the candidate and the upstream range touched', '']
     out.append(', '.join(code(p) for p in audit['overlap']) if audit['overlap'] else
                'None. A shared file would be a notice and not a gate; it is no proof of independence.')
+    out += appended_lines(audit.get('appended') or [])
     out += ['', 'The proofs (merge tree, patch ids, selection facts) are in the authenticated go record.']
     return '\n'.join(out) + '\n'
 

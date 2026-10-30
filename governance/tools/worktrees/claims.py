@@ -19,6 +19,8 @@ from pathlib import Path
 import re
 import subprocess
 
+from governance.tools.worktrees import append_lists
+
 # MAJOR.MINOR, kept in PRAGMA user_version as MAJOR * 1000 + MINOR. A minor adds fields and is migrated
 # additively; a different major is incompatible and leaves the file untouched.
 SCHEMA_MAJOR, SCHEMA_MINOR = 1, 1
@@ -287,7 +289,12 @@ def read_windows(common):
 # ---- Path claims, landings and events (schema 1.1) -----------------------------------------------
 
 def tokens(text):
-    return [token for token in (text or '').split(',') if token]
+    """The subclasses of a claim row; the append-only marker is no subclass."""
+    return [token for token in (text or '').split(',') if token and token != append_lists.TOKEN]
+
+
+def proved_append(row):
+    return append_lists.TOKEN in (row.get('subclass') or '').split(',')
 
 
 def claim_paths(con, claim_id):
@@ -298,7 +305,10 @@ def claim_paths(con, claim_id):
 def shared(a_rows, b_rows):
     """(files, subclasses) that two path lists have in common; paths compare without regard to case."""
     b_paths = {row['path'].casefold() for row in b_rows}
-    files = sorted({row['path'] for row in a_rows if row['path'].casefold() in b_paths})
+    b_appends = {row['path'].casefold() for row in b_rows if proved_append(row)}
+    # A file that both missions only append to, inside a declared list, is no overlap: the carry merges it.
+    files = sorted({row['path'] for row in a_rows if row['path'].casefold() in b_paths and
+                    not (proved_append(row) and row['path'].casefold() in b_appends)})
     subclasses = sorted({token for row in a_rows for token in tokens(row['subclass'])} &
                         {token for row in b_rows for token in tokens(row['subclass'])})
     return files, subclasses
@@ -750,13 +760,34 @@ def owner_of(tool):
     return branch.removeprefix('refs/heads/tx/').removeprefix('refs/heads/')
 
 
+def proved_appends(tool, paths):
+    """The manifest paths whose change from HEAD is a proved append to a list main declares; none on any fault."""
+    def head(path):
+        try:
+            return tool.git('cat-file', 'blob', 'HEAD:' + path)
+        except Exception:
+            return None
+
+    def working(path):
+        try:
+            return (tool.root / path).read_bytes()
+        except OSError:
+            return None
+    try:
+        return set(append_lists.flagged(append_lists.declarations(head), paths, head, working))
+    except Exception:
+        return set()
+
+
 def declare_manifest(tool, profile, job_handle=None):
     """The preview's hook: claim the manifest's paths and subclasses for this mission. Best effort, never raises."""
     def declaring():
         entries = []
+        appends = proved_appends(tool, sorted(profile['artifact_classification']))
         for path, view in sorted(profile['artifact_classification'].items()):
             subclasses = view.get('subclass') or []
-            entries.append((path, view.get('class'), tokens(subclasses) if isinstance(subclasses, str) else list(subclasses)))
+            subclasses = tokens(subclasses) if isinstance(subclasses, str) else list(subclasses)
+            entries.append((path, view.get('class'), subclasses + ([append_lists.TOKEN] if path in appends else [])))
         declare_paths(tool.common, owner_of(tool), job_handle, str(tool.root), entries)
     attempt(lambda: sweep_stale(tool.common, tool.root, keep=(owner_of(tool),)))
     return attempt(declaring)

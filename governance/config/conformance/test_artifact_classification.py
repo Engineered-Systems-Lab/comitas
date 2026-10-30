@@ -213,6 +213,7 @@ APPROVAL_HIGH = (
     'governance/tools/checkpoint.py', 'governance/tools/lifecycle/checkpoint_evidence.py', 'governance/tools/lifecycle/checkpoint_lifecycle.py',
     'governance/tools/lifecycle/checkpoint_selection.py', 'governance/tools/lifecycle/checkpoint_state.py', 'governance/tools/lifecycle/early_approval.py', 'governance/tools/worktree.py', 'governance/tools/worktrees/guard.py',
     'governance/tools/worktrees/worktree_carry.py', 'governance/tools/worktrees/worktree_support.py', 'governance/tools/runtime_guard.py',
+    'governance/config/append-lists.json', 'governance/tools/worktrees/append_lists.py', 'project-governance/config/append-lists.json',
     'project-governance/config/artifact-classification-golden.json', 'project-governance/config/checkpoint-features.toml',
     'project-governance/config/checkpoint-policy.json', 'project-governance/config/checkpoint-profiles.json',
     'project-governance/ARTIFACT-CLASSIFICATION.md', 'project-governance/config/citations.json',

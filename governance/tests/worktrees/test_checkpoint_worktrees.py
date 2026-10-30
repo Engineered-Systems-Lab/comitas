@@ -15,6 +15,7 @@ from unittest.mock import patch
 from governance.tools.continuity import artifact_classification as ac
 import checkpoint as c
 from governance.tools.coordination import local_jobs
+from governance.tools.worktrees import append_lists as A
 from governance.tools.worktrees import claims
 from governance.tools.lifecycle import early_approval as ea
 from governance.tools.support import local_state
@@ -996,6 +997,19 @@ def read(root, name):
         self.assertEqual(t.head(), self.base)
 
 
+DECLARATION = '{"version": 1, "lists": [{"path": "a.txt", "regions": [{"eof": true}], "order": "landing"}]}\n'
+
+
+def declare_list(test):
+    """Main declares a.txt as an append-only list; the mission is cut from that base."""
+    path = test.root / 'governance' / 'config' / 'append-lists.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(DECLARATION, encoding='utf-8', newline='\n')
+    test.f.git('add', '--', 'governance/config/append-lists.json')
+    test.f.git('commit', '-m', 'Fixture: a declared append-only list')
+    test.base = test.f.parent = test.f.git('rev-parse', 'HEAD').strip()
+
+
 class CarryTest(unittest.TestCase):
     """The carry of an approval across a moved base (diff-bound approval), in disposable repositories only."""
     create = WorktreeTest.create
@@ -1241,6 +1255,42 @@ class CarryTest(unittest.TestCase):
         self.assertEqual(ea.stripped(b'diff --git a/x b/x\nindex 1..2 100644\n@@ -1 +1 @@\n-a\n+b\n'),
                          b'diff --git a/x b/x\n-a\n+b\n')
 
+    def sealed(self, content):
+        """A committed, approved candidate that writes `content` to the declared list a.txt."""
+        declare_list(self)
+        t = self.create()
+        (self.path / 'a.txt').write_text(content)
+        p = t.prepare(['a.txt'], self.f.message, 'test', self.base, 'refs/heads/tx/' + self.owner, 'Disposable fixture scope')
+        with redirect_stdout(io.StringIO()):
+            t.approve(lambda prompt: 'APPROVE ' + p['id'] + ' ' + c.digest(c.canonical(p)))
+        result = t.commit()
+        t.finish()
+        return t, result['result_sha']
+
+    def test_two_appends_to_a_declared_list_carry_with_both_additions_and_the_approved_diff(self):
+        t, tip = self.sealed('old\nowned line\n')
+        main = self.advance('a.txt', 'old\nupstream line\n')
+        result = self.carry(main, tip)
+        new = result['new_tip']
+        self.assertEqual(self.f.git('show', new + ':a.txt'), 'old\nupstream line\nowned line\n')
+        [commit] = result['audit']['commits']
+        self.assertEqual((commit['appended'], commit['patch_id'] == commit['approved_patch_id']), (['a.txt'], True))
+        self.assertIn('Appends merged', result['notice'])
+        self.flow.integrate(self.path, self.owner, main, new)
+        self.assertEqual(self.flow.main.head(), new)
+
+    def test_an_edit_of_an_existing_line_next_to_an_upstream_append_still_refuses(self):
+        t, tip = self.sealed('changed\n')
+        main = self.advance('a.txt', 'old\nupstream line\n')
+        self.refused('merge-tree', main, tip, r'does not merge cleanly.*a\.txt')
+
+    def test_the_declaration_is_read_from_main_and_not_from_the_candidate(self):
+        t, tip = self.sealed('old\nowned line\n')
+        self.f.git('rm', '-q', '--', 'governance/config/append-lists.json')
+        self.f.git('commit', '-m', 'Upstream drops the declaration')
+        main = self.advance('a.txt', 'old\nupstream line\n')
+        self.refused('merge-tree', main, tip, r'does not merge cleanly.*a\.txt')
+
 
 class GoCarryTest(unittest.TestCase):
     """The carry of a go (diff-bound approval, slice 2): a moved main neither voids a go given at a preview nor makes the
@@ -1322,6 +1372,20 @@ class GoCarryTest(unittest.TestCase):
 
     def reset_main(self):
         self.f.git('reset', '--hard', self.base)
+
+    def test_two_appends_to_a_declared_list_carry_the_go_and_keep_both_additions(self):
+        declare_list(self)
+        t = self.create()
+        (self.path / 'a.txt').write_text(self.LINES + 'owned line\n')
+        preview = t.preview(['a.txt'], self.f.message, None, self.base, self.branch)
+        self.assertTrue(preview['body']['eligible'], preview['body']['reasons'])
+        go = self.save(self.go_record(t, preview), 'go-append.json')
+        main = self.advance('a.txt', self.LINES + 'upstream line\n')
+        result, out = self.carry(main, go)
+        self.assertEqual(result['state'], 'go-carried')
+        self.assertEqual((self.path / 'a.txt').read_text(), self.LINES + 'upstream line\nowned line\n')
+        self.assertEqual(result['audit']['appended'], ['a.txt'])
+        self.assertIn('Appends merged', result['notice'])
 
     def test_a_go_at_a_preview_survives_a_moved_main_and_carries_to_the_landing(self):
         t, go = self.previewed()
@@ -1587,6 +1651,235 @@ class WaitClearTest(unittest.TestCase):
             with self.subTest(arguments=arguments):
                 result = self.cli(*arguments)
                 self.assertEqual(result.returncode, 2, result.stdout)
+
+
+
+APPEND_BASE = b'# Log\n\n## Unreleased\n\nnewest\n\n## 1.0\n\nold\n'
+
+
+def append_spec(order='landing', regions=None):
+    return {'regions': regions or [{'start': '^## Unreleased$', 'end': '^## '}], 'order': order}
+
+
+def append_insert(base, after, text):
+    lines = A.split(base)
+    return b''.join(lines[:after] + [text] + lines[after:])
+
+
+class AppendParseTest(unittest.TestCase):
+    def document(self, **entry):
+        item = {'path': 'x.md', 'regions': [{'eof': True}], 'order': 'landing'}
+        item.update(entry)
+        return json.dumps({'version': 1, 'lists': [item]}).encode()
+
+    def test_a_valid_declaration_is_read(self):
+        found = A.parse(self.document(), 'f')
+        self.assertEqual(found, {'x.md': {'regions': [{'eof': True}], 'order': 'landing'}})
+
+    def test_every_fault_is_refused_by_name(self):
+        for bad in (self.document(order='random'), self.document(regions=[]), self.document(regions=[{'start': '('}]),
+                    self.document(path='../x'), self.document(regions=[{'skip': 1}]), b'{', b'{"version": 2, "lists": []}',
+                    self.document(regions=[{'eof': True, 'start': 'a'}]), self.document(regions=[{'start': 'a', 'skip': -1}])):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                A.parse(bad, 'f')
+
+    def test_a_project_path_may_not_repeat_a_framework_path(self):
+        files = {A.FRAMEWORK: self.document(), A.PROJECT: self.document()}
+        with self.assertRaisesRegex(ValueError, 'repeats'):
+            A.declarations(files.get)
+        files[A.PROJECT] = self.document(path='y.md')
+        self.assertEqual(sorted(A.declarations(files.get)), ['x.md', 'y.md'])
+        self.assertEqual(A.declarations({}.get), {})
+
+    def test_the_real_framework_declaration_parses(self):
+        root = Path(__file__).resolve().parents[3]
+        found = A.parse((root / A.FRAMEWORK).read_bytes(), A.FRAMEWORK)
+        self.assertEqual(sorted(found), ['governance/CHANGELOG.md', 'governance/DECISIONS.md', 'governance/RATIONALE.md'])
+
+
+class AppendMergeTest(unittest.TestCase):
+    def test_two_appends_at_the_same_point_keep_both_whole_blocks_in_the_declared_order(self):
+        ours = append_insert(APPEND_BASE, 4, b'**ours**\n\n')
+        theirs = append_insert(APPEND_BASE, 4, b'**theirs**\n\n')
+        landing = A.merge(APPEND_BASE, ours, theirs, append_spec('landing')).decode()
+        newest = A.merge(APPEND_BASE, ours, theirs, append_spec('newest-first')).decode()
+        self.assertIn('**ours**\n\n**theirs**\n\nnewest', landing)
+        self.assertIn('**theirs**\n\n**ours**\n\nnewest', newest)
+
+    def test_repeated_text_cannot_make_the_merged_diff_differ_from_the_approved_one(self):
+        """Entries that share lines (a blank line, a closing sentence) let Git align the added lines differently; the merge
+        must add exactly the approved lines to what main holds, in either declared order, or refuse."""
+        base = b'# Decisions\n\nintro\n'
+
+        def entry(number):
+            return ('\n## G0%d - T%d (2026-10-30, Accepted)\n\n**Decision %d.** x\n\nThe lead developer chose it.\n\n'
+                    '**Revisit when.** later.\n' % (number, number, number)).encode()
+        ours, theirs = base + entry(61), base + entry(62)
+        for order in ('landing', 'newest-first'):
+            with self.subTest(order=order):
+                merged = A.merge(base, ours, theirs, append_spec(order, [{'eof': True}]))
+                added = b''.join(l for v in A.insertions(ours, merged).values() for l in v)
+                approved = b''.join(l for v in A.insertions(base, theirs).values() for l in v)
+                self.assertEqual(added, approved)
+                self.assertIn(entry(61).strip(), merged.strip())
+                self.assertEqual(merged.count(b'## G0'), 2)
+
+    def test_the_result_does_not_depend_on_anything_but_the_inputs(self):
+        ours, theirs = append_insert(APPEND_BASE, 4, b'a\n\n'), append_insert(APPEND_BASE, 4, b'b\n\n')
+        self.assertEqual(A.merge(APPEND_BASE, ours, theirs, append_spec()), A.merge(APPEND_BASE, ours, theirs, append_spec()))
+
+    def test_appends_at_different_points_both_land(self):
+        ours = append_insert(APPEND_BASE, 4, b'a\n\n')
+        theirs = append_insert(APPEND_BASE, 8, b'b\n')
+        merged = A.merge(APPEND_BASE, ours, theirs, append_spec(regions=[{'start': '^## Unreleased$'}]))
+        self.assertTrue(merged.startswith(b'# Log\n\n## Unreleased\n\na\n\nnewest'))
+        self.assertIn(b'b\n', merged)
+
+    def test_an_edit_or_a_removal_is_not_an_append(self):
+        for edited in (APPEND_BASE.replace(b'newest', b'newer'), APPEND_BASE.replace(b'old\n', b''), APPEND_BASE + b'x'):
+            with self.subTest(edited=edited), self.assertRaises(A.NotAppend):
+                A.merge(APPEND_BASE, edited, append_insert(APPEND_BASE, 4, b'b\n\n'), append_spec())
+
+    def test_an_insertion_outside_the_declared_region_is_not_an_append(self):
+        outside = append_insert(APPEND_BASE, 0, b'# Top\n')
+        with self.assertRaisesRegex(A.NotAppend, 'outside the declared region'):
+            A.merge(APPEND_BASE, outside, append_insert(APPEND_BASE, 4, b'b\n\n'), append_spec())
+        after_release = append_insert(APPEND_BASE, 9, b'late\n')
+        self.assertFalse(A.proved_append(APPEND_BASE, after_release, append_spec()))
+        self.assertTrue(A.proved_append(APPEND_BASE, after_release, append_spec(regions=[{'eof': True}])))
+
+    def test_a_table_region_ends_at_the_blank_line_after_the_rows(self):
+        table = b'intro\n\n| ID | x |\n| --- | --- |\n| 1 | a |\n| 2 | b |\n\ntext\n'
+        region = [{'start': r'^\| ID \|', 'skip': 1, 'end': '^$'}]
+        self.assertTrue(A.proved_append(table, append_insert(table, 6, b'| 3 | c |\n'), append_spec(regions=region)))
+        self.assertFalse(A.proved_append(table, append_insert(table, 3, b'| 0 | z |\n'), append_spec(regions=region)))
+        self.assertFalse(A.proved_append(table, append_insert(table, 8, b'more\n'), append_spec(regions=region)))
+
+    def test_flagged_names_only_declared_proved_appends(self):
+        lists = {'log.md': append_spec()}
+        heads = {'log.md': APPEND_BASE, 'other.md': APPEND_BASE, 'new.md': None}
+        works = {'log.md': append_insert(APPEND_BASE, 4, b'a\n\n'), 'other.md': append_insert(APPEND_BASE, 4, b'a\n\n'), 'new.md': b'x'}
+        self.assertEqual(A.flagged(lists, ['log.md', 'other.md', 'new.md'], heads.get, works.get), ['log.md'])
+        works['log.md'] = APPEND_BASE.replace(b'old', b'older')
+        self.assertEqual(A.flagged(lists, ['log.md'], heads.get, works.get), [])
+
+
+class AppendResolveTest(unittest.TestCase):
+    """The real `git merge-tree` conflict of two missions, resolved by the tool."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.git('init', '-q', '-b', 'main')
+        self.git('config', 'user.name', 't')
+        self.git('config', 'user.email', 't@example.invalid')
+        self.git('config', 'commit.gpgsign', 'false')
+        self.write('log.md', APPEND_BASE)
+        self.write('other.md', APPEND_BASE)
+        self.base = self.commit('base')
+
+    def git(self, *args, data=None):
+        result = subprocess.run(['git', '-C', str(self.root), *args], input=data, capture_output=True)
+        if result.returncode not in (0, 1):
+            raise AssertionError(result.stderr.decode())
+        return result.stdout
+
+    def run_git(self, *args, data=None, env=None):
+        result = subprocess.run(['git', '-C', str(self.root), *args], input=data, env=env, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        return result.stdout
+
+    def write(self, name, data):
+        (self.root / name).write_bytes(data)
+
+    def commit(self, message):
+        self.git('add', '-A')
+        self.git('commit', '-q', '-m', message)
+        return self.git('rev-parse', 'HEAD').decode().strip()
+
+    def branch(self, name, **files):
+        self.git('checkout', '-q', '-b', name, self.base)
+        for path, data in files.items():
+            self.write(path.replace('_', '.'), data)
+        return self.commit(name)
+
+    def merge_output(self, ours, theirs):
+        result = subprocess.run(['git', '-C', str(self.root), 'merge-tree', '--write-tree', '--name-only',
+                                 '--merge-base=' + self.base, ours, theirs], capture_output=True)
+        return result.returncode, result.stdout
+
+    def test_two_appends_conflict_in_git_and_resolve_to_a_tree_with_both(self):
+        ours = self.branch('a', log_md=append_insert(APPEND_BASE, 4, b'**a**\n\n'))
+        theirs = self.branch('b', log_md=append_insert(APPEND_BASE, 4, b'**b**\n\n'))
+        code, output = self.merge_output(ours, theirs)
+        self.assertEqual(code, 1)
+        tree, names = A.resolve(self.run_git, output, self.base, ours, theirs, {'log.md': append_spec('newest-first')})
+        self.assertEqual(names, ['log.md'])
+        text = self.run_git('cat-file', 'blob', tree + ':log.md').decode()
+        self.assertIn('**b**\n\n**a**\n\nnewest', text)
+        self.assertNotIn('<<<<', text)
+        self.assertEqual(self.run_git('cat-file', 'blob', tree + ':other.md'), APPEND_BASE)
+
+    def test_an_undeclared_file_or_an_edit_leaves_the_conflict(self):
+        ours = self.branch('a', log_md=append_insert(APPEND_BASE, 4, b'**a**\n\n'), other_md=append_insert(APPEND_BASE, 4, b'x\n\n'))
+        theirs = self.branch('b', log_md=append_insert(APPEND_BASE, 4, b'**b**\n\n'), other_md=append_insert(APPEND_BASE, 4, b'y\n\n'))
+        code, output = self.merge_output(ours, theirs)
+        self.assertEqual(A.resolve(self.run_git, output, self.base, ours, theirs, {'log.md': append_spec()}), (None, []))
+        ours = self.branch('c', log_md=APPEND_BASE.replace(b'newest', b'changed'))
+        theirs = self.branch('d', log_md=APPEND_BASE.replace(b'newest', b'other'))
+        code, output = self.merge_output(ours, theirs)
+        self.assertEqual(A.resolve(self.run_git, output, self.base, ours, theirs, {'log.md': append_spec()}), (None, []))
+
+    def test_a_declared_non_ascii_name_is_matched_under_gits_default_quoting(self):
+        name = 'café.md'
+        self.git('checkout', '-q', 'main')
+        self.git('checkout', '-q', '-b', 'seed', self.base)
+        (self.root / name).write_bytes(APPEND_BASE)
+        self.base = self.commit('seed')
+        self.git('checkout', '-q', '-b', 'a', self.base)
+        (self.root / name).write_bytes(append_insert(APPEND_BASE, 4, b'**a**\n\n'))
+        ours = self.commit('a')
+        self.git('checkout', '-q', '-b', 'b', self.base)
+        (self.root / name).write_bytes(append_insert(APPEND_BASE, 4, b'**b**\n\n'))
+        theirs = self.commit('b')
+        code, output = self.merge_output(ours, theirs)
+        self.assertEqual(code, 1)
+        self.assertIn(rb'"caf\303\251.md"', output, 'Git quotes the name by default')
+        tree, names = A.resolve(self.run_git, output, self.base, ours, theirs, {name: append_spec()})
+        self.assertEqual(names, [name])
+        self.assertIn('**a**\n\n**b**', self.run_git('cat-file', 'blob', tree + ':' + name).decode())
+
+    def test_quoted_names_are_decoded(self):
+        self.assertEqual(A.unquote('plain.md'), 'plain.md')
+        self.assertEqual(A.unquote(r'"caf\303\251.md"'), 'café.md')
+        self.assertEqual(A.unquote(r'"a\tb\"c\\d"'), 'a\tb"c\\d')
+
+    def test_a_clean_merge_has_nothing_to_resolve(self):
+        ours = self.branch('a', log_md=append_insert(APPEND_BASE, 0, b'top\n'))
+        theirs = self.branch('b', log_md=APPEND_BASE + b'tail\n')
+        code, output = self.merge_output(ours, theirs)
+        self.assertEqual(code, 0)
+        self.assertEqual(A.resolve(self.run_git, output, self.base, ours, theirs, {'log.md': append_spec()}), (None, []))
+
+
+class AppendOverlapTest(unittest.TestCase):
+    def rows(self, *items):
+        return [{'path': p, 'class': 'governance', 'subclass': s} for p, s in items]
+
+    def test_two_proved_appends_to_one_file_are_no_overlap(self):
+        a = self.rows(('governance/CHANGELOG.md', A.TOKEN), ('x.py', ''))
+        b = self.rows(('governance/CHANGELOG.md', A.TOKEN))
+        self.assertEqual(claims.shared(a, b), ([], []))
+
+    def test_any_other_edit_keeps_the_overlap_and_the_marker_is_no_subclass(self):
+        a = self.rows(('governance/CHANGELOG.md', A.TOKEN))
+        b = self.rows(('governance/CHANGELOG.md', ''))
+        self.assertEqual(claims.shared(a, b), (['governance/CHANGELOG.md'], []))
+        c = self.rows(('governance/DECISIONS.md', 'decisions,' + A.TOKEN))
+        d = self.rows(('other.md', A.TOKEN + ',checkpoint'))
+        self.assertEqual(claims.shared(c, d), ([], []))
+        self.assertEqual(claims.tokens('decisions,' + A.TOKEN), ['decisions'])
 
 
 if __name__ == '__main__':

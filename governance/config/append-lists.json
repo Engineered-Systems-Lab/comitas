@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "lists": [
+    {
+      "path": "governance/CHANGELOG.md",
+      "regions": [{"start": "^## Unreleased$", "end": "^## "}],
+      "order": "newest-first"
+    },
+    {
+      "path": "governance/DECISIONS.md",
+      "regions": [
+        {"start": "^\\| ID \\| Date \\|", "skip": 1, "end": "^$"},
+        {"eof": true}
+      ],
+      "order": "landing"
+    },
+    {
+      "path": "governance/RATIONALE.md",
+      "regions": [
+        {"start": "^\\| Decision \\| Rationale status \\|", "skip": 1, "end": "^$"},
+        {"eof": true}
+      ],
+      "order": "landing"
+    }
+  ]
+}

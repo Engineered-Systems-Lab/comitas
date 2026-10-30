@@ -112,6 +112,7 @@ The audit covers every entry in the decision registry as of October 7, 2026 (G03
 | G057 | explicit | The lead developer chose Unreleased entries, readiness before tagging and immutable public tags; their words and the inspected release commits are in Release procedure: G057. |
 | G058 | explicit | The lead developer required a display of the recorded candidate with no change to approval, kept rename detection in the page and chose the link's position; see Review aids and approval: G058. |
 | G059 | explicit | The lead developer chose exact repository-owned boundaries, optional equality for the second epoch and explicit post-first-commit initialization; see Repository-owned history boundaries: G059. |
+| G060 | explicit | The Job scope of 2026-10-30 set the problem and the constraints, and the lead developer chose the tool-built merge in the worker chat; see Appends to declared lists: G060 |
 | G018 review before the seal | explicit | The lead developer chose a preview by class and the right to skip it for any class; a conditional approval before the seal was discussed and not adopted; see Checkpoint authority. |
 | G026 commit message shape extension | explicit | The lead developer wanted messages they can scan for the pieces that need scrutiny; see Change classification and validation scope. |
 | G029 decision-record extension | explicit | The lead developer named capture after the fact as the largest gap in recording decisions; see Governance artifact organization. |
@@ -788,3 +789,18 @@ The missing-declaration failure is a deliberate migration cost; keeping optional
 **Audit.** All 39 commits after Comitas's initial import passed the strict metadata and Status checks at template commit `cfbdb21b4589e4258865a1c714c25c7465963266`.
 
 **Revisit when.** Another convention epoch or object-ID format is needed, or explicit setup proves too costly.
+
+
+## Appends to declared lists: G060
+
+**Decision.** Pure appends to declared list files merge without a conflict in the carry and the go carry, by a block merge the tool builds after proving from the two diffs that each side only added lines inside a declared region; see [G060](DECISIONS.md#g060---appends-to-declared-lists-merge-without-a-conflict-2026-10-30-accepted).
+
+**Why (supplied by the lead developer).** The Job scope of 2026-10-30, recorded by the Coordinator from the lead developer's words, asks that appends to the changelog list, the decision registry, the rationale end and other declared lists "stop being a textual conflict, by a layout or a merge rule that the reconcile and the carry can prove", with the claims database advisory and the diff-bound proof still deciding. On the worker's proposal of the merge rule the lead developer replied "Yes, implement". **Why (source-stated).** Four parallel missions on 2026-10-18 each appended to the same changelog list and made each other's carries refuse; the Coordinator ran every Job that edits the changelog one after another by hand. **Why (agent-reasoned).** The approved diff is compared without context lines, so a pure append has the same approved diff wherever it lands; only the textual merge and the overlap report blocked it.
+
+**Alternatives.** A tool-built block merge (chosen by the lead developer). `merge=union` in `.gitattributes` (rejected by the worker: it merges line by line, collapses blank and repeated lines, so multi-line entries glue together and the diff gate then refuses exactly the common case). One file per entry (not chosen: the decisions and rationale are single documents read whole by the generator and the continuity checker, and decision ids would still collide). A new column in the classification table for the declaration (rejected by the worker: it changes the parser and the golden pin of every adopter). A schema change of the claims database for the overlap flag (rejected by the worker as unnecessary: a reserved marker in the subclass column is filtered out of every subclass reading). Teaching `reconcile` to merge appends was not done: it carries a range without changing owned working bytes, and a committed or previewed candidate takes the carry.
+
+**Tradeoffs or costs.** More tooling in the approval-sensitive carry path, which needs the sealed Approve. Two missions that add the same decision id now both land textually; the unchanged checks (continuity and the Mission Control generator tests) are what catch a duplicate id or audit row. A declaration that is wrong only widens which additions merge, never what an approval means.
+
+**Evidence.** `governance/tools/worktrees/append_lists.py`, the carry and go-carry hooks in `worktree_carry.py`, the claims filter in `claims.py`, and `test_append_lists.py` with the carry cases in `test_checkpoint_worktrees.py`; the reproduction of 2026-10-30 showed `git merge-tree` conflicts for two appends to each of the changelog Unreleased list, the registry table, the end of the decisions and the end of the rationale.
+
+**Revisit when.** A list needs an insertion the region syntax cannot express, `reconcile` is extended to overlapping ranges, or a per-entry layout becomes cheaper than the declaration.
