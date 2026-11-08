@@ -17,17 +17,19 @@ STATES = ('PENDING', 'WIP', 'AWAITING_RESPONSE', 'BLOCKED', 'COMPLETE', 'CANCELL
 TERMINAL = ('COMPLETE', 'CANCELLED')
 RELATIVE = Path('.local/coordination')
 # The one list of work kinds: a record's optional `kind` must be a key here, and `kinds` prints it.
+# A kind says what the Job delivers, its purpose; what the Job touches comes from artifact classification, so
+# a Job that fixes a document is kind `fix`, and no kind combines two labels.
 KINDS = {
-    'fix': 'a defect or silent failure',
-    'feature': 'a new capability',
-    'enhancement': 'an improvement to an existing capability',
-    'cleanup': 'tidying or restructuring that adds no behavior',
-    'design': 'a design or investigation before anything is built',
-    'docs': 'documentation or explanatory notes',
-    'record': 'a historical record such as a devlog entry',
-    'release': 'cutting a version: VERSION, the dated changelog heading and any migration note',
-    'upgrade': 'taking a newer framework or dependency version',
-    'decision': 'mainly waiting on a lead developer decision',
+    'fix': 'corrects a defect or a silent failure',
+    'feature': 'adds a new capability',
+    'enhancement': 'improves an existing capability',
+    'cleanup': 'tidies or restructures without adding behavior',
+    'design': 'investigates and proposes before anything is built; the result is a proposal, not necessarily a design document',
+    'decision': 'the result is a lead developer decision; nothing is built until it is made',
+    'docs': 'explains; the result is explanatory writing (correcting a document is a fix)',
+    'record': 'records history; the result is a historical entry such as a devlog entry',
+    'release': 'cuts a version: VERSION, the dated changelog heading and any migration note',
+    'upgrade': 'takes a newer framework or dependency version',
 }
 # The one list of estimated sizes, a rough judgment of the expected total effort (investigation, implementation,
 # validation and review), never a file count: a record's optional `estimated_size` must be a key here, and `kinds --sizes` prints it.

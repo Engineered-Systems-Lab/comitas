@@ -4,6 +4,8 @@ This changelog is curated, not generated. An entry says what someone who has ado
 
 ## Unreleased
 
+**A Job's work kind now says what the Job delivers.** Every kind and its name stay, so no record changes and nothing needs migrating; only the meanings `local_jobs.py kinds` prints are reworded to one principle: a kind is the Job's purpose, and what it touches comes from the artifact classification table. `design` and `decision` name a result (a proposal, a lead developer decision), not a document, and a Job that corrects a document is kind `fix`. See [Job state](LOCAL-COORDINATION.md#job-state-and-reported-worker-activity). No adopter action.
+
 **A Job can have the work kinds `enhancement`, `release` and `upgrade`.** `enhancement` is an improvement to an existing capability, beside `feature`, which now reads as a new capability; `release` is cutting a version and `upgrade` is taking a newer framework or dependency version. `local_jobs.py kinds` prints them. Update the helper before a record uses one of the three, because a helper from before them refuses the record.
 
 ## 0.8.0 (2026-10-30)

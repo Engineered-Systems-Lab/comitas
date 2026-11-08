@@ -656,12 +656,21 @@ class LocalJobsTest(JobsFixture):
         self.assertEqual(json.loads(result.stdout), j.KINDS)
         self.assertTrue(all(isinstance(text, str) and text for text in j.KINDS.values()))
 
+    def test_every_kind_says_what_the_job_delivers_and_none_names_what_it_touches(self):
+        self.assertEqual(set(j.KINDS), {'fix', 'feature', 'enhancement', 'cleanup', 'design', 'decision', 'docs',
+                                        'record', 'release', 'upgrade'})
+        self.assertEqual(j.KINDS['fix'], 'corrects a defect or a silent failure')
+        self.assertIn('not necessarily a design document', j.KINDS['design'])
+        self.assertIn('lead developer decision', j.KINDS['decision'])
+        self.assertIn('correcting a document is a fix', j.KINDS['docs'])
+        self.assertTrue(all(' ' in text and text == text.strip() for text in j.KINDS.values()))
+
     def test_enhancement_release_and_upgrade_are_work_kinds(self):
         result = subprocess.run([sys.executable, '-B', str(rp.ROOT / 'governance/tools/local_jobs.py'), 'kinds'],
                                 capture_output=True, text=True, check=True)
         kinds = json.loads(result.stdout)
-        self.assertEqual(kinds['enhancement'], 'an improvement to an existing capability')
-        self.assertEqual(kinds['feature'], 'a new capability')
+        self.assertEqual(kinds['enhancement'], 'improves an existing capability')
+        self.assertEqual(kinds['feature'], 'adds a new capability')
         names = {kind: kind + '_job' for kind in ('enhancement', 'release', 'upgrade')}
         for kind, name in names.items():
             self.assertTrue(kinds[kind])
