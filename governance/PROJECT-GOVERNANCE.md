@@ -1,6 +1,6 @@
 # Project governance files
 
-This document is the one place that says what a project keeps in `project-governance/`: every file the tools read there, its keys, what it means when it is missing, how the tools combine it with the framework's, and what they refuse. It is framework-owned, so an upgrade replaces it; the files it describes are the project's and an upgrade never touches them. It states no rule of its own: the reasons are in [G045](DECISIONS.md#g045---the-project-overlay-is-read-by-every-tool-and-the-settings-override-code-defaults-2026-10-18-accepted) and [G050](DECISIONS.md#g050---the-project-keeps-its-own-rules-decisions-and-half-of-the-reconstruction-contract-2026-10-19-accepted), the loading mechanics in [the project overlay](CHECKPOINT-TOOL.md#the-project-overlay), and a conformance test pins the defaults below to the code.
+This document is the one place that says what a project keeps in `project-governance/`: every file the tools read there, its keys, what it means when it is missing, how the tools combine it with the framework's, and what they refuse. It is framework-owned, so an upgrade replaces it; the files it describes are the project's and an upgrade never touches them. It states no rule of its own: the reasons are in [G045](DECISIONS.md#g045---the-project-overlay-is-read-by-every-tool-and-the-settings-override-code-defaults-2026-10-18-accepted) and [G050](DECISIONS.md#g050---the-project-keeps-its-own-rules-decisions-and-half-of-the-reconstruction-contract-2026-10-19-accepted), the loading mechanics in [the project overlay](CHECKPOINT-TOOL-EVIDENCE.md#the-project-overlay), and a conformance test pins the defaults below to the code.
 
 `governance/` is the framework and is never edited by a project. `project-governance/` is the project's. A project starts from the files Comitas ships there (a minimal valid starter of each) and from then on owns them. Owning a file here means maintaining it; the starters remain licensed material of Comitas like the rest ([licensing and provenance](CONSTRAINTS.md#licensing-and-provenance)). The [framework's classification table](ARTIFACT-CLASSIFICATION.md) gives each supported file its own row: the project's constraints and decisions are `medium`, explanatory rationale and the optional extension's input and port settings are `-` (low), and the classification table and core configuration remain `high`. The directory fallback remains `high`, and a project cannot classify its own folder. A high path always takes the sealed Approve; lower paths use the committed reach and the higher-of-HEAD/candidate rule. This replaces the earlier blanket grading of G045/G050 ([G026 extension](DECISIONS.md#g026-project-artifact-classification-extension-2026-10-25)).
 
@@ -20,7 +20,7 @@ History that is genuinely unavailable is handled as described under [Commit hist
 | --- | --- | --- |
 | `ARTIFACT-CLASSIFICATION.md` | overlay of the framework's table | no project rows, so every tracked file outside `governance/` is unclassified and blocked |
 | `config/artifact-classification-golden.json` | the independent pin of the project's rows | no pin for the project's rows (the conformance tests of Comitas expect one) |
-| `config/append-lists.json` | the project's own [append-only lists](CHECKPOINT-TOOL.md#append-only-lists) | the framework's lists alone |
+| `config/append-lists.json` | the project's own [append-only lists](CHECKPOINT-TOOL-CARRY.md#append-only-lists) | the framework's lists alone |
 | `config/checkpoint-policy.json` | overlay of the framework's policy | the framework's policy alone |
 | `config/checkpoint-profiles.json` | overlay of the framework's profiles | the framework's profiles alone |
 | `config/checkpoint-features.toml` | override of code defaults | every feature off |
@@ -140,7 +140,7 @@ To replace a broad workaround such as `:(glob)assets/[!Rp]*`, use `:(glob)assets
 | `prohibited_components` | policy | a list of path components no transaction may name, added after the framework's |
 | `profiles` | profiles | an object of profile name to profile (`limitations`, `checks` as a list of `{id, argv}`, and for a runtime component its `runtime_checks`, each an exact policy command); a name the framework's profiles use (`record-only`, `tooling`, `governance`) is a clash and is refused |
 
-Any other key is refused, so an overlay never changes a framework setting: the impact mapping, the commit class and subclass vocabulary and the policy keys `commit_metadata_required`, `link_retarget` and `timing_record` stay the framework's. A runtime profile declares its own gates; see [runtime profiles](CHECKPOINT-TOOL.md#runtime-profiles).
+Any other key is refused, so an overlay never changes a framework setting: the impact mapping, the commit class and subclass vocabulary and the policy keys `commit_metadata_required`, `link_retarget` and `timing_record` stay the framework's. A runtime profile declares its own gates; see [runtime profiles](CHECKPOINT-TOOL-EVIDENCE.md#runtime-profiles).
 
 ## The feature switches
 
@@ -153,7 +153,7 @@ Any other key is refused, so an overlay never changes a framework setting: the i
 | `parallel_tests` | `true` | the test runner fans one check's tests out over worker processes |
 | `test_workers` | a whole number of zero or more | the number of worker processes; `0` is one per core, and any other value runs the tests sequentially |
 
-The file is of `high` approval sensitivity, so turning a feature on takes the sealed Approve; turning one off is the lead developer's manual commit, with the recipe in [feature switches](CHECKPOINT-TOOL.md#feature-switches).
+The file is of `high` approval sensitivity, so turning a feature on takes the sealed Approve; turning one off is the lead developer's manual commit, with the recipe in [feature switches](CHECKPOINT-TOOL-CONSENT.md#feature-switches).
 
 ## The devlog
 
@@ -190,7 +190,7 @@ The check also requires the index and the conventions to resolve their links lik
 `config/citations.json` is optional and so is every key in it: `{"version": 1, "external_repositories": []}` is the same as no file. A file that is missing, unreadable or not a JSON object means no label. A key that is set must hold a good value, or the tools stop; a key they do not know is refused too.
 
 - `version`: `1` when present.
-- `external_repositories`: a list of distinct labels, each one word of letters, digits, dots, underscores and hyphens. A declared label identifies repository citations checked for form only. The code default is no labels; the [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) writes `template` into the file of a project made from Comitas, and a project adds its own labels beside it. See [the meaning of `template`](#the-template-label).
+- `external_repositories`: a list of distinct labels, each one word of letters, digits, dots, underscores and hyphens. A declared label identifies repository citations checked for form only. The code default is no labels; the [adoption helper](CHECKPOINT-TOOL-COMMANDS.md#the-adoption-helper) writes `template` into the file of a project made from Comitas, and a project adds its own labels beside it. See [the meaning of `template`](#the-template-label).
 
 A commit of another repository is cited as the label, one space, the lowercase word `commit`, one space and the id in backticks, on one source line (a table row works): ``template commit `<id>` ``. The id is 7 to 40 lowercase hexadecimal characters and the label is matched exactly as declared. The rule has no special case:
 

@@ -48,6 +48,118 @@
       "why": "this table; governance, sealed, edits validate narrowly",
       "approval_sensitivity": "medium"
     },
+    "governance/CHECKPOINT-TOOL-CARRY.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the approval and go carry gates and the sensitivity rule",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL-CLAIMS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the claims database and execution status notes",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL-COMMANDS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the command inputs and the runtime guard",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL-CONSENT.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the consent interface, approval words, switches and the switch recipe",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL-EVIDENCE.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the state, evidence and selection notes",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL-INTERNALS.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries the components, layout and test layout of the tool",
+      "approval_sensitivity": "medium"
+    },
+    "governance/CHECKPOINT-TOOL-RECOVERY.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": true,
+      "why": "carries recovery, scratch completion and blocked-verification recovery",
+      "approval_sensitivity": "medium"
+    },
     "governance/CHECKPOINT-TOOL.md": {
       "class": "governance",
       "profile": "governance",
@@ -61,7 +173,7 @@
         "checkpoint"
       ],
       "reachable": true,
-      "why": "carries the tool contract and the switch recipe",
+      "why": "index of the checkpoint tool notes and the old anchors",
       "approval_sensitivity": "medium"
     },
     "governance/CHECKPOINT-WORKFLOW.md": {

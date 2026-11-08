@@ -102,6 +102,7 @@ class ScopeTest(unittest.TestCase):
         for path in ['AGENTS.md', 'governance/README.md',
                      rp.DECISIONS, 'governance/CONSTRAINTS.md',
                      'governance/CHECKPOINT-WORKFLOW.md', 'governance/CHECKPOINT-TOOL.md',
+                     'governance/CHECKPOINT-TOOL-CARRY.md', 'governance/CHECKPOINT-TOOL-CLAIMS.md', 'governance/CHECKPOINT-TOOL-COMMANDS.md', 'governance/CHECKPOINT-TOOL-CONSENT.md', 'governance/CHECKPOINT-TOOL-EVIDENCE.md', 'governance/CHECKPOINT-TOOL-INTERNALS.md', 'governance/CHECKPOINT-TOOL-RECOVERY.md',
                      'governance/COMMAND-CONTINUITY.md', 'governance/COMMAND-RECOVERY-PROMPT-v1.md',
                      'governance/WORKTREE-WORKFLOW.md', 'devlog/CONVENTIONS.md']:
             with self.subTest(path=path):

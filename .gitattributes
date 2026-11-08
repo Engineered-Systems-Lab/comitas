@@ -13,6 +13,13 @@ governance/config/checkpoint-policy.json text eol=lf
 governance/config/checkpoint-profiles.json text eol=lf
 governance/CHECKPOINT-WORKFLOW.md text eol=lf
 governance/CHECKPOINT-TOOL.md text eol=lf
+governance/CHECKPOINT-TOOL-CARRY.md text eol=lf
+governance/CHECKPOINT-TOOL-CLAIMS.md text eol=lf
+governance/CHECKPOINT-TOOL-COMMANDS.md text eol=lf
+governance/CHECKPOINT-TOOL-CONSENT.md text eol=lf
+governance/CHECKPOINT-TOOL-EVIDENCE.md text eol=lf
+governance/CHECKPOINT-TOOL-INTERNALS.md text eol=lf
+governance/CHECKPOINT-TOOL-RECOVERY.md text eol=lf
 
 # Timing exports are committed by hand; keep their bytes identical in every checkout.
 docs/timings/*.jsonl text eol=lf

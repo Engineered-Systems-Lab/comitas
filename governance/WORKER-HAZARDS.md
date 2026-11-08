@@ -115,7 +115,7 @@ Each entry names who it concerns (worker, Coordinator or both), what happens, wh
 
 - **Concerns:** both.
 - **What happens:** the audit of a carry lives in the worktree's checkpoint store (`landing.json`, in the `governance/` folder of its Git directory) and goes when the worktree is removed, `early-approval.json` with it; the removal also deletes the mission's review folder, the rendered previews and decision files included. A go carry moves the manifest files through Git's checkout, so their line endings follow the checkout rules.
-- **Do:** paste the landing notice and the tool's carry notice into the Job record before you remove the worktree, and check the line endings of the moved manifest files after a go carry. See [the carry](CHECKPOINT-TOOL.md#the-carry) and [the go carry](CHECKPOINT-TOOL.md#the-go-carry).
+- **Do:** paste the landing notice and the tool's carry notice into the Job record before you remove the worktree, and check the line endings of the moved manifest files after a go carry. See [the carry](CHECKPOINT-TOOL-CARRY.md#the-carry) and [the go carry](CHECKPOINT-TOOL-CARRY.md#the-go-carry).
 - **Taught by:** the limits stated in the tool notes; no failure has taught this yet.
 
 ## H16. Symlink probes belong in a temporary folder

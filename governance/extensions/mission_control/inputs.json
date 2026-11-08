@@ -16,6 +16,13 @@
       "markdownDirectories": [],
       "paths": [
         "governance/AGENT-ORIENTATION.md",
+        "governance/CHECKPOINT-TOOL-CARRY.md",
+        "governance/CHECKPOINT-TOOL-CLAIMS.md",
+        "governance/CHECKPOINT-TOOL-COMMANDS.md",
+        "governance/CHECKPOINT-TOOL-CONSENT.md",
+        "governance/CHECKPOINT-TOOL-EVIDENCE.md",
+        "governance/CHECKPOINT-TOOL-INTERNALS.md",
+        "governance/CHECKPOINT-TOOL-RECOVERY.md",
         "governance/CHECKPOINT-TOOL.md",
         "governance/CHECKPOINT-WORKFLOW.md",
         "governance/COMMAND-CONTINUITY.md",

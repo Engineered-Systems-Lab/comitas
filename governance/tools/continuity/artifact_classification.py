@@ -56,6 +56,11 @@ CHECKPOINT_DRIVER = tuple(TOOLS + '/' + name + '.py' for name in (
     'lifecycle/checkpoint_lifecycle'))
 WORKTREE_GUARD = tuple(TOOLS + '/' + name + '.py' for name in (
     'worktree', 'worktrees/guard', 'worktrees/worktree_carry', 'worktrees/worktree_support'))
+# The checkpoint tool notes: the index at the old path and the seven topic files. Each is upstream transaction authority,
+# as the single document was.
+CHECKPOINT_TOOL_DOCUMENTS = ('governance/CHECKPOINT-TOOL.md',) + tuple(
+    'governance/CHECKPOINT-TOOL-%s.md' % name for name in (
+        'CARRY', 'CLAIMS', 'COMMANDS', 'CONSENT', 'EVIDENCE', 'INTERNALS', 'RECOVERY'))
 # Folders whose files a content-bound validation result depends on.
 TOOLING_PREFIXES = (TOOLS + '/', TESTS + '/', CONFIG + '/', PROJECT_GOVERNANCE + '/')
 # The file names inside a checkout's checkpoint store. The store is the `governance/` folder of the checkout's own Git

@@ -369,7 +369,10 @@ MESSAGE = 'Subject\n\n- Detail.\n\nClass: tooling\nWorker: Human\n'
 # The checkout rules and transaction authority files that worktree reconcile refuses to carry across.
 AUTHORITY = [c.POLICY, c.PROFILES, c.PROJECT_POLICY, c.PROJECT_PROFILES, 'governance/tools/checkpoint.py', 'governance/tools/worktree.py', rp.AGENTS,
              'governance/CONSTRAINTS.md', 'governance/DECISIONS.md', 'governance/WORKTREE-WORKFLOW.md',
-             'governance/CHECKPOINT-WORKFLOW.md', 'governance/CHECKPOINT-TOOL.md']
+             'governance/CHECKPOINT-WORKFLOW.md', 'governance/CHECKPOINT-TOOL.md',
+             'governance/CHECKPOINT-TOOL-CARRY.md', 'governance/CHECKPOINT-TOOL-CLAIMS.md', 'governance/CHECKPOINT-TOOL-COMMANDS.md',
+             'governance/CHECKPOINT-TOOL-CONSENT.md', 'governance/CHECKPOINT-TOOL-EVIDENCE.md',
+             'governance/CHECKPOINT-TOOL-INTERNALS.md', 'governance/CHECKPOINT-TOOL-RECOVERY.md']
 CHECKOUT_RULES = ['.gitattributes', '.gitignore', 'sub/.gitignore', 'sub/deep/.gitattributes']
 STALE = 'classification or selection rules changed since preparation'
 
@@ -586,6 +589,19 @@ class ReconcileSelectionTest(unittest.TestCase):
         self.fx.git('commit', '-m', 'Disposable revert')
         with self.assertRaisesRegex(ValueError, 'Upstream transaction authority requires human review'):
             self.reconcile(self.flow.main.head())
+
+
+class AuthorityDocumentsTest(unittest.TestCase):
+    """The checkpoint tool notes keep the upstream-authority protection the single document had."""
+
+    def test_the_guard_names_the_index_and_every_topic_file(self):
+        notes = sorted(name for name in AUTHORITY if name.startswith('governance/CHECKPOINT-TOOL'))
+        self.assertEqual(len(notes), 8)
+        self.assertEqual(sorted(ac.CHECKPOINT_TOOL_DOCUMENTS), notes)
+
+    def test_no_file_of_the_notes_lacks_the_protection(self):
+        on_disk = sorted(path.relative_to(rp.ROOT).as_posix() for path in (rp.ROOT / 'governance').glob('CHECKPOINT-TOOL*.md'))
+        self.assertEqual(on_disk, sorted(ac.CHECKPOINT_TOOL_DOCUMENTS))
 
 
 class ReconcileNewFolderTest(unittest.TestCase):

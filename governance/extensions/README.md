@@ -51,7 +51,7 @@ Then edit by hand the document lines that name the extension (the script prints 
 - `governance/AGENT-ORIENTATION.md`: the mention of the queue in "Where each kind of truth lives" and the Mission Control discovery section.
 - `governance/ROLE-COORDINATOR.md`: the sentence about reading the Mission Control JSON first for a status request, and the mentions of the queue view.
 - `governance/LOCAL-COORDINATION.md`: the two mentions of the queue view.
-- `governance/CHECKPOINT-TOOL.md`: the Mission Control gate in the runner paragraph and the extension tests bullet of the test layout.
+- `governance/CHECKPOINT-TOOL-INTERNALS.md`: the Mission Control gate in the runner paragraph and the extension tests bullet of the test layout.
 - `governance/CHECKPOINT-WORKFLOW.md`: the sentence about the generator tests that an edit of the rationale or the decisions runs.
 - `governance/CONSTRAINTS.md`: the sentence about the datasets as an example of generated artifacts.
 - `governance/WORKER-HAZARDS.md`: H7, the server that loads its code once.

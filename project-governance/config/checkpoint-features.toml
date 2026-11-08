@@ -6,7 +6,7 @@
 # parse means the feature is off and the sealed Approve applies.
 #
 # To turn a feature off, change its value to false and commit that one change by hand in the main
-# checkout (the recipe is in governance/CHECKPOINT-TOOL.md, section Feature switches). Turning a
+# checkout (the recipe is in governance/CHECKPOINT-TOOL-CONSENT.md, section Feature switches). Turning a
 # feature back on takes the normal sealed Approve, because this file is approval-critical.
 
 # early_approval_reach: how far a go at an eligible preview may approve the exact candidate the preview names
@@ -19,9 +19,9 @@
 # A path of high sensitivity (the approval machinery) and a path with no usable row never carry a go whatever the
 # value; a path on the runtime boundary is judged like any other. Anything else, "high" included, a missing key or
 # a file that does not parse means off. A path is judged by the higher of its row at HEAD and its row in the candidate's own table, so
-# a transaction never lowers its own sensitivity (governance/CHECKPOINT-TOOL.md, section Diff-bound approval). The
+# a transaction never lowers its own sensitivity (governance/CHECKPOINT-TOOL-CARRY.md, section Diff-bound approval). The
 # committed value is "medium": the fast track for low and medium paths. To turn it off, change the value to "off" and
-# commit that one change by hand in the main checkout (the recipe is in governance/CHECKPOINT-TOOL.md, section Feature
+# commit that one change by hand in the main checkout (the recipe is in governance/CHECKPOINT-TOOL-CONSENT.md, section Feature
 # switches); to narrow it to low paths only, change it to "low".
 early_approval_reach = "medium"
 
@@ -36,14 +36,14 @@ early_approval_reach = "medium"
 # Only the boolean true turns it on; a missing key, any other value or a file that does not parse means off. The
 # switch is read from main's tip when the carry starts, again before it moves anything and again at integration.
 # To turn it off, change the value to false and commit that one change by hand in the main checkout (the recipe is
-# in governance/CHECKPOINT-TOOL.md, section Feature switches).
+# in governance/CHECKPOINT-TOOL-CONSENT.md, section Feature switches).
 diff_bound_approval = true
 
 # parallel_tests: when true, the tests inside each check run in parallel through the test runner
 # (governance/tools/run_tests.py), which fans one check's command out over worker processes; the tool
 # still runs its checks one after another. When false, a missing key, any other value or a file
 # that does not parse, the runner runs the tests sequentially, exactly as unittest discover does.
-# To turn it off, commit that one change by hand (the recipe is in governance/CHECKPOINT-TOOL.md).
+# To turn it off, commit that one change by hand (the recipe is in governance/CHECKPOINT-TOOL-CONSENT.md, section Feature switches).
 parallel_tests = true
 
 # test_workers: how many worker processes the test runner uses when parallel_tests is true. 0 means

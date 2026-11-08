@@ -49,7 +49,7 @@ python -B governance/tools/adopt.py
 git commit -m 'Adopt Comitas'
 ```
 
-The [adoption helper](CHECKPOINT-TOOL.md#the-adoption-helper) is run once, after `git add -A` and before the first commit. It makes the new project pass the checks Comitas passes: it sets the executable bit of the staged shell scripts in the index (a Windows checkout has no permission bits, so `git add` stages them as `100644` and a conformance test fails) and it declares the label `template` in `project-governance/config/citations.json` (the framework cites its own commits as `template commit`, with [the label naming the framework repository by role](PROJECT-GOVERNANCE.md#the-template-label), and a copy has none of Comitas's history), then stages that file. It writes no Git configuration, changes nothing a second time before the first commit, and refuses where a commit exists, so it never runs in Comitas or in a project that is already going. The reasons are in [G053](DECISIONS.md#g053---a-new-project-runs-one-adoption-helper-and-its-first-coordinator-claims-the-role-by-command-2026-10-20-accepted).
+The [adoption helper](CHECKPOINT-TOOL-COMMANDS.md#the-adoption-helper) is run once, after `git add -A` and before the first commit. It makes the new project pass the checks Comitas passes: it sets the executable bit of the staged shell scripts in the index (a Windows checkout has no permission bits, so `git add` stages them as `100644` and a conformance test fails) and it declares the label `template` in `project-governance/config/citations.json` (the framework cites its own commits as `template commit`, with [the label naming the framework repository by role](PROJECT-GOVERNANCE.md#the-template-label), and a copy has none of Comitas's history), then stages that file. It writes no Git configuration, changes nothing a second time before the first commit, and refuses where a commit exists, so it never runs in Comitas or in a project that is already going. The reasons are in [G053](DECISIONS.md#g053---a-new-project-runs-one-adoption-helper-and-its-first-coordinator-claims-the-role-by-command-2026-10-20-accepted).
 
 The first commit comes before any governed work, because the tools read the feature switches from the tip of `main`. The export carries `LICENSE` and `governance/NOTICE`; keep both ([License](../README.md#license)).
 
@@ -64,7 +64,7 @@ Make the copy yours, then check that it works.
    - `CONSTRAINTS.md`: your own rules, next to the framework's, which they never override.
    - `DECISIONS.md` and `RATIONALE.md`: your own decisions, numbered with the prefix D from any free number (the framework's are G), and the reasons for them.
    - `config/mission-control.json`: your own Mission Control port, `{"version": 1, "port": <port>}`, because several projects on one host would otherwise collide on the default.
-3. **Check the Python runtime.** `python -B governance/tools/runtime_guard.py --check` prints the interpreter's fingerprint. If your `python` is older than 3.13, run the commands with the path of a newer interpreter ([runtime guard](CHECKPOINT-TOOL.md#runtime-guard)).
+3. **Check the Python runtime.** `python -B governance/tools/runtime_guard.py --check` prints the interpreter's fingerprint. If your `python` is older than 3.13, run the commands with the path of a newer interpreter ([runtime guard](CHECKPOINT-TOOL-COMMANDS.md#runtime-guard)).
 4. **Run the checks.** Continuity, then the tests of the tools and of your configuration:
 
    ```sh
@@ -72,7 +72,7 @@ Make the copy yours, then check that it works.
    python -B governance/tools/run_tests.py -s governance/tests -s governance/config -p 'test_*.py'
    ```
 
-   The suite builds real Git repositories and takes about fifteen minutes on a 16-core machine; the runner fans the tests out over the cores when `parallel_tests` is true in `project-governance/config/checkpoint-features.toml` ([the test runner](CHECKPOINT-TOOL.md#test-runner)). Commit your edits once both pass.
+   The suite builds real Git repositories and takes about fifteen minutes on a 16-core machine; the runner fans the tests out over the cores when `parallel_tests` is true in `project-governance/config/checkpoint-features.toml` ([the test runner](CHECKPOINT-TOOL-INTERNALS.md#test-runner)). Commit your edits once both pass.
 5. **Claim the Coordinator role.** The Coordinator is the thread that talks to you and keeps the queue ([the role](ROLE-COORDINATOR.md)). Its record is machine-local and nobody creates it for you: until it exists, `local_jobs.py queue` stops with `Missing or indirect record` and the Queue page of Mission Control has nothing to read. You name the thread, and that thread runs, giving its own identity in one line:
 
    ```sh
@@ -94,7 +94,7 @@ governance/scripts/claims.sh status
 governance/scripts/claims.sh watch
 ```
 
-`status` reads the execution status once (CLEAR, OVERLAP, FROZEN or UNKNOWN, with the windows and claims behind it) and `watch` prints one line per landing and per thing that needs attention ([claims and execution status](CHECKPOINT-TOOL.md#claims-and-execution-status), [execution status](LOCAL-COORDINATION.md#execution-status)). The Mission Control terminal shows the queue, the status light and the project's documents, decisions, rationale, devlog and commits. It is an optional [extension](extensions/README.md):
+`status` reads the execution status once (CLEAR, OVERLAP, FROZEN or UNKNOWN, with the windows and claims behind it) and `watch` prints one line per landing and per thing that needs attention ([claims and execution status](CHECKPOINT-TOOL-CLAIMS.md#claims-and-execution-status), [execution status](LOCAL-COORDINATION.md#execution-status)). The Mission Control terminal shows the queue, the status light and the project's documents, decisions, rationale, devlog and commits. It is an optional [extension](extensions/README.md):
 
 ```sh
 governance/extensions/mission_control/mission-control.sh
@@ -130,7 +130,7 @@ governance/scripts/claims.sh doctor
 governance/scripts/claims.sh doctor --repair
 ```
 
-`clear` lists every claim as STALE or LIVE with its evidence and changes nothing; `clear --apply` clears every STALE claim, or exactly the ids you name; `doctor` checks the claims database and says what a repair would do, and `doctor --repair` applies exactly that. The script adds no `--apply` or `--repair` by itself ([the clearing rules](CHECKPOINT-TOOL.md#claims-and-execution-status), [clear and doctor](LOCAL-COORDINATION.md#execution-status)).
+`clear` lists every claim as STALE or LIVE with its evidence and changes nothing; `clear --apply` clears every STALE claim, or exactly the ids you name; `doctor` checks the claims database and says what a repair would do, and `doctor --repair` applies exactly that. The script adds no `--apply` or `--repair` by itself ([the clearing rules](CHECKPOINT-TOOL-CLAIMS.md#claims-and-execution-status), [clear and doctor](LOCAL-COORDINATION.md#execution-status)).
 
 **A stale lock.** A crashed command can leave the lifecycle lock (`.local/locks/worktree-workflow.lock` in the primary checkout) or the checkpoint `operation.lock` (in the `governance/` folder of the checkout's Git directory). A lock carries no owner, so its presence proves nothing. First establish that no process owns it: look at the running processes and their command lines. Only then remove the file, and only after you have given the word; an agent reports a stale lock and waits ([H3](WORKER-HAZARDS.md#h3-stale-lock-files)). A message sent into a session that is preparing kills the prepare and leaves a lock and staged files ([H20](WORKER-HAZARDS.md#h20-a-message-into-a-session-interrupts-its-turn)).
 
@@ -138,7 +138,7 @@ governance/scripts/claims.sh doctor --repair
 
 ## 5. Change
 
-**A feature switch.** `project-governance/config/checkpoint-features.toml` holds the switches of the checkpoint tool. Turning one on takes the sealed Approve, because the file is of `high` approval sensitivity. Turning one off is your manual commit in the main checkout, with the recipe in [feature switches](CHECKPOINT-TOOL.md#feature-switches); [Project governance files](PROJECT-GOVERNANCE.md#the-feature-switches) lists the keys and their defaults.
+**A feature switch.** `project-governance/config/checkpoint-features.toml` holds the switches of the checkpoint tool. Turning one on takes the sealed Approve, because the file is of `high` approval sensitivity. Turning one off is your manual commit in the main checkout, with the recipe in [feature switches](CHECKPOINT-TOOL-CONSENT.md#feature-switches); [Project governance files](PROJECT-GOVERNANCE.md#the-feature-switches) lists the keys and their defaults.
 
 **Your own files.** Every file in `project-governance/` is of `high` approval sensitivity, so a change to one takes the sealed Approve ([Project governance files](PROJECT-GOVERNANCE.md)). Settings that rename or move something, such as the devlog folder, say what moves with them ([the devlog](PROJECT-GOVERNANCE.md#the-devlog)).
 

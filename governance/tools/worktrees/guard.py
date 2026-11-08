@@ -861,7 +861,7 @@ class Worktrees(Carry):
                                                     'governance/CONSTRAINTS.md', 'governance/DECISIONS.md',
                                                     'governance/WORKTREE-WORKFLOW.md',
                                                     'governance/CHECKPOINT-WORKFLOW.md',
-                                                    'governance/CHECKPOINT-TOOL.md'}),
+                                                    *artifact_classification.CHECKPOINT_TOOL_DOCUMENTS}),
                             'Upstream transaction authority requires human review')
                     attributes = source.git('check-attr', '-z', 'filter', '--',
                                             *sorted(delta | set(packet['manifest']))).split(b'\0')
