@@ -19,11 +19,14 @@ RELATIVE = Path('.local/coordination')
 # The one list of work kinds: a record's optional `kind` must be a key here, and `kinds` prints it.
 KINDS = {
     'fix': 'a defect or silent failure',
-    'feature': 'new capability',
+    'feature': 'a new capability',
+    'enhancement': 'an improvement to an existing capability',
     'cleanup': 'tidying or restructuring that adds no behavior',
     'design': 'a design or investigation before anything is built',
     'docs': 'documentation or explanatory notes',
     'record': 'a historical record such as a devlog entry',
+    'release': 'cutting a version: VERSION, the dated changelog heading and any migration note',
+    'upgrade': 'taking a newer framework or dependency version',
     'decision': 'mainly waiting on a lead developer decision',
 }
 # The one list of estimated sizes, a rough judgment of the expected total effort (investigation, implementation,

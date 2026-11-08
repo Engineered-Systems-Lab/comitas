@@ -656,6 +656,20 @@ class LocalJobsTest(JobsFixture):
         self.assertEqual(json.loads(result.stdout), j.KINDS)
         self.assertTrue(all(isinstance(text, str) and text for text in j.KINDS.values()))
 
+    def test_enhancement_release_and_upgrade_are_work_kinds(self):
+        result = subprocess.run([sys.executable, '-B', str(rp.ROOT / 'governance/tools/local_jobs.py'), 'kinds'],
+                                capture_output=True, text=True, check=True)
+        kinds = json.loads(result.stdout)
+        self.assertEqual(kinds['enhancement'], 'an improvement to an existing capability')
+        self.assertEqual(kinds['feature'], 'a new capability')
+        names = {kind: kind + '_job' for kind in ('enhancement', 'release', 'upgrade')}
+        for kind, name in names.items():
+            self.assertTrue(kinds[kind])
+            j.put(self.primary, dict(record(), handle=name, description='Kind check.', kind=kind), None)
+        j.put(self.primary, self.coordinator(queue=list(names.values())), None)
+        rows = {row['handle']: row for row in j.queued(self.primary)['queue']}
+        self.assertEqual({kind: rows[name]['work_kind'] for kind, name in names.items()}, {kind: kind for kind in names})
+
     def schedule(self):
         j.put(self.primary, dict(record(), handle='old_name', description='Keep me.', kind='fix'), None)
         for name in ('first_job', 'last_job'):
