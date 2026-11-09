@@ -288,7 +288,7 @@ function queueNodes(model, strip) {
   if (strip) nodes.push(el('p', 'jq-sub', 'Active claims'), claimsStrip(strip));
   if (model.state !== 'ok') nodes.push(el('div', model.state === 'absent' ? 'notice' : 'error', model.message || 'The local queue could not be read.'));
   else {
-    nodes.push(model.queue.length ? queueTable(model.queue) : el('p', 'empty', 'The queue is empty.'));
+    nodes.push(el('p', 'jq-sub', 'Scheduled'), model.queue.length ? queueTable(model.queue) : el('p', 'empty', 'The queue is empty.'));
     if (model.unscheduled.length) nodes.push(el('p', 'jq-sub', 'Unscheduled'), queueTable(model.unscheduled));
   }
   return nodes;

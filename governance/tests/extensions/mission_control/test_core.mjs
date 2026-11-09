@@ -730,3 +730,22 @@ test('a devlog dataset that says it is disabled shows one notice and the status 
   assert.ok(app.includes("' · NO DEVLOG'"), 'the status line says so');
   for (const type of TYPES) assert.equal(validateDataset({schemaVersion: 1, type, authority: 'derived/non-authoritative', items: [], enabled: false}, type).length, 0);
 });
+
+test('the scheduled queue has its own Scheduled subheading, with and without active claims and when the queue is empty', async () => {
+  const app = await readFile(new URL('../../../extensions/mission_control/ui/app.mjs', import.meta.url), 'utf8');
+  const source = app.slice(app.indexOf('function queueNodes('), app.indexOf('function render()'));
+  assert.ok(source.startsWith('function queueNodes('));
+  // Run the real function with stand-ins for the page helpers; a node is described by its tag, class and text.
+  const el = (tag, className, content) => ({tag, className, content});
+  const queueNodes = new Function('el', 'queueTable', 'claimsStrip', 'formatTimestamp', 'zone', source + '\nreturn queueNodes;')(
+    el, rows => ({table: rows.map(r => r.handle)}), () => ({table: 'claims'}), () => 'now', undefined);
+  const describe = nodes => nodes.map(n => n.table ? 'table:' + n.table : n.className === 'jq-sub' ? 'sub:' + n.content : n.className);
+  const model = (queue, unscheduled = []) => ({state: 'ok', readAt: '2026-10-10T12:00:00Z', queue, unscheduled});
+  const strip = {rows: [], note: 'No active claims'};
+  assert.deepEqual(describe(queueNodes(model([{handle: 'a'}], [{handle: 'b'}]), strip)),
+    ['notice', 'sub:Active claims', 'table:claims', 'sub:Scheduled', 'table:a', 'sub:Unscheduled', 'table:b']);
+  assert.deepEqual(describe(queueNodes(model([{handle: 'a'}]), null)), ['notice', 'sub:Scheduled', 'table:a']);
+  assert.deepEqual(describe(queueNodes(model([]), strip)), ['notice', 'sub:Active claims', 'table:claims', 'sub:Scheduled', 'empty']);
+  // No queue to show: no Scheduled heading above a notice or an error.
+  assert.deepEqual(describe(queueNodes({state: 'absent', message: 'None.', readAt: '2026-10-10T12:00:00Z'}, strip)), ['notice', 'sub:Active claims', 'table:claims', 'notice']);
+});
