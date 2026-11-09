@@ -2,7 +2,7 @@
 
 Run it as `python -B governance/extensions/diff_viewer/render.py preview --preview <preview.json>` or `... sealed`. The page is
 built only from the recorded parent commit and candidate tree object, read from Git objects, never from the working tree.
-It holds one inline script that only moves the divider and focuses the open file so the mouse wheel scrolls it, no external resource and no approval control, and it changes nothing the checkpoint tool records."""
+It holds one inline script that only moves the divider, focuses the open file so the mouse wheel scrolls it, marks it in the tree, sorts the list of files and shows the position of a change at once, no external resource and no approval control, and it changes nothing the checkpoint tool records."""
 import argparse
 import base64
 import difflib
@@ -41,8 +41,8 @@ MODE_NAMES = {'100644': 'file', '100755': 'executable', '120000': 'symbolic link
 PICTURES = {code: chr(0x2400 + code) for code in range(32) if code not in (9, 10)}  # control characters shown, not sent raw
 
 
-# The one inline script, pinned by hash in the content security policy: it moves the divider, focuses the open file so the wheel scrolls it, and opens or closes every folder of the tree, jumps between the changes of a file and says which change of how many the reader is at.
-SCRIPT = "(function(){var r=document.documentElement,d=null;function v(s){var l=s.querySelectorAll('.scroll');for(var i=0;i<l.length;i++)if(l[i].offsetParent)return l[i];return null}function tp(c,t){for(var i=0;i<1&&t.previousElementSibling&&t.previousElementSibling.firstElementChild.tagName==='TD';i++)t=t.previousElementSibling;return t.getBoundingClientRect().top-c.getBoundingClientRect().top+c.scrollTop}function hd(c){var h=c.querySelector('th.pane');return(h?h.offsetHeight:0)+4}function cu(s,c){if(s._t!=null&&Math.abs(c.scrollTop-s._p)<2)return s._t;s._t=null;var l=c.querySelectorAll('tr[data-c]'),n=-1;for(var i=0;i<l.length;i++)if(tp(c,l[i])<=c.scrollTop+hd(c))n=i;return n}function u(s){var c=v(s);if(!c)return;var n=c.querySelectorAll('tr[data-c]').length,k=cu(s,c),b=s.querySelectorAll('[data-nav]'),t=s.querySelector('[data-count]');for(var i=0;i<b.length;i++)b[i].disabled=b[i].getAttribute('data-nav')==='prev'?k<=0:k>=n-1;if(t)t.textContent=k>=0&&(s._t!=null||c.scrollTop>0)?'Change '+(k+1)+' of '+n:n+(n===1?' change':' changes')}function f(){var s=document.querySelector('section:target');if(!s)return;var c=v(s);if(c)c.focus({preventScroll:true});u(s)}addEventListener('hashchange',f);addEventListener('load',f);addEventListener('change',function(e){var s=e.target.closest&&e.target.closest('section');if(s)s._t=null;f()});document.addEventListener('scroll',function(e){var c=e.target;if(c.classList&&c.classList.contains('scroll'))u(c.closest('section'))},true);document.addEventListener('click',function(e){var a=e.target.getAttribute&&e.target.getAttribute('data-nav');if(!a)return;var s=e.target.closest('section'),c=v(s),l=c.querySelectorAll('tr[data-c]'),k=cu(s,c)+(a==='next'?1:-1);if(k<0||k>=l.length)return;c.scrollTop=tp(c,l[k])-hd(c);s._t=k;s._p=c.scrollTop;c.focus({preventScroll:true});u(s)});document.addEventListener('click',function(e){var m=e.target.getAttribute&&e.target.getAttribute('data-fold');if(m){var l=document.querySelectorAll('nav details');for(var i=0;i<l.length;i++)l[i].open=m==='open'}});document.addEventListener('pointerdown',function(e){if(e.target.classList&&e.target.classList.contains('grip')){d=e.target.parentNode;e.target.setPointerCapture(e.pointerId);e.preventDefault()}});document.addEventListener('pointermove',function(e){if(!d)return;var b=d.getBoundingClientRect(),m=parseFloat(getComputedStyle(d).fontSize);r.style.setProperty('--split',Math.min(.85,Math.max(.15,(e.clientX-b.left)/b.width)))});document.addEventListener('pointerup',function(){d=null});document.addEventListener('dblclick',function(e){if(e.target.classList&&e.target.classList.contains('grip'))r.style.setProperty('--split',.5)})})();"
+# The one inline script, pinned by hash in the content security policy: it moves the divider, focuses the open file so the wheel scrolls it, and opens or closes every folder of the tree, jumps between the changes of a file and says which change of how many the reader is at, marks the open file in the tree and sorts the list of files by lines changed or back by the tree's order.
+SCRIPT = "(function(){var r=document.documentElement,d=null;function v(s){var l=s.querySelectorAll('.scroll');for(var i=0;i<l.length;i++)if(l[i].offsetParent)return l[i];return null}function tp(c,t){for(var i=0;i<1&&t.previousElementSibling&&t.previousElementSibling.firstElementChild.tagName==='TD';i++)t=t.previousElementSibling;return t.getBoundingClientRect().top-c.getBoundingClientRect().top+c.scrollTop}function hd(c){var h=c.querySelector('th.pane');return(h?h.offsetHeight:0)+4}function cu(s,c){if(s._t!=null&&Math.abs(c.scrollTop-s._p)<2)return s._t;s._t=null;var l=c.querySelectorAll('tr[data-c]'),n=-1;for(var i=0;i<l.length;i++)if(tp(c,l[i])<=c.scrollTop+hd(c))n=i;return n}function u(s){var c=v(s);if(!c)return;var n=c.querySelectorAll('tr[data-c]').length,k=cu(s,c),b=s.querySelectorAll('[data-nav]'),t=s.querySelector('[data-count]');for(var i=0;i<b.length;i++)b[i].disabled=b[i].getAttribute('data-nav')==='prev'?k<=0:k>=n-1;if(t)t.textContent=k>=0&&(s._t!=null||c.scrollTop>0)?'Change '+(k+1)+' of '+n:n+(n===1?' change':' changes')}function mk(s){var o=document.querySelectorAll('nav a[aria-current]');for(var i=0;i<o.length;i++)o[i].removeAttribute('aria-current');var m=s&&/^f(\\d+)/.exec(s.id),l=m?document.querySelectorAll('nav a'):[],a=null;for(i=0;i<l.length;i++)if(l[i].getAttribute('href')==='#f'+m[1])a=l[i];if(!a)return;a.setAttribute('aria-current','true');for(var p=a.parentNode;p&&p.tagName!=='NAV';p=p.parentNode)if(p.tagName==='DETAILS')p.open=true;a.scrollIntoView({block:'nearest'})}function f(){var s=document.querySelector('section:target');mk(s);if(!s)return;var c=v(s);if(c)c.focus({preventScroll:true});u(s)}addEventListener('hashchange',f);addEventListener('load',f);addEventListener('change',function(e){var s=e.target.closest&&e.target.closest('section');if(s)s._t=null;f()});document.addEventListener('scroll',function(e){var c=e.target;if(c.classList&&c.classList.contains('scroll'))u(c.closest('section'))},true);document.addEventListener('click',function(e){var a=e.target.getAttribute&&e.target.getAttribute('data-nav');if(!a)return;var s=e.target.closest('section'),c=v(s),l=c.querySelectorAll('tr[data-c]'),k=cu(s,c)+(a==='next'?1:-1);if(k<0||k>=l.length)return;c.scrollTop=tp(c,l[k])-hd(c);s._t=k;s._p=c.scrollTop;c.focus({preventScroll:true});u(s)});document.addEventListener('click',function(e){var m=e.target.getAttribute&&e.target.getAttribute('data-fold');if(m){var l=document.querySelectorAll('nav details');for(var i=0;i<l.length;i++)l[i].open=m==='open'}});document.addEventListener('click',function(e){var k=e.target.getAttribute&&e.target.getAttribute('data-sort');if(!k)return;var t=e.target.closest('table'),h=t.querySelector('th.size'),n=t.querySelector('th[aria-sort]'),z=k==='name'?'':h.getAttribute('aria-sort')==='descending'?'ascending':'descending',r=[].slice.call(t.querySelectorAll('tr[data-n]'));r.sort(function(x,y){var a=+x.getAttribute('data-size'),b=+y.getAttribute('data-size');if(z&&(a<0)!==(b<0))return a<0?1:-1;if(z&&a!==b)return z==='descending'?b-a:a-b;return x.getAttribute('data-n')-y.getAttribute('data-n')});r.forEach(function(x){x.parentNode.appendChild(x)});h.setAttribute('aria-sort',z||'none');n.setAttribute('aria-sort',z?'none':'ascending')});var tp_=null;document.addEventListener('mousemove',function(e){var r=e.target.closest&&e.target.closest('tr[data-tip]');if(!r){if(tp_)tp_.style.display='none';return}if(!tp_){tp_=document.createElement('div');tp_.className='tip';document.body.appendChild(tp_)}tp_.textContent=r.getAttribute('data-tip');tp_.style.display='block';tp_.style.left=Math.max(4,Math.min(e.clientX+12,innerWidth-tp_.offsetWidth-4))+'px';tp_.style.top=(e.clientY+16)+'px'});document.addEventListener('mouseleave',function(){if(tp_)tp_.style.display='none'});document.addEventListener('pointerdown',function(e){if(e.target.classList&&e.target.classList.contains('grip')){d=e.target.parentNode;e.target.setPointerCapture(e.pointerId);e.preventDefault()}});document.addEventListener('pointermove',function(e){if(!d)return;var b=d.getBoundingClientRect(),m=parseFloat(getComputedStyle(d).fontSize);r.style.setProperty('--split',Math.min(.85,Math.max(.15,(e.clientX-b.left)/b.width)))});document.addEventListener('pointerup',function(){d=null});document.addEventListener('dblclick',function(e){if(e.target.classList&&e.target.classList.contains('grip'))r.style.setProperty('--split',.5)})})();"
 
 
 class ViewerError(ValueError):
@@ -138,7 +138,7 @@ def display_env():
 
 
 def changes(repo, parent, tree):
-    """Every changed path between the recorded commit and tree, in path order. A file moved with at most half of it changed is one
+    """Every changed path between the recorded commit and tree, in the order of the folder tree (`tree_key`). A file moved with at most half of it changed is one
     renamed entry: the page pairs the deletion and the addition for display, with the options above, so no Git setting changes it;
     the checkpoint tool still records them as a deletion and an addition."""
     def run(*args):
@@ -165,7 +165,14 @@ def changes(repo, parent, tree):
         found.append({'path': path, 'old_path': old_path, 'similarity': similarity, 'status': status[0], 'old_mode': old_mode,
                       'new_mode': new_mode, 'old_id': old_id, 'new_id': new_id,
                       'counts': counts.get(path, (0, 0)), 'binary': counts.get(path, (0, 0)) is None})
-    return sorted(found, key=lambda item: item['path'].encode('utf-8', 'surrogatepass'))
+    return sorted(found, key=lambda item: tree_key(item['path']))
+
+
+def tree_key(path):
+    """The place of a path in the folder tree: at each level the subfolders (named with their slash) come before the files, each by name.
+    The list, the tree and the section numbers all follow it."""
+    *folders, name = path.split('/')
+    return tuple((0, folder + '/') for folder in folders) + ((1, name),)
 
 
 def blob(repo, mode, object_id):
@@ -515,13 +522,17 @@ def nav(changes):
 
 def side_table(rows, parent, tree):
     """One side-by-side table of aligned rows (a gap row is a (hidden line count, 'gap') pair), with its movable divider."""
-    lines, before = '', 'same'  # the first row of every run of changed rows is marked, for the buttons that jump between changes
+    lines, before, position = '', 'same', 0  # the first row of every run of changed rows is marked, for the buttons that jump between changes
+    total = sum(1 for n, row in enumerate(rows) if len(row) != 2 and row[4] != 'same' and (n == 0 or len(rows[n - 1]) == 2 or rows[n - 1][4] == 'same'))  # the runs, as nav counts them
     for row in rows:
         if len(row) == 2:
             lines += '<tr>%s</tr>' % (2 * ('<th class="gap">... %d unchanged line%s</th>' % (row[0], '' if row[0] == 1 else 's')))
             before = 'same'
         else:
-            lines += '<tr%s>%s%s</tr>' % (' data-c' if row[4] != 'same' and before == 'same' else '', cell(row[0], row[1], 'old ' + row[4], row[5]), cell(row[2], row[3], 'new ' + row[4], row[6]))
+            start = row[4] != 'same' and before == 'same'
+            position += start
+            attributes = (' data-c' if start else '') + (' data-tip="Change %d of %d"' % (position, total) if row[4] != 'same' else '')  # every row of a change names its place, shown by the script at once
+            lines += '<tr%s>%s%s</tr>' % (attributes, cell(row[0], row[1], 'old ' + row[4], row[5]), cell(row[2], row[3], 'new ' + row[4], row[6]))
             before = row[4]
     panes = '<tr><th class="pane">Parent %s</th><th class="pane">Candidate %s</th></tr>' % (show(parent[:8]), show(tree[:8]))
     return ('<div class="scroll" tabindex="0"><div class="frame"><table class="side"><colgroup><col class="l"><col class="r"></colgroup>%s%s</table>'
@@ -601,6 +612,7 @@ table.files{width:100%;margin:8px 0 24px}table.files td,table.files th{border-bo
 .kind.added{background:var(--add)}.kind.deleted{background:var(--del)}.kind.modified,.kind.type-changed,.kind.renamed{background:var(--chg)}
 section{display:none;margin:0}section:target{display:block}.view:has(section:target) .overview{display:none}.bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin:0 0 8px}.bar h3{margin:0;flex:1 1 auto}h3{font-size:16px;word-break:break-all}
 .note{margin:6px 0;color:var(--mute)}
+table.files th button{font:inherit;font-weight:700;color:inherit;background:none;border:0;padding:0;cursor:pointer}th.size[aria-sort=descending] button::after{content:" \\2193"}th.size[aria-sort=ascending] button::after{content:" \\2191"}.tip{position:fixed;z-index:9;display:none;pointer-events:none;background:var(--fg);color:var(--bg);font:12px system-ui,sans-serif;padding:2px 8px;border-radius:4px;white-space:nowrap}nav a[aria-current]{background:var(--panel);font-weight:700;outline:1px solid var(--line)}
 a,a:visited{color:var(--link)}nav a,nav a:visited{color:inherit}.frame{position:relative;min-width:70em}.grip{position:absolute;top:0;bottom:0;width:19px;margin-left:-10px;left:calc(100%*var(--split));cursor:col-resize;touch-action:none;background:linear-gradient(to right,transparent 7px,var(--mute) 7px,var(--mute) 12px,transparent 12px);opacity:.7}.grip:hover{opacity:1;background:linear-gradient(to right,rgba(128,128,128,.18) 0,rgba(128,128,128,.18) 100%),linear-gradient(to right,transparent 7px,var(--fg) 7px,var(--fg) 12px,transparent 12px)}table.side col.l{width:calc(var(--split)*100%)}table.side col.r{width:calc((1 - var(--split))*100%)}table.side{width:100%;table-layout:fixed;margin:8px 0;border:1px solid var(--line);font:13px/1.45 ui-monospace,Consolas,monospace}.scroll{overflow:auto;max-height:calc(100vh - 7.5em);overscroll-behavior:contain}.scroll:focus{outline:none}
 table.side th.pane{position:sticky;top:0;z-index:2;background:var(--panel);text-align:left;padding:3px 8px;font-weight:600}table.side th.gap{background:var(--panel);text-align:center;padding:2px 8px;color:var(--mute);font-weight:400;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
 table.side td{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 6px}
@@ -667,16 +679,16 @@ def build_page(kind, facts, items, sections, omitted, job=None):
     half = (len(short) + 1) // 2
     rows = ''.join(['<div>%s</div>' % ''.join(fact(*f) for f in part) for part in (short[:half], short[half:])] +
                    [fact(name, value, True) for name, value in facts if name == 'Manifest'])
-    listing = ''.join('<tr><td><span class="kind %s">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>' % (
-        kind_of(i).replace(' ', '-'), kind_of(i), '<a href="#f%d">%s</a>' % (n, move_text(i)) if n <= shown else move_text(i),
-        show(mode_text(i)), 'binary' if i['binary'] else '+%d -%d' % i['counts']) for n, i in enumerate(items, 1))
+    listing = ''.join('<tr data-n="%d" data-size="%d"><td><span class="kind %s">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>' % (
+        n, -1 if i['binary'] else sum(i['counts']), kind_of(i).replace(' ', '-'), kind_of(i), '<a href="#f%d">%s</a>' % (n, move_text(i)) if n <= shown else move_text(i),
+        show(mode_text(i)), 'binary' if i['binary'] else '+%d -%d' % i['counts']) for n, i in enumerate(items, 1))  # data-n is the place in the tree's order, data-size the lines changed (-1: binary)
     aid = ('<p class="note">Display aid: a file moved with at least %d%% of it unchanged is shown as one renamed entry, paired by this page from the recorded parent and candidate. '
            'The checkpoint tool records a move as a deletion and an addition, and its review and the sealed diff list it that way.</p>' % SIMILARITY) if any(i['status'] == 'R' for i in items) else ''
     more = '<p class="note">The first %d files are shown side by side; the list above has every file.</p>' % MAX_FILES if omitted else ''
     return ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n'
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'sha256-@@HASH@@\'">\n'
             '<title>%s</title><style>%s</style></head><body>\n<div class="label %s"><strong>%s</strong><span>%s</span></div>\n<main>\n'
-            '<div class="facts">%s</div>\n<div class="layout"><nav><div class="treebar"><button type="button" data-fold="open">Expand all</button><button type="button" data-fold="close">Collapse all</button></div>%s</nav><div class="view">\n<div class="overview"><h2>Files (%d)</h2>\n<table class="files"><tr><th>Change</th><th>Path</th><th>Mode</th><th>Lines</th></tr>%s</table>\n<p class="note">Choose a file in the list or in the tree to read its changes.</p>%s</div>\n'
+            '<div class="facts">%s</div>\n<div class="layout"><nav><div class="treebar"><button type="button" data-fold="open">Expand all</button><button type="button" data-fold="close">Collapse all</button></div>%s</nav><div class="view">\n<div class="overview"><h2>Files (%d)</h2>\n<table class="files"><tr><th>Change</th><th aria-sort="ascending"><button type="button" data-sort="name" title="Sort in the order of the tree">Path</button></th><th>Mode</th><th class="size" aria-sort="none"><button type="button" data-sort="size" title="Sort by lines changed; binary files last">Lines</button></th></tr>%s</table>\n<p class="note">Choose a file in the list or in the tree to read its changes.</p>%s</div>\n'
             '%s%s\n<p class="fine">Built from the recorded parent commit and candidate tree only, never the working tree. '
             'A reading aid: it grants no approval and records nothing; the decision is taken in the conversation.</p>\n'
             '</div></div></main><script>@@SCRIPT@@</script></body></html>\n') % (

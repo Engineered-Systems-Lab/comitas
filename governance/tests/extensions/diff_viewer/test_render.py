@@ -243,9 +243,9 @@ class ChangeButtonsTest(Fixture):
         new = ['a', 'B', 'C', 'd', 'e', 'f', 'g', 'H', 'i']
         matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
         everything = render.full_rows(matcher, old, new)
-        self.assertEqual(render.side_table(everything, self.parent, self.tree).count('<tr data-c>'), 2)  # b and c are one run, h and i another
+        self.assertEqual(render.side_table(everything, self.parent, self.tree).count('<tr data-c'), 2)  # b and c are one run, h and i another
         collapsed = [row for hidden, rows in render.side_rows(matcher, old, new) for row in ([(hidden, 'gap')] if hidden else []) + rows]
-        self.assertEqual(render.side_table(collapsed, self.parent, self.tree).count('<tr data-c>'), 2)
+        self.assertEqual(render.side_table(collapsed, self.parent, self.tree).count('<tr data-c'), 2)
 
     def test_a_file_with_two_views_has_the_buttons_after_the_checkbox_and_the_first_starts_disabled(self):
         text = self.build()
@@ -253,7 +253,7 @@ class ChangeButtonsTest(Fixture):
         self.assertIn('Collapse unchanged fragments</label><span class="nav"><span class="count" data-count>1 change</span><button type="button" data-nav="prev" title="Previous change" aria-label="Previous change" disabled>', modified)
         self.assertIn('<button type="button" data-nav="next" title="Next change" aria-label="Next change">', modified)
         self.assertNotIn('data-nav', added)  # one change in one table: nothing to jump to
-        self.assertEqual(modified.count('<tr data-c>'), 2)  # the one change, in each view
+        self.assertEqual(modified.count('<tr data-c'), 2)  # the one change, in each view
         self.assertIn("data-nav", render.SCRIPT)
 
 
@@ -557,7 +557,7 @@ class RenameTest(unittest.TestCase):
         section = section_of(unmark(self.build()), 'old/edited.txt →')
         self.assertRegex(section, r'old/edited.txt → new/edited.txt \(9\d%\)</h3>')
         collapsed, complete = views_of(section)
-        self.assertEqual(collapsed.count('<tr data-c>'), 1)
+        self.assertEqual(collapsed.count('<tr data-c'), 1)
         self.assertIn('<td class="old change"><span class="n">7</span>row 7 of the moved file</td>', collapsed)
         self.assertIn('<td class="new change"><span class="n">7</span>ROW SEVEN of the moved file</td>', collapsed)
         self.assertEqual(complete.count('class="old change"'), 1)
@@ -1006,16 +1006,16 @@ class ChangeCountTest(Fixture):
         text = self.build()
         modified = section_of(text, 'a.txt')
         self.assertIn('<span class="count" data-count>1 change</span>', modified)
-        self.assertEqual(modified.count('<tr data-c>'), 2)  # the one change, once in each view
+        self.assertEqual(modified.count('<tr data-c'), 2)  # the one change, once in each view
         old = ['keep %d' % n for n in range(40)]
         new = list(old)
         for n in (2, 12, 22, 32):
             new[n] = 'changed %d' % n
         matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
         everything = render.full_rows(matcher, old, new)
-        marked = render.side_table(everything, self.parent, self.tree).count('<tr data-c>')
+        marked = render.side_table(everything, self.parent, self.tree).count('<tr data-c')
         collapsed = [row for hidden, rows in render.side_rows(matcher, old, new, everything) for row in ([(hidden, 'gap')] if hidden else []) + rows]
-        self.assertEqual(render.side_table(collapsed, self.parent, self.tree).count('<tr data-c>'), marked)
+        self.assertEqual(render.side_table(collapsed, self.parent, self.tree).count('<tr data-c'), marked)
         self.assertEqual(marked, 4)
         self.assertIn('data-count>4 changes</span>', render.nav(marked))
 
@@ -1035,13 +1035,89 @@ class ChangeCountTest(Fixture):
         record = {'id': 'p' * 32, 'branch': 'refs/heads/tx/demo', 'parent': parent, 'tree': git(repo, 'rev-parse', 'HEAD^{tree}'), 'manifest': ['f.txt']}
         section = section_of(render.build(repo, render.PREVIEW, record, 'demo_job', []), 'f.txt')
         self.assertIn('<span class="count" data-count>2 changes</span>', section)
-        self.assertEqual(section.count('<tr data-c>'), 2)
+        self.assertEqual(section.count('<tr data-c'), 2)
 
     def test_the_script_keeps_the_count_current_and_shows_the_total_before_any_navigation(self):
         self.assertIn('data-count', render.SCRIPT)
         self.assertIn("'Change '+(k+1)+' of '+n", render.SCRIPT)
         self.assertIn('s._t!=null||c.scrollTop>0', render.SCRIPT)  # before a jump or a scroll: the total alone
         self.assertIn('.nav .count{', render.STYLE)
+
+
+class NavigationTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = Path(folder.name).resolve()
+        git(self.repo, 'init', '-q', '-b', 'main')
+        write(self.repo, 'seed.txt', 'seed\n')
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-q', '-m', 'a')
+        self.parent = git(self.repo, 'rev-parse', 'HEAD')
+        for name, data in (('a.txt', 'a\n'), ('dir/z.txt', 'z\n1\n2\n3\n'), ('dir/sub/m.txt', 'm\n'), ('zdir/x.txt', 'x\nx\n'), ('b.bin', b'\x00\x01')):
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            write(self.repo, name, data)
+        git(self.repo, 'add', '-A')
+        git(self.repo, 'commit', '-q', '-m', 'b')
+        self.tree_id = git(self.repo, 'rev-parse', 'HEAD^{tree}')
+        record = {'id': 'p' * 32, 'branch': 'refs/heads/tx/demo', 'parent': self.parent, 'tree': self.tree_id, 'manifest': ['a.txt']}
+        self.text = render.build(self.repo, render.PREVIEW, record, 'demo_job', [])
+        self.tree = self.text.split('<nav>', 1)[1].split('</nav>', 1)[0]
+        self.table = self.text.split('<table class="files">', 1)[1].split('</table>', 1)[0]
+
+    def test_the_list_follows_the_order_of_the_tree_and_the_section_numbers_follow_both(self):
+        expected = ['dir/sub/m.txt', 'dir/z.txt', 'zdir/x.txt', 'a.txt', 'b.bin']  # at each level the subfolders come before the files, each by name
+        self.assertEqual([item['path'] for item in render.changes(self.repo, self.parent, self.tree_id)], expected)
+        in_tree = re.findall(r'<a class="\w" href="#f(\d+)">([^<]*)</a>', self.tree)
+        self.assertEqual(in_tree, [('1', 'm.txt'), ('2', 'z.txt'), ('3', 'x.txt'), ('4', 'a.txt'), ('5', 'b.bin')])
+        in_table = re.findall(r'<tr data-n="(\d+)" data-size="(-?\d+)">.*?<a href="#f(\d+)">([^<]*)</a>', self.table)
+        self.assertEqual([(n, link, path) for n, _, link, path in in_table], [(str(k), str(k), p) for k, p in enumerate(expected, 1)])
+        self.assertEqual([size for _, size, _, _ in in_table], ['1', '4', '2', '1', '-1'])  # lines changed; a binary file has none
+        for number, path in enumerate(expected, 1):
+            self.assertIn(path.rsplit('/', 1)[-1], section_of(self.text, path).split('</h3>', 1)[0])
+            self.assertEqual(self.text.count('<section id="f%d">' % number), 1)
+
+    def test_the_table_has_the_sort_buttons_and_the_script_sorts_by_size_with_binaries_last_and_back_by_place(self):
+        self.assertIn('<th aria-sort="ascending"><button type="button" data-sort="name"', self.table)
+        self.assertIn('<th class="size" aria-sort="none"><button type="button" data-sort="size"', self.table)
+        for needle in ("getAttribute('data-sort')", "'descending'", "(a<0)!==(b<0)", "x.getAttribute('data-n')-y.getAttribute('data-n')"):
+            self.assertIn(needle, render.SCRIPT)
+        self.assertEqual(self.text.count('<script'), 1)  # the page stays one file under its hashed policy
+        self.assertIn(base64.b64encode(hashlib.sha256(render.SCRIPT.encode('utf-8')).digest()).decode('ascii'), self.text)
+
+    def test_the_open_file_is_marked_in_the_tree_and_the_mark_is_cleared_for_the_list(self):
+        for needle in ('aria-current', '/^f(\\d+)/', 'p.tagName===\'DETAILS\''):
+            self.assertIn(needle, render.SCRIPT)  # a rename's #fN-old and #fN-new mark the entry #fN
+        self.assertIn('removeAttribute(\'aria-current\')', render.SCRIPT)  # runs before the early return for a page with no open file
+        self.assertIn('nav a[aria-current]{', render.STYLE)
+        self.assertNotIn('aria-current', self.tree)  # nothing is open when the page loads
+
+    def test_every_row_of_a_change_names_its_place_with_the_numbers_of_the_counter(self):
+        old = ['keep %d' % n for n in range(40)]
+        new = list(old)
+        new[2:4] = ['two', 'three', 'extra']
+        new[20] = 'twenty'
+        new[30:30] = ['inserted']
+        matcher = render.difflib.SequenceMatcher(None, old, new, autojunk=False)
+        everything = render.full_rows(matcher, old, new)
+        collapsed = [row for hidden, rows in render.side_rows(matcher, old, new, everything) for row in ([(hidden, 'gap')] if hidden else []) + rows]
+        for rows in (everything, collapsed):
+            table = render.side_table(rows, 'p' * 40, 't' * 40)
+            self.assertEqual(re.findall(r'<tr data-c data-tip="(Change \d of \d)">', table), ['Change 1 of 3', 'Change 2 of 3', 'Change 3 of 3'])
+            titled = re.findall(r'<tr(?: data-c)? data-tip="(Change \d of \d)">(.*?)</tr>', table)
+            self.assertGreater(len(titled), 3)  # the later rows of a change carry the title too
+            for title, row in titled:
+                self.assertNotIn('class="old same"', row)  # an unchanged row has none
+            self.assertEqual(len(titled), table.count('data-tip="Change'))
+        self.assertIn('data-count>3 changes</span>', render.nav(3))  # the counter's total is the n of the titles
+        self.assertNotIn('data-tip', render.side_table(render.full_rows(render.difflib.SequenceMatcher(None, ['x'], ['x']), ['x'], ['x']), 'p' * 40, 't' * 40))
+
+    def test_the_position_shows_at_once_in_a_box_of_the_page_not_in_a_delayed_title(self):
+        self.assertNotIn('title="Change', render.side_table([(1, 'a', 1, 'b', 'change', None, None)], 'p' * 40, 't' * 40))
+        for needle in ("'tr[data-tip]'", "getAttribute('data-tip')", "className='tip'", "addEventListener('mousemove'"):
+            self.assertIn(needle, render.SCRIPT)
+        self.assertIn('.tip{position:fixed;', render.STYLE)
+        self.assertIn('pointer-events:none', render.STYLE)
 
 
 class IntralinePageTest(Fixture):
