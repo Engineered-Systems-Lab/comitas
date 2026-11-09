@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import subprocess
 import sys
@@ -57,10 +58,12 @@ COORDINATION_DOCUMENT = Path('governance/LOCAL-COORDINATION.md')
 SCOPE_POINTER = ('The scope lives in your Job record, which you read above; this prompt holds no plan of its own. '
                  'Read every entry of the record: it holds the scope, the riders and any routed handoff.')
 COORDINATION_TITLE = 'COORDINATION (governance/LOCAL-COORDINATION.md, Execution status)'
-BRIEF_READING = ('AGENTS.md', 'governance/AGENT-ORIENTATION.md', 'governance/ROLE-WORKER.md',
-                 'governance/CONSTRAINTS.md', 'governance/CHECKPOINT-WORKFLOW.md',
-                 'governance/CHECKPOINT-TOOL.md', 'governance/WORKTREE-WORKFLOW.md',
-                 'governance/LOCAL-COORDINATION.md', 'governance/ARTIFACT-CLASSIFICATION.md')
+# The brief takes what a worker reads first from the reading map, found by two headings; the tool keeps no copy of the
+# lists. Each list is the links of the bullets under its heading, and continuity checks that those links resolve.
+READING_DOCUMENT = Path('governance/READING-MAP.md')
+READING_CORE = 'The core'
+READING_SECTIONS = 'Core sections'
+READING_ITEM = re.compile(r'- \[[^\]\n]+\]\(([^)#\s]+)(?:#([^)\s]+))?\)')
 
 
 def require(ok, message):
@@ -633,6 +636,28 @@ def note(directory, name, kind, source, text):
     return guarded(directory, change)
 
 
+def reading_list(primary, heading):
+    """The documents (or sections, as path#fragment) the reading map lists under one heading, as repository paths."""
+    path = Path(primary) / READING_DOCUMENT
+    require(path.is_file() and not path.is_symlink() and not path.is_junction(), 'Missing reading map: ' + str(path))
+    lines = path.read_bytes().decode('utf-8-sig').replace('\r\n', '\n').split('\n')
+    starts = [i for i, line in enumerate(lines) if line == '## ' + heading]
+    require(len(starts) == 1, 'Reading map heading "%s" not found exactly once in %s (%d found); no brief printed'
+            % (heading, READING_DOCUMENT.as_posix(), len(starts)))
+    items = []
+    for line in lines[starts[0] + 1:]:
+        if line.startswith('#'):
+            break
+        found = READING_ITEM.fullmatch(line)
+        if found:
+            target = posixpath.normpath(posixpath.join(READING_DOCUMENT.parent.as_posix(), found[1]))
+            require(not target.startswith('..') and not posixpath.isabs(target),
+                    'Reading map names a path outside the repository: ' + found[1])
+            items.append(target + ('#' + found[2] if found[2] else ''))
+    require(items, 'Reading map list "%s" is empty in %s; no brief printed' % (heading, READING_DOCUMENT.as_posix()))
+    return items
+
+
 def coordination_block(primary):
     """The COORDINATION block as the document holds it now: the fenced block whose first line is the title."""
     path = Path(primary) / COORDINATION_DOCUMENT
@@ -682,10 +707,13 @@ def brief(primary, name, stagger=False, extra_file=None):
               'what the pointer names:',
               '  ' + launcher + 'pointer ' + name,
               '  ' + launcher + "read '<the pointer line printed above>'",
-              '- Read these in full before any worktree, checkpoint, staging, approval, finish or integration step, '
-              'and the specification, contract or conventions that own the artifact you change:']
-    lines += ['  ' + item for item in BRIEF_READING]
-    lines += ['  In LOCAL-COORDINATION.md read "Execution status" (with the COORDINATION block) and "Updates, handoff and disposal".',
+              '- Read these in full before any worktree, checkpoint, staging, approval, finish or integration step '
+              '(the core of governance/READING-MAP.md):']
+    lines += ['  ' + item for item in reading_list(primary, READING_CORE)]
+    lines += ['- Read these sections with the core (the COORDINATION block below repeats the commands):']
+    lines += ['  ' + item for item in reading_list(primary, READING_SECTIONS)]
+    lines += ['- Then, before each step, read what the "By step" table of governance/READING-MAP.md names for it, and the '
+              'specification, contract or conventions that own the artifact you change. Reading supplies no authority.',
               '- `python` in a command line stands for any Python 3.13 or later. If a bare `python` fails with '
               "\"SRE module mismatch\" it is LibreOffice's Python: run the tool with the path of a Python 3.13 or later instead.",
               "- The lead developer's terminal tab is PowerShell: every command line you give them says PowerShell or Git Bash.",

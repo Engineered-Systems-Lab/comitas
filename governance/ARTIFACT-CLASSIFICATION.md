@@ -78,6 +78,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/PROJECT-GOVERNANCE.md` | governance | governance | - | - | conformance, guidance | - | yes | - |
 | `governance/PROJECT-LIFECYCLE.md` | governance | governance | - | - | conformance, guidance | - | yes | - |
 | `governance/RATIONALE.md` | record | record-only | - | - | conformance, mission-control-generator | rationale | yes | - |
+| `governance/READING-MAP.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/README.md` | governance | governance | - | yes | conformance, guidance | - | yes | - |
 | `governance/ROLE-COORDINATOR.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/ROLE-WORKER.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |

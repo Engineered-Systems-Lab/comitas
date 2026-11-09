@@ -285,6 +285,22 @@
       "why": "explanatory rationale is a record",
       "approval_sensitivity": "low"
     },
+    "governance/READING-MAP.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "the one source of what a worker reads, and when",
+      "approval_sensitivity": "medium"
+    },
     "governance/ROLE-COORDINATOR.md": {
       "class": "governance",
       "profile": "governance",

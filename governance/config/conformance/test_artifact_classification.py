@@ -225,6 +225,7 @@ APPROVAL_MEDIUM = (
     'project-governance/CONSTRAINTS.md', 'project-governance/DECISIONS.md',
     'AGENTS.md', '.gitattributes', '.gitignore',
     'governance/ARTIFACT-CLASSIFICATION.md', 'governance/CHECKPOINT-TOOL.md', 'governance/CHECKPOINT-WORKFLOW.md',
+    'governance/READING-MAP.md',
     'governance/CHECKPOINT-TOOL-CARRY.md', 'governance/CHECKPOINT-TOOL-CLAIMS.md', 'governance/CHECKPOINT-TOOL-COMMANDS.md', 'governance/CHECKPOINT-TOOL-CONSENT.md', 'governance/CHECKPOINT-TOOL-EVIDENCE.md', 'governance/CHECKPOINT-TOOL-INTERNALS.md', 'governance/CHECKPOINT-TOOL-RECOVERY.md',
     'governance/CONSTRAINTS.md', 'governance/DECISIONS.md', 'governance/LOCAL-COORDINATION.md',
     'governance/AGENT-ORIENTATION.md', 'governance/ROLE-COORDINATOR.md', 'governance/ROLE-WORKER.md',

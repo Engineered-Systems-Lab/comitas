@@ -4,7 +4,7 @@ You are a worker if you were given one Job, or if nobody told you your role (the
 
 ## Read before you act
 
-- Before checkpoint, worktree, staging, approval, finish or integration steps, read these in full: [Constraints](CONSTRAINTS.md), [Checkpoint workflow](CHECKPOINT-WORKFLOW.md), [Checkpoint tool](CHECKPOINT-TOOL.md), [Worktree workflow](WORKTREE-WORKFLOW.md), [Local coordination](LOCAL-COORDINATION.md) and [Artifact classification](ARTIFACT-CLASSIFICATION.md). Reading supplies no execution or approval authority.
+- Before checkpoint, worktree, staging, approval, finish or integration steps, read the [core of the reading map](READING-MAP.md#the-core) in full and its [core sections](READING-MAP.md#core-sections). Then, before each step, read what the [reading map names for that step](READING-MAP.md#by-step). Reading supplies no execution or approval authority.
 - Read [Worker hazards](WORKER-HAZARDS.md) before your first command. Worker only: H2, H9, H21. Shared with the Coordinator: H1, H3, H4, H5, H6, H7, H8, H10, H11, H15, H16, H17, H18, H19, H20, H22.
 
 ## Your Job

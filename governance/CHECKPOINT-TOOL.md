@@ -2,7 +2,7 @@
 
 Implementation notes for [the authoritative workflow](CHECKPOINT-WORKFLOW.md) and G018. This tool does not interpret authorization, compose messages, update records, or grant permission. Nothing in this document authorizes a real transaction.
 
-The notes are split by purpose into the seven files below. Every rule that asked you to read the checkpoint tool in full means this index and all seven files, until a rule says otherwise.
+The notes are split by purpose into the seven files below. The [reading map](READING-MAP.md#by-step) says which file and section to read for which step; a rule that asks for the checkpoint tool in full means this index and all seven files.
 
 ## Files by purpose
 

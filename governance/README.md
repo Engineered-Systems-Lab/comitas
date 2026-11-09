@@ -12,6 +12,7 @@ Governance describes how this repository is managed, validated, recorded, decide
 | [Rationale](RATIONALE.md) | Explanations and evidence; non-normative |
 | [Checkpoint workflow](CHECKPOINT-WORKFLOW.md) | Preparation, exact approval, verification and continuity |
 | [Checkpoint tool](CHECKPOINT-TOOL.md) | Tool mechanics, policy and scratch lifecycle: an index and seven files by purpose |
+| [Reading map](READING-MAP.md) | What a worker reads in full first and what it reads for each step |
 | [Worktree workflow](WORKTREE-WORKFLOW.md) | Transaction ownership and guarded integration/removal |
 | [Local coordination](LOCAL-COORDINATION.md) | Local JSON Jobs, Coordinator responsibilities and handoffs |
 | [Worker hazards](WORKER-HAZARDS.md) | Non-normative list of known traps for workers and the Coordinator |

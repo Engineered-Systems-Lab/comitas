@@ -76,7 +76,7 @@ COORDINATION (governance/LOCAL-COORDINATION.md, Execution status)
 
 **The scope lives in the Job record.** The Job's record holds its scope, riders and any routed handoff; the brief and the prompt that carries it only point to the record and hold no plan of their own. Where text outside the record differs from the record, the record wins. `--extra-file` stays for a short note that does not belong in the record (for example a reminder for this launch); the brief prints it under the pointer and says the record wins.
 
-`local_jobs.py brief <handle> [--stagger] [--extra-file <file>]` prints the whole standard brief with this block read from this document and its placeholders filled in, so no copy of the block lives anywhere else; it fails without printing a brief when the block cannot be found, and it only reads: it writes no record, contacts no worker and grants no authority.
+`local_jobs.py brief <handle> [--stagger] [--extra-file <file>]` prints the whole standard brief with this block read from this document and its placeholders filled in, so no copy of the block lives anywhere else, and with the reading lists read from the [reading map](READING-MAP.md) in the same way; it fails without printing a brief when the block cannot be found, and it only reads: it writes no record, contacts no worker and grants no authority.
 
 ## Job state and reported worker activity
 
