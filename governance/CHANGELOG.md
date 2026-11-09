@@ -2,7 +2,7 @@
 
 This changelog is curated, not generated. An entry says what someone who has adopted Comitas must do or know; if it could be produced from `git log`, it does not belong here, and an entry points to a decision or a document instead of copying text. The version is in [VERSION](VERSION). A release that needs action from adopters gets a Migration note under it, written when that first change is made. A release heading carries the date the release was made, written `## <version> (YYYY-MM-DD)`. Entries collect under `## Unreleased` until the lead developer cuts a release, which dates the heading and sets VERSION.
 
-## Unreleased
+## 0.9.0 (2026-11-08)
 
 **The diff viewer links each file's heading path and the mission to the checkout on disk.** In a file's section every folder of the heading path links that folder in the mission checkout and the last segment links the file, and the `Mission` value links the worktree folder, as plain `file://` links; each link carries a short note as its title (the checkout is the working copy, which can differ from the reviewed candidate, and stops working once the mission lands). A deleted file, a folder or file that is not on disk and a segment that leads outside the checkout through a link stay plain text, and the folder tree and the list of files are unchanged. The page is display only: it grants no approval and changes nothing the checkpoint tool records. See [what the page shows](extensions/diff_viewer/README.md#what-the-page-shows). No adopter action.
 
