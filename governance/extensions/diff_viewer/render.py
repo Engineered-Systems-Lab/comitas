@@ -215,6 +215,49 @@ def move_text(item):
     return '%s \u2192 %s (%d%%)' % (show(item['old_path']), show(item['path']), item['similarity'])
 
 
+DISK_NOTE = "Opens the mission checkout's working copy, which can differ from the reviewed candidate; stops working once the mission lands."
+
+
+class Markup(str):
+    """Text that is already HTML."""
+
+
+def disk_link(label, path):
+    """One link to a place in the mission checkout; the note about the working copy is its title."""
+    return '<a class="disk" href="%s" title="%s">%s</a>' % (html.escape(path.as_uri(), quote=True), html.escape(DISK_NOTE, quote=True), label)
+
+
+def inside(root, target):
+    """True when the place the path really leads to (links and junctions followed) lies within the checkout."""
+    try:
+        return Path(target).resolve().is_relative_to(Path(root).resolve())
+    except (OSError, RuntimeError):
+        return False
+
+
+def path_links(root, path, file_exists=True):
+    """A repository path as links, one per segment, separated as plain text: each folder that exists in the checkout links itself, the last
+    segment links the file when it exists and is not a deletion. A segment with nothing on disk, or that leads outside the checkout through a link, stays plain text."""
+    names = path.split('/')
+    parts = []
+    for number, name in enumerate(names, 1):
+        last = number == len(names)
+        target = None if root is None else Path(root).joinpath(*names[:number])
+        if target is not None and (target.exists() and file_exists if last else target.is_dir()) and inside(root, target):
+            parts.append(disk_link(show(name), target))
+        else:
+            parts.append(show(name))
+    return '/'.join(parts)
+
+
+def heading_text(root, item):
+    """What move_text shows, with the path of the file as disk links; a rename links its new path and names the old one as text."""
+    links = path_links(root, item['path'], item['status'] != 'D')
+    if item['status'] != 'R':
+        return links
+    return '%s \u2192 %s (%d%%)' % (show(item['old_path']), links, item['similarity'])
+
+
 def mode_text(item):
     if item['status'] in 'AD' or item['old_mode'] == item['new_mode']:
         return ''
@@ -491,7 +534,7 @@ def sides_of(item):
             dict(item, status='A', old_mode='000000', old_path=None, similarity=None))
 
 
-def file_section(repo, item, number, parent, tree, back='<a class="back" href="#">&larr; All files</a>'):
+def file_section(repo, item, number, parent, tree, back='<a class="back" href="#">&larr; All files</a>', root=None):
     """The section of one file: a notice for binaries and submodules, side-by-side hunks and the complete file for text; a rename
     names its pairing and links its two sides, which are sections of their own."""
     kind = kind_of(item)
@@ -499,7 +542,7 @@ def file_section(repo, item, number, parent, tree, back='<a class="back" href="#
     old_data, old_size = blob(repo, item['old_mode'], item['old_id'])
     new_data, new_size = blob(repo, item['new_mode'], item['new_id'])
     sizes = '%s bytes before, %s bytes after' % ('no' if old_size is None else old_size, 'no' if new_size is None else new_size)
-    head = '%s<h3><span class="kind %s">%s</span> %s</h3>' % (back, kind.replace(' ', '-'), kind, move_text(item))
+    head = '%s<h3><span class="kind %s">%s</span> %s</h3>' % (back, kind.replace(' ', '-'), kind, heading_text(root, item))
     toggle = ''  # the checkbox of the file, at the right end of the heading row, for a file that has two views
     body = ''.join('<p class="note">%s</p>' % html.escape(note) for note in notes)
     if item['status'] == 'R':
@@ -617,7 +660,8 @@ def headline(kind, job):
 
 def build_page(kind, facts, items, sections, omitted, job=None):
     def fact(name, value, wide=False):
-        return '<div class="fact%s"><span class="k">%s</span><span class="v">%s</span></div>' % (' wide' if wide else '', html.escape(name), show(str(value)))
+        return '<div class="fact%s"><span class="k">%s</span><span class="v">%s</span></div>' % (
+            ' wide' if wide else '', html.escape(name), value if isinstance(value, Markup) else show(str(value)))
     shown = min(len(items), MAX_FILES)  # files that have a section; the sides of a rename are sections too, but not files
     short = [f for f in facts if f[0] != 'Manifest']  # the manifest can be long and spans both columns
     half = (len(short) + 1) // 2
@@ -646,15 +690,16 @@ def build(repo, kind, record, job, extra):
     parent, tree = record['parent'], record['tree']
     verify_objects(repo, parent, tree)
     items = changes(repo, parent, tree)
+    root = checkout_root(repo)
     sections = []
     for n, item in enumerate(items[:MAX_FILES], 1):
-        sections.append(file_section(repo, item, n, parent, tree))
+        sections.append(file_section(repo, item, n, parent, tree, root=root))
         if item['status'] == 'R':  # each side as the file it is: the old path deleted, the new path added
             for label, side in zip(('old', 'new'), sides_of(item)):
-                sections.append(file_section(repo, side, '%d-%s' % (n, label), parent, tree, '<a class="back" href="#f%d">&larr; The rename</a>' % n))
+                sections.append(file_section(repo, side, '%d-%s' % (n, label), parent, tree, '<a class="back" href="#f%d">&larr; The rename</a>' % n, root))
     totals = [i['counts'] for i in items if not i['binary']]
     facts = [('Kind', LABELS[kind]), ('Job', job or 'not recorded in the preview record (pass --job)'),
-             ('Mission', mission_of(record['branch'])), ('Branch', record['branch']),
+             ('Mission', Markup(disk_link(show(mission_of(record['branch'])), root))), ('Branch', record['branch']),
              ('Parent commit', parent), ('Candidate tree', tree),
              ('Preview id' if kind == PREVIEW else 'Transaction id', record['id'])]
     facts += extra

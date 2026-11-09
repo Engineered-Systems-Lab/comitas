@@ -395,6 +395,123 @@ class SealedTest(Fixture):
         self.assertEqual(list(self.review.iterdir()), [])
 
 
+class DiskLinkTest(unittest.TestCase):
+    """The heading path of a file section and the Mission value link the mission checkout's working copy; the tree and the list stay as they are."""
+    BIG = ''.join('line %d of the moved file\n' % n for n in range(1, 41))
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve() / 'mission demo'
+        self.root.mkdir()
+        git(self.root, 'init', '-q', '-b', 'main')
+        for folder in ('dir with space/sub', 'old dir', 'src'):
+            (self.root / folder).mkdir(parents=True)
+        write(self.root, 'dir with space/sub/mod.txt', 'one\ntwo\n')
+        write(self.root, 'dir with space/gone.txt', 'bye\n')
+        write(self.root, 'old dir/lost.txt', 'lost\n')
+        write(self.root, 'src/moved.txt', self.BIG)
+        git(self.root, 'add', '-A')
+        git(self.root, 'commit', '-q', '-m', 'base')
+        self.parent = git(self.root, 'rev-parse', 'HEAD')
+        write(self.root, 'dir with space/sub/mod.txt', 'one\nTWO\n')
+        write(self.root, 'dir with space/new.txt', 'new\n')
+        git(self.root, 'rm', '-q', 'dir with space/gone.txt', 'old dir/lost.txt')
+        (self.root / 'moved').mkdir()
+        git(self.root, 'mv', 'src/moved.txt', 'moved/moved.txt')
+        git(self.root, 'add', '-A')
+        git(self.root, 'commit', '-q', '-m', 'candidate')  # the checkout stays at the candidate
+        self.tree = git(self.root, 'rev-parse', 'HEAD^{tree}')
+        record = {'id': 'd' * 32, 'branch': 'refs/heads/tx/mission-demo', 'parent': self.parent, 'tree': self.tree, 'manifest': []}
+        self.text = render.build(self.root, render.PREVIEW, record, 'demo_job', [])
+        self.note = render.html.escape(render.DISK_NOTE, quote=True)
+
+    def heading(self, name):
+        """The h3 of the section whose heading names the file."""
+        found = [part.split('</h3>', 1)[0] for part in self.text.split('<h3>')[1:] if name in part.split('</h3>', 1)[0]]
+        self.assertEqual(len(found), 1, name)
+        return found[0]
+
+    def links(self, name):
+        """[(link text, target)] of the heading's disk links."""
+        found = re.findall(r'<a class="disk" href="([^"]*)" title="[^"]*">([^<]*)</a>', self.heading(name))
+        return [(text, href) for href, text in found]
+
+    def test_every_heading_segment_links_its_folder_and_the_last_one_the_file(self):
+        base = self.root.as_uri()
+        self.assertEqual(self.links('mod.txt'), [
+            ('dir with space', base + '/dir%20with%20space'),
+            ('sub', base + '/dir%20with%20space/sub'),
+            ('mod.txt', base + '/dir%20with%20space/sub/mod.txt')])
+        self.assertIn('</a>/<a', self.heading('mod.txt'))  # the segments are separated as before
+        self.assertEqual([text for text, _ in self.links('new.txt')], ['dir with space', 'new.txt'])  # an added file
+
+    def test_paths_with_spaces_are_encoded_and_the_target_equals_as_uri(self):
+        for _, href in self.links('mod.txt'):
+            self.assertNotIn(' ', href)
+        self.assertEqual(self.links('new.txt')[-1][1], (self.root / 'dir with space' / 'new.txt').as_uri())
+
+    def test_a_deleted_file_is_plain_text_and_a_folder_that_is_gone_is_too(self):
+        kept = self.heading('gone.txt')  # the folder survives, the file does not
+        self.assertEqual([text for text, _ in self.links('gone.txt')], ['dir with space'])
+        self.assertTrue(kept.endswith('/gone.txt'))
+        self.assertEqual(self.links('lost.txt'), [])  # neither the folder nor the file exists in the checkout
+        self.assertIn('old dir/lost.txt', self.heading('lost.txt'))
+
+    def test_a_renamed_file_links_its_new_path_and_names_the_old_one_as_text(self):
+        heading = self.heading(chr(0x2192))  # only the renamed entry holds the arrow; its two sides are sections of their own
+        self.assertEqual([text for text, _ in self.links(chr(0x2192))], ['moved', 'moved.txt'])
+        self.assertEqual(self.links(chr(0x2192))[-1][1], (self.root / 'moved' / 'moved.txt').as_uri())
+        self.assertIn('src/moved.txt → ', heading)
+        self.assertEqual(heading.count('src/moved.txt'), 1)
+
+    def test_a_segment_that_leads_outside_the_checkout_is_plain_text(self):
+        outside = self.root.parent / 'elsewhere'
+        outside.mkdir()
+        write(outside, 'mod.txt', 'x')
+        link = self.root / 'dir with space' / 'sub'
+        git(self.root, 'rm', '-q', '-r', '--cached', '--', 'dir with space/sub')  # the index keeps no say over the disk; only the page's view of the disk matters
+        for child in (self.root / 'dir with space' / 'sub').iterdir():
+            child.unlink()
+        link.rmdir()
+        try:
+            os.symlink(outside, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('symbolic links need a system setting here')
+        self.addCleanup(lambda: link.is_symlink() and os.rmdir(link))  # a directory link is removed with rmdir, never recursively
+        self.assertFalse(render.inside(self.root, link))
+        self.assertFalse(render.inside(self.root, link / 'mod.txt'))
+        self.assertTrue(render.inside(self.root, self.root / 'dir with space'))
+        heading = render.path_links(self.root, 'dir with space/sub/mod.txt')
+        self.assertEqual(re.findall(r'>([^<]*)</a>', heading), ['dir with space'])
+        self.assertTrue(heading.endswith('/sub/mod.txt'))
+
+    def test_the_mission_value_links_the_worktree_folder(self):
+        match = re.search(r'<span class="k">Mission</span><span class="v"><a class="disk" href="([^"]*)" title="[^"]*">mission-demo</a></span>', self.text)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), self.root.as_uri())
+
+    def test_every_disk_link_has_the_note_as_its_title_and_the_page_has_no_note(self):
+        anchors = re.findall(r'<a class="disk"[^>]*>', self.text)
+        self.assertGreater(len(anchors), 5)
+        for anchor in anchors:
+            self.assertIn(' title="%s"' % self.note, anchor)
+        self.assertEqual(self.text.count(self.note), len(anchors))  # the sentence occurs nowhere else
+        self.assertNotIn('working copy', re.sub(r'<[^>]*>', '', self.text))
+
+    def test_the_tree_and_the_file_list_carry_no_disk_links_and_are_unchanged(self):
+        nav = self.text.split('<nav>', 1)[1].split('</nav>', 1)[0]
+        listing = self.text.split('<table class="files">', 1)[1].split('</table>', 1)[0]
+        for part in (nav, listing):
+            self.assertNotIn('file://', part)
+            self.assertNotIn('class="disk"', part)
+        items = render.changes(self.root, self.parent, self.tree)
+        self.assertEqual(nav, '<div class="treebar"><button type="button" data-fold="open">Expand all</button>'
+                              '<button type="button" data-fold="close">Collapse all</button></div>' + render.tree(items, len(items)))
+        self.assertEqual(listing.count('<a href="#f'), len(items))
+        self.assertNotIn('file://', self.text.replace(self.root.as_uri(), ''))
+
+
 class RenameTest(unittest.TestCase):
     """A moved file is one renamed entry computed by the page itself; the checkpoint tool's own records are not involved."""
     BIG = ''.join('line %d of the moved file\n' % n for n in range(1, 41))
@@ -424,7 +541,8 @@ class RenameTest(unittest.TestCase):
 
     def build(self):
         record = {'id': 'r' * 32, 'branch': 'refs/heads/tx/demo', 'parent': self.parent, 'tree': self.tree, 'manifest': []}
-        return render.build(self.root, render.PREVIEW, record, 'demo_job', [])
+        text = render.build(self.root, render.PREVIEW, record, 'demo_job', [])
+        return re.sub(r'<a class="disk"[^>]*>(.*?)</a>', lambda match: match.group(1), text)  # the disk links have their own tests; here the headings read as plain paths
 
     def test_a_pure_move_is_one_entry_with_no_change_lines_and_says_so(self):
         text = self.build()
