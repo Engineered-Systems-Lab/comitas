@@ -22,9 +22,11 @@ PREVIEW, SEALED = 'preview', 'sealed'
 LABELS = {PREVIEW: 'PREVIEW (no approval)', SEALED: 'SEALED REVIEW'}
 CONTEXT = 3
 MAX_INTRALINE_LENGTH = 4096  # characters per line; larger lines keep whole-text highlights
-MAX_INTRALINE_PRODUCT = 1_000_000  # upper bound on character comparisons for one pair
-MAX_INTRALINE_WORK = 8_000_000  # shared comparison budget per file, reused by both views
+MAX_INTRALINE_PRODUCT = 4_000_000  # upper bound on word tokens compared for one pair (tokens of the old line times tokens of the new line)
+MAX_CHARACTER_PRODUCT = 1_000_000  # the character score is exact up to this length product; a longer pair is scored from its word matches
+MAX_INTRALINE_WORK = 16_000_000  # shared comparison budget per file, reused by both views
 MIN_INTRALINE_SIMILARITY = .6
+UNANCHORED = ()  # intraline's answer for lines that are similar but share no letter or digit to anchor word highlights; None means not similar
 MAX_PAIR_LINES = 80  # maximum lines per side of a replacement block to align
 MAX_PAIR_COMPARISONS = 1600  # maximum old/new candidate pairs in one block
 PAIR_MARGIN = .05  # near-tied alternatives are too ambiguous for precise pairing
@@ -39,8 +41,8 @@ MODE_NAMES = {'100644': 'file', '100755': 'executable', '120000': 'symbolic link
 PICTURES = {code: chr(0x2400 + code) for code in range(32) if code not in (9, 10)}  # control characters shown, not sent raw
 
 
-# The one inline script, pinned by hash in the content security policy: it moves the divider, focuses the open file so the wheel scrolls it, and opens or closes every folder of the tree and jumps between the changes of a file.
-SCRIPT = "(function(){var r=document.documentElement,d=null;function v(s){var l=s.querySelectorAll('.scroll');for(var i=0;i<l.length;i++)if(l[i].offsetParent)return l[i];return null}function tp(c,t){for(var i=0;i<1&&t.previousElementSibling&&t.previousElementSibling.firstElementChild.tagName==='TD';i++)t=t.previousElementSibling;return t.getBoundingClientRect().top-c.getBoundingClientRect().top+c.scrollTop}function hd(c){var h=c.querySelector('th.pane');return(h?h.offsetHeight:0)+4}function cu(s,c){if(s._t!=null&&Math.abs(c.scrollTop-s._p)<2)return s._t;s._t=null;var l=c.querySelectorAll('tr[data-c]'),n=-1;for(var i=0;i<l.length;i++)if(tp(c,l[i])<=c.scrollTop+hd(c))n=i;return n}function u(s){var c=v(s);if(!c)return;var n=c.querySelectorAll('tr[data-c]').length,k=cu(s,c),b=s.querySelectorAll('[data-nav]');for(var i=0;i<b.length;i++)b[i].disabled=b[i].getAttribute('data-nav')==='prev'?k<=0:k>=n-1}function f(){var s=document.querySelector('section:target');if(!s)return;var c=v(s);if(c)c.focus({preventScroll:true});u(s)}addEventListener('hashchange',f);addEventListener('load',f);addEventListener('change',function(e){var s=e.target.closest&&e.target.closest('section');if(s)s._t=null;f()});document.addEventListener('scroll',function(e){var c=e.target;if(c.classList&&c.classList.contains('scroll'))u(c.closest('section'))},true);document.addEventListener('click',function(e){var a=e.target.getAttribute&&e.target.getAttribute('data-nav');if(!a)return;var s=e.target.closest('section'),c=v(s),l=c.querySelectorAll('tr[data-c]'),k=cu(s,c)+(a==='next'?1:-1);if(k<0||k>=l.length)return;c.scrollTop=tp(c,l[k])-hd(c);s._t=k;s._p=c.scrollTop;c.focus({preventScroll:true});u(s)});document.addEventListener('click',function(e){var m=e.target.getAttribute&&e.target.getAttribute('data-fold');if(m){var l=document.querySelectorAll('nav details');for(var i=0;i<l.length;i++)l[i].open=m==='open'}});document.addEventListener('pointerdown',function(e){if(e.target.classList&&e.target.classList.contains('grip')){d=e.target.parentNode;e.target.setPointerCapture(e.pointerId);e.preventDefault()}});document.addEventListener('pointermove',function(e){if(!d)return;var b=d.getBoundingClientRect(),m=parseFloat(getComputedStyle(d).fontSize);r.style.setProperty('--split',Math.min(.85,Math.max(.15,(e.clientX-b.left)/b.width)))});document.addEventListener('pointerup',function(){d=null});document.addEventListener('dblclick',function(e){if(e.target.classList&&e.target.classList.contains('grip'))r.style.setProperty('--split',.5)})})();"
+# The one inline script, pinned by hash in the content security policy: it moves the divider, focuses the open file so the wheel scrolls it, and opens or closes every folder of the tree, jumps between the changes of a file and says which change of how many the reader is at.
+SCRIPT = "(function(){var r=document.documentElement,d=null;function v(s){var l=s.querySelectorAll('.scroll');for(var i=0;i<l.length;i++)if(l[i].offsetParent)return l[i];return null}function tp(c,t){for(var i=0;i<1&&t.previousElementSibling&&t.previousElementSibling.firstElementChild.tagName==='TD';i++)t=t.previousElementSibling;return t.getBoundingClientRect().top-c.getBoundingClientRect().top+c.scrollTop}function hd(c){var h=c.querySelector('th.pane');return(h?h.offsetHeight:0)+4}function cu(s,c){if(s._t!=null&&Math.abs(c.scrollTop-s._p)<2)return s._t;s._t=null;var l=c.querySelectorAll('tr[data-c]'),n=-1;for(var i=0;i<l.length;i++)if(tp(c,l[i])<=c.scrollTop+hd(c))n=i;return n}function u(s){var c=v(s);if(!c)return;var n=c.querySelectorAll('tr[data-c]').length,k=cu(s,c),b=s.querySelectorAll('[data-nav]'),t=s.querySelector('[data-count]');for(var i=0;i<b.length;i++)b[i].disabled=b[i].getAttribute('data-nav')==='prev'?k<=0:k>=n-1;if(t)t.textContent=k>=0&&(s._t!=null||c.scrollTop>0)?'Change '+(k+1)+' of '+n:n+(n===1?' change':' changes')}function f(){var s=document.querySelector('section:target');if(!s)return;var c=v(s);if(c)c.focus({preventScroll:true});u(s)}addEventListener('hashchange',f);addEventListener('load',f);addEventListener('change',function(e){var s=e.target.closest&&e.target.closest('section');if(s)s._t=null;f()});document.addEventListener('scroll',function(e){var c=e.target;if(c.classList&&c.classList.contains('scroll'))u(c.closest('section'))},true);document.addEventListener('click',function(e){var a=e.target.getAttribute&&e.target.getAttribute('data-nav');if(!a)return;var s=e.target.closest('section'),c=v(s),l=c.querySelectorAll('tr[data-c]'),k=cu(s,c)+(a==='next'?1:-1);if(k<0||k>=l.length)return;c.scrollTop=tp(c,l[k])-hd(c);s._t=k;s._p=c.scrollTop;c.focus({preventScroll:true});u(s)});document.addEventListener('click',function(e){var m=e.target.getAttribute&&e.target.getAttribute('data-fold');if(m){var l=document.querySelectorAll('nav details');for(var i=0;i<l.length;i++)l[i].open=m==='open'}});document.addEventListener('pointerdown',function(e){if(e.target.classList&&e.target.classList.contains('grip')){d=e.target.parentNode;e.target.setPointerCapture(e.pointerId);e.preventDefault()}});document.addEventListener('pointermove',function(e){if(!d)return;var b=d.getBoundingClientRect(),m=parseFloat(getComputedStyle(d).fontSize);r.style.setProperty('--split',Math.min(.85,Math.max(.15,(e.clientX-b.left)/b.width)))});document.addEventListener('pointerup',function(){d=null});document.addEventListener('dblclick',function(e){if(e.target.classList&&e.target.classList.contains('grip'))r.style.setProperty('--split',.5)})})();"
 
 
 class ViewerError(ValueError):
@@ -267,22 +269,31 @@ def phrase_spans(line, spans):
     return merged
 
 
-def intraline(old, new):
-    """A pairing score and changed word ranges; None means no confident correspondence."""
+def intraline(old, new, exact=True):
+    """A pairing score and changed word ranges; None means the lines are not similar, UNANCHORED that they are but cannot be highlighted by word.
+
+    The score is the character similarity of the two lines when exact; a pair too long for that is scored by the share of its
+    characters that its matching words cover, which costs nothing beyond the word matching.
+    """
     before_words, after_words = words(old), words(new)
     before_offsets = list(itertools.accumulate(map(len, before_words), initial=0))
     after_offsets = list(itertools.accumulate(map(len, after_words), initial=0))
     matcher = difflib.SequenceMatcher(None, before_words, after_words, autojunk=False)
     blocks = matcher.get_matching_blocks()
-    similarity = difflib.SequenceMatcher(None, old.strip(), new.strip(), autojunk=False).ratio()
+    if exact:
+        similarity = difflib.SequenceMatcher(None, old.strip(), new.strip(), autojunk=False).ratio()
+    else:
+        covered = sum(before_offsets[a + size] - before_offsets[a] for a, _, size in blocks)
+        similarity = 2 * covered / (len(old) + len(new)) if old or new else 1.
     name = assignment_name(old)
     if name is not None and name == assignment_name(new):
         similarity = max(similarity, .9 + .1 * similarity)
     elif shared_opening(old, new):
         similarity = max(similarity, .65 + .35 * similarity)
-    if similarity < MIN_INTRALINE_SIMILARITY or not any(
-            any(any(char.isalnum() for char in part) for part in before_words[a:a + size]) for a, _, size in blocks):
+    if similarity < MIN_INTRALINE_SIMILARITY:
         return None
+    if not any(any(any(char.isalnum() for char in part) for part in before_words[a:a + size]) for a, _, size in blocks):
+        return UNANCHORED
     before, after = [], []
     for tag, a0, a1, b0, b1 in matcher.get_opcodes():
         if tag != 'equal':
@@ -293,26 +304,52 @@ def intraline(old, new):
     return similarity, (phrase_spans(old, before), phrase_spans(new, after))
 
 
-def replacement_pairs(old, new, a0, a1, b0, b1, budget):
-    """Bounded ordered alignment of uniquely preferred line matches, plus remaining work budget.
+def compare(left, right, sizes, budget):
+    """(compared, match, remaining budget) for one pair of lines; sizes are their word counts.
 
-    Incomplete comparisons cannot establish a preferred match: keep the whole block's fallback.
+    The cost is what the matchers compare: the word tokens of both lines, plus their characters while the exact character score
+    is affordable. A pair beyond a limit is not compared at all (compared is False) and spends nothing.
+    """
+    exact = len(left) * len(right) <= MAX_CHARACTER_PRODUCT
+    tokens = sizes[0] * sizes[1]
+    cost = tokens + (len(left) * len(right) if exact else 0)
+    if max(len(left), len(right)) > MAX_INTRALINE_LENGTH or tokens > MAX_INTRALINE_PRODUCT or cost > budget:
+        return False, None, budget
+    return True, intraline(left, right, exact), budget - cost
+
+
+def replacement_pairs(old, new, a0, a1, b0, b1, budget):
+    """Bounded ordered alignment of uniquely preferred line matches, the remaining work budget and the pairs judged.
+
+    The judged pairs map (old index, new index) to their match, or to None when the two lines are not similar.
+    A line over the length limit and a pair over the token limit are left out alone, because the limits depend on nothing else.
+    A pair left uncompared because the file's budget ran out is an incomplete comparison, which cannot establish a preferred
+    match for its two lines, so they get no precise pairing; the other lines of the block are paired as usual.
     Indentation alone, repeated near-ties, huge blocks and expensive lines supply no anchors.
     """
     n, m = a1 - a0, b1 - b0
     if max(n, m) > MAX_PAIR_LINES or n * m > MAX_PAIR_COMPARISONS:
-        return [], budget
-    candidates = {}
+        return [], budget, {}
+    sizes_old, sizes_new = [len(words(line)) for line in old[a0:a1]], [len(words(line)) for line in new[b0:b1]]
+    candidates, judged = {}, {}
+    long_old = {i for i in range(n) if len(old[a0 + i]) > MAX_INTRALINE_LENGTH}
+    long_new = {j for j in range(m) if len(new[b0 + j]) > MAX_INTRALINE_LENGTH}
+    open_old, open_new = set(long_old), set(long_new)
     for i in range(n):
         for j in range(m):
-            left, right = old[a0 + i], new[b0 + j]
-            cost = len(left) * len(right)
-            if max(len(left), len(right)) > MAX_INTRALINE_LENGTH or cost > MAX_INTRALINE_PRODUCT or 2 * cost > budget:
-                return [], budget
-            budget -= 2 * cost
-            match = intraline(left, right)
-            if match is not None:
+            if len(old[a0 + i]) > MAX_INTRALINE_LENGTH or len(new[b0 + j]) > MAX_INTRALINE_LENGTH:
+                continue  # a line over the length limit is left out of the pairing alone, without disqualifying its neighbors
+            if sizes_old[i] * sizes_new[j] > MAX_INTRALINE_PRODUCT:
+                continue  # a pair too costly for its size alone is not a candidate; it depends on nothing else, so the lines keep their other pairs
+            compared, match, budget = compare(old[a0 + i], new[b0 + j], (sizes_old[i], sizes_new[j]), budget)
+            if not compared:
+                open_old.add(i)
+                open_new.add(j)
+                continue
+            judged[a0 + i, b0 + j] = match
+            if match:
                 candidates[i, j] = match
+    candidates = {(i, j): match for (i, j), match in candidates.items() if i not in open_old and j not in open_new}
     unique = {}
     for (i, j), match in candidates.items():
         if not any((x == i or y == j) and (x, y) != (i, j) and other[0] >= match[0] - PAIR_MARGIN
@@ -333,13 +370,14 @@ def replacement_pairs(old, new, a0, a1, b0, b1, budget):
             i += 1
         else:
             j += 1
-    return pairs, budget
+    return pairs, budget, judged
 
 
 def opcode_rows(old, new, opcodes):
     """Aligned old/new numbers and text, row class, then old/new changed ranges.
 
-    Clear pairs retain segment ranges; unmatched intervals keep positional whole-text fallback.
+    Clear pairs retain segment ranges. Unmatched lines are taken in order, old with new: two lines that were compared and are not
+    similar show as a removed line and an added line, and any other positional pair keeps the whole-text fallback.
     Every source line is emitted once, in its original side's order.
     """
     rows, budget = [], MAX_INTRALINE_WORK
@@ -353,17 +391,33 @@ def opcode_rows(old, new, opcodes):
         if tag == 'equal':
             rows += [(a0 + i + 1, old[a0 + i], b0 + i + 1, new[b0 + i], 'same', [], []) for i in range(a1 - a0)]
             continue
-        pairs = []
+        pairs, judged = [], {}
         if tag == 'replace':
-            pairs, budget = replacement_pairs(old, new, a0, a1, b0, b1, budget)
+            pairs, budget, judged = replacement_pairs(old, new, a0, a1, b0, b1, budget)
+
+        def settle(x, y):
+            nonlocal budget
+            if x is None or y is None:
+                append(x, y)
+                return
+            if (x, y) not in judged:
+                compared, match, budget = compare(old[x], new[y], (len(words(old[x])), len(words(new[y]))), budget)
+                if compared:
+                    judged[x, y] = match
+            if (x, y) in judged and judged[x, y] is None:
+                append(x, None)
+                append(None, y)
+            else:
+                append(x, y)
+
         left, right = a0, b0
         for i, j, spans in pairs:
             for x, y in itertools.zip_longest(range(left, i), range(right, j)):
-                append(x, y)
+                settle(x, y)
             append(i, j, spans)
             left, right = i + 1, j + 1
         for i, j in itertools.zip_longest(range(left, a1), range(right, b1)):
-            append(i, j)
+            settle(i, j)
     return rows
 
 
@@ -409,7 +463,11 @@ def cell(number, line, css, ranges=None):
     return '<td class="%s"><span class="n">%d</span>%s</td>' % (css, number, highlighted(line, ranges))
 
 
-NAV = '<span class="nav"><button type="button" data-nav="prev" title="Previous change" aria-label="Previous change" disabled>&uarr;</button><button type="button" data-nav="next" title="Next change" aria-label="Next change">&darr;</button></span>'
+def nav(changes):
+    """The buttons that jump between the changes of a file, and to their left the count the script keeps (the buttons stay put as its text changes width): the total, then where the reader is."""
+    return ('<span class="nav"><span class="count" data-count>%d change%s</span>'
+            '<button type="button" data-nav="prev" title="Previous change" aria-label="Previous change" disabled>&uarr;</button>'
+            '<button type="button" data-nav="next" title="Next change" aria-label="Next change">&darr;</button></span>') % (changes, '' if changes == 1 else 's')
 
 
 def side_table(rows, parent, tree):
@@ -466,14 +524,15 @@ def file_section(repo, item, number, parent, tree, back='<a class="back" href="#
         if unchanged:
             body += '<p class="note">%s</p>' % ('Moved with no content change: the old and the new path hold the same bytes.' if item['status'] == 'R' else 'No content change.')
         collapsed = [row for hidden, rows in hunks for row in ([(hidden, 'gap')] if hidden else []) + rows]
+        runs = sum(1 for n, row in enumerate(everything) if row[4] != 'same' and (n == 0 or everything[n - 1][4] == 'same'))  # the rows marked data-c, the same in either view
         if unchanged and item['status'] == 'R':
             pass  # a pure move has no change lines; each side is a section of its own
         elif collapsed == everything:  # nothing is left out, so one table serves both states of the checkbox
-            if sum(1 for n, row in enumerate(everything) if row[4] != 'same' and (n == 0 or everything[n - 1][4] == 'same')) > 1:
-                toggle = NAV  # several changes in a short file: the buttons only
+            if runs > 1:
+                toggle = nav(runs)  # several changes in a short file: the buttons and the count, no checkbox
             body += '<div class="allview">%s</div>' % side_table(everything, parent, tree) if everything else ''
         else:
-            toggle = '<label class="toggle"><input type="checkbox" class="collapse" checked> Collapse unchanged fragments</label>' + NAV
+            toggle = '<label class="toggle"><input type="checkbox" class="collapse" checked> Collapse unchanged fragments</label>' + nav(runs)
             body += '<div class="hunkview">%s</div><div class="fullview">%s</div>' % (
                 side_table(collapsed, parent, tree) if collapsed else '', side_table(everything, parent, tree))
     return '<section id="f%s"><div class="bar">%s%s</div>%s</section>' % (number, head, toggle, body)
@@ -510,7 +569,7 @@ td .segment[data-change="replace"]{background:var(--segment-mod)}
 td.old.removed .segment,td.new.added .segment{background:transparent}
 .segment{border-radius:2px;box-decoration-break:clone}
 td.empty{background:var(--panel)}
-label.toggle{margin-left:auto;cursor:pointer;user-select:none;white-space:nowrap}.nav{display:inline-flex;gap:4px;margin-left:auto}.toggle+.nav{margin-left:0}.nav button{font:13px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 9px;cursor:pointer}.nav button:disabled{opacity:.35;cursor:default}
+label.toggle{margin-left:auto;cursor:pointer;user-select:none;white-space:nowrap}.nav{display:inline-flex;gap:4px;margin-left:auto}.toggle+.nav{margin-left:0}.nav .count{align-self:center;margin-right:6px;color:var(--mute);font-size:13px;white-space:nowrap}.nav button{font:13px system-ui,sans-serif;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 9px;cursor:pointer}.nav button:disabled{opacity:.35;cursor:default}
 section:has(.collapse:checked) .fullview,section:has(.collapse:not(:checked)) .hunkview{display:none}
 .fine{color:var(--mute);margin:2px 0 0;font-size:11px;line-height:1.25}
 body:has(section:target) .facts{display:none}
