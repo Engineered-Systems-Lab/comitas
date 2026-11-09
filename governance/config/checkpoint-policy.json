@@ -25,6 +25,9 @@
   "required_checks": [
     "continuity"
   ],
+  "executable_paths": [
+    "*.sh"
+  ],
   "commands": {
     "continuity": [
       "{python}",

@@ -131,7 +131,7 @@ To replace a broad workaround such as `:(glob)assets/[!Rp]*`, use `:(glob)assets
 
 ## The policy and the profiles
 
-`config/checkpoint-policy.json` may add commands, required checks and prohibited components. `config/checkpoint-profiles.json` may add validation profiles and, under `impact.invariants`, impact invariants (`{"groups": [...], "requires": [...]}`, new names only, every group a command of the merged policy); a project profile may list under `narrowable` the checks of its own that the groups of a row's invariants replace, never a required check or a runtime gate. A row of the project's table may name such an invariant. Both are `{"version": N, ...}` with the same `version` as the framework's file of that name; a different version is refused.
+`config/checkpoint-policy.json` may add commands, required checks, prohibited components and `executable_paths` globs (the files committed at mode 100755; `*.sh` stays, a pattern with no `/` matches the file name at any depth, `**` crosses folders; see [G061](DECISIONS.md#g061---a-policy-declares-which-committed-paths-are-executable-2026-11-09-accepted)). `config/checkpoint-profiles.json` may add validation profiles and, under `impact.invariants`, impact invariants (`{"groups": [...], "requires": [...]}`, new names only, every group a command of the merged policy); a project profile may list under `narrowable` the checks of its own that the groups of a row's invariants replace, never a required check or a runtime gate. A row of the project's table may name such an invariant. Both are `{"version": N, ...}` with the same `version` as the framework's file of that name; a different version is refused.
 
 | Key | In the file | Rule |
 | --- | --- | --- |

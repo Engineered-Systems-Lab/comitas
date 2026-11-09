@@ -27,6 +27,8 @@ FIXTURE_ROWS = [  # (path, class, profile, boundary), sorted by path
     ('new-component/*.txt', 'tooling', 'test', '-'),
     ('runtime.txt', 'runtime', 'test', 'runtime'),
     ('scripts/*.sh', 'tooling', 'test', '-'),
+    ('scripts/plain-tool', 'tooling', 'test', '-'),
+    ('scripts/run-tool', 'tooling', 'test', '-'),
     ('governance/tools/*.py', 'tooling', 'test', '-'),
 ]
 FIXTURE_ROWS.sort()  # the table parser requires ASCII ordinal order
@@ -420,6 +422,22 @@ class CheckpointTest(unittest.TestCase):
         self.prepare(['a.txt', 'scripts/new.sh', 'scripts/old.sh'])
         modes = {row.split('\t')[1]: row.split()[0] for row in self.git('ls-files', '-s').splitlines()}
         self.assertEqual((modes['scripts/new.sh'], modes['scripts/old.sh'], modes['a.txt']),
+                         ('100755', '100755', '100644'))
+
+    def test_prepare_stages_an_extensionless_path_that_a_project_glob_matches_as_executable(self):
+        (self.root / 'project-governance' / 'config').mkdir(parents=True)
+        (self.root / ac.PROJECT_POLICY).write_text(
+            json.dumps({'version': self.policy['version'], 'executable_paths': ['scripts/run-*']}), encoding='utf-8')
+        self.git('add', '--', ac.PROJECT_POLICY)
+        self.git('commit', '-m', 'Add the project policy')
+        self.parent = self.git('rev-parse', 'HEAD').strip()
+        (self.root / 'scripts').mkdir()
+        (self.root / 'scripts' / 'run-tool').write_text('#!/bin/sh\n')
+        (self.root / 'scripts' / 'plain-tool').write_text('#!/bin/sh\n')
+        (self.root / 'scripts' / 'new.sh').write_text('#!/bin/sh\n')
+        self.prepare(['scripts/new.sh', 'scripts/plain-tool', 'scripts/run-tool'])
+        modes = {row.split('\t')[1]: row.split()[0] for row in self.git('ls-files', '-s').splitlines()}
+        self.assertEqual((modes['scripts/run-tool'], modes['scripts/new.sh'], modes['scripts/plain-tool']),
                          ('100755', '100755', '100644'))
 
     def test_consent_present_receipt_commit_exact_identity(self):

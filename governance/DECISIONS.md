@@ -40,6 +40,7 @@ For the evidence audit, explanations and open rationale gaps, see [Why these dec
 | G058 | 2026-10-25 | Accepted | [Review aids never affect approval](#g058---review-aids-never-affect-approval-2026-10-25-accepted) |
 | G059 | 2026-10-26 | Accepted | [Repository-owned commit-history boundaries](#g059---repository-owned-commit-history-boundaries-2026-10-26-accepted) |
 | G060 | 2026-10-30 | Accepted | [Appends to declared lists merge without a conflict](#g060---appends-to-declared-lists-merge-without-a-conflict-2026-10-30-accepted) |
+| G061 | 2026-11-09 | Accepted | [A policy declares which committed paths are executable](#g061---a-policy-declares-which-committed-paths-are-executable-2026-11-09-accepted) |
 
 ## G018 - Delegated checkpoint authority and continuity (2026-10-01, Accepted)
 
@@ -526,3 +527,20 @@ the selection must be unchanged and every selected check must run and pass again
 overlap report omits a shared file only when both missions' changes to it are proved appends, and any other edit of it is
 still a same-file overlap. The ordering of missions stays in the worker's wait, never in the commit.
 [Append-only lists](CHECKPOINT-TOOL-CARRY.md#append-only-lists) owns the contract and the declaration format.
+
+
+## G061 - A policy declares which committed paths are executable (2026-11-09, Accepted)
+
+**Which committed files are executable (mode 100755) is declared by globs in the checkpoint policy, which a project extends and never narrows.**
+`governance/config/checkpoint-policy.json` holds `executable_paths`, a list of globs, default `["*.sh"]`. The project's
+optional `project-governance/config/checkpoint-policy.json` may add entries; the merged list is the framework's followed by
+the project's, and the framework's entries cannot be removed. A glob is relative to the repository root with `/` separators:
+`*` and `?` stay inside one path component, `**` crosses components, and a glob with no `/` matches the file name at any depth,
+so `*.sh` keeps its meaning. An entry that is not a non-empty ASCII string, or that is absolute, ends in `/`, holds an empty,
+`.` or `..` component, or contains `[`, `]`, `{`, `}` or a backslash, is refused with the file and the entry.
+
+`artifact_classification.is_script(path, patterns)` is the one rule. The checkpoint tool's `prepare` and `preview` candidate
+tree, the adoption helper and the conformance test of committed modes all read the patterns from the merged policy. A match
+states intent only: the executable bit is set for an existing regular file; a deleted path or a link keeps what the plain
+add made of it, as before. The policy version does not change. The key is approval-sensitive configuration (`high`), so a
+change to it takes the sealed Approve.

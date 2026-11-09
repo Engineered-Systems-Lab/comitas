@@ -166,6 +166,35 @@ class OverlayTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'may not set timing_record'):
             ac.load_policy(self.root)
 
+    def test_the_default_executable_paths_cover_shell_scripts_at_any_depth_and_nothing_else(self):
+        patterns = ac.executable_patterns(ac.load_policy(self.root))
+        self.assertEqual(patterns, ['*.sh'])
+        self.assertTrue(ac.is_script('run.sh', patterns) and ac.is_script('a/b/run.sh', patterns))
+        self.assertFalse(ac.is_script('bin/tool', patterns) or ac.is_script('run.sh.txt', patterns))
+
+    def test_a_project_adds_executable_paths_and_never_removes_the_default(self):
+        version = self.framework_policy['version']
+        self.write_json(ac.PROJECT_POLICY, {'version': version, 'executable_paths': ['bin/*', 'hooks/**', '*.py', 'bin/*']})
+        patterns = ac.executable_patterns(ac.load_policy(self.root))
+        self.assertEqual(patterns, ['*.sh', 'bin/*', 'hooks/**', '*.py'])
+        self.assertTrue(all(ac.is_script(path, patterns) for path in ('x.sh', 'bin/tool', 'hooks/pre/commit', 'a/main.py')))
+        self.assertFalse(any(ac.is_script(path, patterns) for path in ('bin/sub/tool', 'other/tool', 'binx/tool')))
+        self.assertFalse(ac.is_script('bin/pretool', ['bin/**/tool']) or ac.is_script('bin/tool/x', ['bin/**/tool']))
+        self.assertTrue(ac.is_script('bin/tool', ['bin/**/tool']) and ac.is_script('bin/a/b/tool', ['bin/**/tool']))
+        self.write_json(ac.PROJECT_POLICY, {'version': version, 'executable_paths': []})
+        self.assertEqual(ac.executable_patterns(ac.load_policy(self.root)), ['*.sh'])
+
+    def test_a_malformed_executable_path_entry_is_refused_with_its_file_and_entry(self):
+        version = self.framework_policy['version']
+        for bad in ('', ' bin/*', '/bin/tool', 'bin/', 'bin/../tool', 'a//b', 'bin\\tool', 'bin/[ab]', 'caf\u00e9', 'C:/bin/*', '~/bin/*', 'bin/pre**/tool'):
+            self.write_json(ac.PROJECT_POLICY, {'version': version, 'executable_paths': [bad]})
+            with self.assertRaisesRegex(ValueError, 'checkpoint-policy.json: executable_paths entry'):
+                ac.load_policy(self.root)
+        for bad in ('bin/*', ['bin/*', 3]):
+            self.write_json(ac.PROJECT_POLICY, {'version': version, 'executable_paths': bad})
+            with self.assertRaisesRegex(ValueError, 'executable_paths must be a list of strings'):
+                ac.load_policy(self.root)
+
     def test_the_merged_profiles_are_accepted_by_the_loader_and_the_framework_table_stays_strict(self):
         self.write_json(ac.PROJECT_PROFILES, {'version': self.framework_profiles['version'],
                                               'profiles': {'project-docs': PROJECT_PROFILE}})

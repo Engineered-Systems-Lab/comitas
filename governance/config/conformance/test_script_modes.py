@@ -1,4 +1,4 @@
-"""Committed shell scripts are executable in the index (mode 100755).
+"""Committed executable paths (the policy's `executable_paths`, `*.sh` by default) are executable in the index (mode 100755).
 
 The check reads the index of the repository that holds this template with `git ls-files -s`, so it needs no working-tree
 permission bits (they do not exist on Windows, where core.filemode is false). It never touches the disposable repositories
@@ -22,16 +22,18 @@ def indexed_scripts():
                              capture_output=True, check=True).stdout.decode('utf-8')
     except (OSError, subprocess.CalledProcessError):
         return None
+    patterns = ac.staged_executable_patterns(
+        lambda *args: subprocess.run(['git', '-C', str(REPO), *args], capture_output=True, check=True).stdout)
     rows = []
     for entry in filter(None, out.split('\0')):
         meta, path = entry.split('\t', 1)
-        if ac.is_script(path):
+        if ac.is_script(path, patterns) and meta.split()[0] in ('100644', '100755'):  # regular files only
             rows.append((meta.split()[0], path))
     return rows
 
 
 class ScriptModesTest(unittest.TestCase):
-    def test_every_committed_shell_script_is_100755(self):
+    def test_every_committed_executable_path_is_100755(self):
         rows = indexed_scripts()
         if rows is None:
             self.skipTest('not a Git repository')

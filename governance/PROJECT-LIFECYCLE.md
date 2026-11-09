@@ -156,7 +156,7 @@ The Comitas version is in [VERSION](VERSION), and each release is described in t
 
 1. Export the new release into a scratch folder as in [phase 1](#1-adopt), outside your repository.
 2. Replace everything under `governance/` with Comitas's copy, and leave `project-governance/` alone. The new `governance/` brings its own `NOTICE`; keep it, and keep your root `LICENSE`. Root files such as `AGENTS.md` and the root `README.md` are yours and are not replaced.
-3. Check the mode of the shell scripts: `git ls-files -s '*.sh'` must show `100755` for each. A Windows checkout has no permission bits, so a script that was re-created is staged as `100644`; set the bit with `git update-index --chmod=+x <path>` ([H19](WORKER-HAZARDS.md#h19-a-scripts-mode-lives-in-the-index-not-in-the-working-tree)).
+3. Check the mode of the shell scripts and of every other path your `executable_paths` globs match. The conformance test `test_script_modes` (it runs with the test suite in step 5) reads those globs and fails for each matching regular file that is not `100755`; `git ls-files -s <path>` shows one mode. A Windows checkout has no permission bits, so a script that was re-created is staged as `100644`; set the bit with `git update-index --chmod=+x <path>` ([H19](WORKER-HAZARDS.md#h19-a-scripts-mode-lives-in-the-index-not-in-the-working-tree)).
 4. Read the Migration notes of every changelog entry newer than your version. An entry has them only when something you must change by hand moved. Edit your files accordingly.
 5. Run the checks of [phase 2](#2-set-up), continuity and the test suite, and commit the result.
 

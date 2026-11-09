@@ -4,7 +4,8 @@ A repository made from Comitas fails two checks that Comitas itself passes, and 
 before they are committed:
 
 1. A shell script must be committed as mode 100755. On Windows `core.filemode` is false, so `git add` stages every script
-   as 100644; the helper sets the executable bit of each staged `*.sh` in the index (`git update-index --chmod=+x`).
+   as 100644; the helper sets the executable bit of each staged regular file that the policy's `executable_paths` globs
+   match (`*.sh` by default) in the index (`git update-index --chmod=+x`).
    It never edits `core.filemode` or any Git configuration.
 2. The framework cites its own commits as `template commit`; the label names the framework repository by role
    (see governance/PROJECT-GOVERNANCE.md, "The template label"). A copy has none of that history, so the project
@@ -64,9 +65,15 @@ def refuse_unless_first_commit(root):
             % head.stdout.decode('utf-8').strip()[:12])
 
 
+def staged_patterns(root):
+    """The executable-path globs of the policy as the index holds it, the same reading the checkpoint tool uses."""
+    return ac.staged_executable_patterns(lambda *args: git(root, *args).stdout)
+
+
 def executable_scripts(root, rows):
-    """Set the executable bit of every staged regular `*.sh` that lacks it; return the paths changed."""
-    wrong = [path for mode, path in rows if ac.is_script(path) and mode == REGULAR]
+    """Set the executable bit of every staged regular file that matches `executable_paths` and lacks it; return the paths changed."""
+    patterns = staged_patterns(root)
+    wrong = [path for mode, path in rows if ac.is_script(path, patterns) and mode == REGULAR]
     for start in range(0, len(wrong), 50):
         git(root, 'update-index', '--chmod=+x', '--', *wrong[start:start + 50])
     return wrong
@@ -106,7 +113,8 @@ def adopt(root):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(text.encode('utf-8'))  # bytes, so Windows never turns the LF line ends into CRLF
     git(root, 'add', '--', ac.CITATIONS)
-    scripts = [p for _, p in rows if p.endswith('.sh')]
+    patterns = staged_patterns(root)
+    scripts = [p for _, p in rows if ac.is_script(p, patterns)]
     return {'executable': changed, 'scripts': len(scripts), 'citations': ac.CITATIONS, 'label_written': text is not None}
 
 

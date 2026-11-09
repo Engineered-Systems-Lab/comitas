@@ -30,7 +30,7 @@ def modes(root):
 class AdoptionFixture(unittest.TestCase):
     """A new repository that is initialized and staged, with no commit; it has no tests of its own."""
 
-    FILES = {'README.md': 'x\n', 'run.sh': '#!/bin/sh\necho a\n', 'scripts/nested.sh': '#!/bin/sh\necho b\n',
+    FILES = {ac.POLICY: (rp.ROOT / ac.POLICY).read_text(encoding='utf-8'), 'README.md': 'x\n', 'run.sh': '#!/bin/sh\necho a\n', 'scripts/nested.sh': '#!/bin/sh\necho b\n',
              'tool.py': 'print(1)\n', 'project-governance/config/devlog.json': '{}\n'}
 
     def setUp(self):
@@ -103,6 +103,44 @@ class RepairsTest(AdoptionFixture):
         run(self.root, *IDENTITY, 'commit', '-m', 'First commit')
         self.assertEqual({mode for mode, path in adoption.indexed(self.root) if path.endswith('.sh')}, {'100755'})
         self.assertIn('template', ac.citation_labels(self.root))
+
+
+class ProjectExecutablePathsTest(AdoptionFixture):
+    def test_a_path_that_the_project_policy_matches_is_set_executable_and_counted_with_the_scripts(self):
+        policy = self.root / ac.PROJECT_POLICY
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_bytes(json.dumps({'version': json.loads((rp.ROOT / ac.POLICY).read_text(encoding='utf-8'))['version'],
+                                       'executable_paths': ['bin/*']}).encode('utf-8'))
+        (self.root / 'bin').mkdir()
+        (self.root / 'bin' / 'tool').write_bytes(b'#!/bin/sh\n')
+        run(self.root, 'add', '-A')
+        result = adoption.adopt(self.root)
+        self.assertEqual(modes(self.root)['bin/tool'], '100755')
+        self.assertEqual(modes(self.root)['tool.py'], '100644')
+        self.assertEqual(sorted(result['executable']), ['bin/tool', 'run.sh', 'scripts/nested.sh'])
+        self.assertEqual(result['scripts'], 3)
+
+    def test_an_overlay_that_is_not_staged_does_not_decide_the_modes(self):
+        policy = self.root / ac.PROJECT_POLICY
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_bytes(json.dumps({'version': 4, 'executable_paths': ['bin/*']}).encode('utf-8'))
+        (self.root / 'bin').mkdir()
+        (self.root / 'bin' / 'tool').write_bytes(b'#!/bin/sh\n')
+        run(self.root, 'add', '--', 'bin/tool')  # the overlay itself stays unstaged
+        adoption.adopt(self.root)
+        self.assertEqual(modes(self.root)['bin/tool'], '100644')
+
+    def test_a_staged_link_that_a_glob_matches_keeps_its_mode(self):
+        policy = self.root / ac.PROJECT_POLICY
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_bytes(json.dumps({'version': 4, 'executable_paths': ['bin/*']}).encode('utf-8'))
+        (self.root / 'bin').mkdir()
+        (self.root / 'bin' / 'tool').write_bytes(b'run.sh')
+        run(self.root, 'add', '--', ac.PROJECT_POLICY)
+        blob = run(self.root, 'hash-object', '-w', '--', 'bin/tool').strip()
+        run(self.root, 'update-index', '--add', '--cacheinfo', '120000,' + blob + ',bin/tool')
+        adoption.adopt(self.root)
+        self.assertEqual(modes(self.root)['bin/tool'], '120000')
 
 
 class SettingsTest(AdoptionFixture):

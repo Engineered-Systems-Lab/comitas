@@ -714,7 +714,7 @@ PROFILES_OVERLAY_KEYS = ('version', 'profiles', 'impact')
 # version, the symbol maps and every framework invariant stay the framework's.
 IMPACT_OVERLAY_KEYS = ('invariants',)
 INVARIANT_KEYS = ('groups', 'requires')
-POLICY_OVERLAY_KEYS = ('version', 'commands', 'prohibited_components', 'required_checks')
+POLICY_OVERLAY_KEYS = ('version', 'commands', 'prohibited_components', 'required_checks', 'executable_paths')
 # The reconstruction contract: the framework's part names the bootstrap prompt, the framework files a fresh agent must
 # cite and the narrative sections; the project's part adds the facts read from the progress record, its own evidence and,
 # for a runtime boundary, the fact that names the completion report.
@@ -823,6 +823,11 @@ def merge_policy(framework, project, relative=PROJECT_POLICY):
             require(isinstance(project[key], list) and all(isinstance(item, str) for item in project[key]),
                     f'{relative}: {key} must be a list of strings')
             merged[key] = list(framework[key]) + [item for item in project[key] if item not in framework[key]]
+    base = executable_globs(POLICY, framework)
+    extra = executable_globs(relative, project)
+    if EXECUTABLE_KEY in project:
+        merged[EXECUTABLE_KEY] = base + [item for position, item in enumerate(extra)
+                                         if item not in base and item not in extra[:position]]
     return merged
 
 
@@ -902,19 +907,101 @@ def load_policy(root):
     return policy_from(file_reader(root))
 
 
-def is_script(path):
-    """The one rule for which committed paths are shell scripts, and so are committed at mode 100755."""
-    return path.endswith('.sh')
+EXECUTABLE_KEY = 'executable_paths'
+DEFAULT_EXECUTABLE_PATHS = ['*.sh']
+GLOB_UNSUPPORTED = '[]{}\\'
+
+
+def executable_globs(relative, policy):
+    """The `executable_paths` entries of one policy file, checked; the default when the framework file sets none.
+
+    An entry is a glob of the repository-root-relative path with `/` separators. `*` and `?` stay inside one path
+    component and `**`, alone as a component, crosses components. An entry with no `/` matches the file name at any depth. Anything else is refused."""
+    if EXECUTABLE_KEY not in policy:
+        return list(DEFAULT_EXECUTABLE_PATHS) if relative == POLICY else []
+    entries = policy[EXECUTABLE_KEY]
+    require(isinstance(entries, list) and all(isinstance(item, str) for item in entries),
+            f'{relative}: {EXECUTABLE_KEY} must be a list of strings')
+    for item in entries:
+        where = f'{relative}: {EXECUTABLE_KEY} entry {item!r}'
+        require(item != '' and item == item.strip() and item.isascii(),
+                f'{where} must be a non-empty ASCII glob without surrounding space')
+        require(not any(char in item for char in GLOB_UNSUPPORTED),
+                f'{where} may not contain [ ] {{ }} or a backslash; use / between components')
+        require(not item.startswith('/') and not item.endswith('/'),
+                f'{where} must be relative to the repository root and name a file, not a folder')
+        require(not item.startswith('~') and ':' not in item, f'{where} must be relative to the repository root, without a drive or a ~')
+        parts = item.split('/')
+        require(not {'', '.', '..'} & set(parts), f'{where} may not hold an empty, . or .. component')
+        require(all(part == '**' or '**' not in part for part in parts), f'{where} may use ** only as a whole path component')
+    return list(entries)
+
+
+def executable_patterns(policy):
+    """The globs of the merged policy that say which committed paths are executable."""
+    return executable_globs(POLICY, policy)
+
+
+def glob_regex(pattern):
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith('**/', i):
+            out.append('(?:.*/)?')
+            i += 3
+        elif pattern.startswith('**', i):
+            out.append('.*')
+            i += 2
+        elif pattern[i] == '*':
+            out.append('[^/]*')
+            i += 1
+        elif pattern[i] == '?':
+            out.append('[^/]')
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile(''.join(out))
+
+
+def is_script(path, patterns):
+    """The one rule for which committed paths are executable, and so are committed at mode 100755: a path is executable
+    when it matches one of `patterns` (`executable_patterns` of the merged policy). A pattern without `/` is matched
+    against the file name, one with `/` against the whole path."""
+    name = path.rsplit('/', 1)[-1]
+    return any(glob_regex(pattern).fullmatch(path if '/' in pattern else name) for pattern in patterns)
+
+
+def staged_reader(git):
+    """A reader of the files as the index holds them (the staged candidate): a repository-relative path -> its text, or None."""
+    def read(relative):
+        if not git('ls-files', '-s', '--', relative).strip():
+            return None
+        return git('show', ':' + relative).decode('utf-8')
+    return read
+
+
+def staged_executable_patterns(git):
+    """The `executable_paths` globs of the policy as the index holds it, through `git` (a callable that returns a command's
+    output bytes): the one reading every caller that decides a mode uses, so the modes follow the policy that is committed."""
+    return executable_patterns(policy_from(staged_reader(git)))
 
 
 def stage_manifest(git, root, manifest):
     """Stage the manifest's whole files with `git`, a callable that runs one Git command in the repository at `root`.
 
-    `core.filemode` is false on Windows, so a plain add stages a new script at 100644; each regular script that exists
-    is staged again as executable. A script that was deleted, or is a link, keeps what the plain add made of it."""
+    `core.filemode` is false on Windows, so a plain add stages a new script at 100644. After the plain add, each path
+    that matches the `executable_paths` of the policy as staged (the one the commit will hold) and that the index holds
+    as a regular file at 100644 is staged again as executable. The choice follows the staged mode, so a deleted path, a
+    link (even one checked out as a plain file) and a submodule keep what the plain add made of them."""
     git('add', '--', *manifest)
-    scripts = [path for path in manifest if is_script(path)
-               and (Path(root) / path).is_file() and not (Path(root) / path).is_symlink()]
+    patterns = staged_executable_patterns(git)
+    matching = [path for path in manifest if is_script(path, patterns)]
+    scripts = []
+    if matching:
+        for entry in filter(None, git('ls-files', '-s', '-z', '--', *matching).decode('utf-8').split('\0')):
+            meta, path = entry.split('\t', 1)
+            if meta.split()[0] == '100644':
+                scripts.append(path)
     if scripts:
         git('add', '--chmod=+x', '--', *scripts)
 

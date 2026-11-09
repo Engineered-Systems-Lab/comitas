@@ -133,6 +133,30 @@ class EarlyApprovalTest(unittest.TestCase):
         modes = {row.split('\t')[1]: row.split()[0] for row in self.git('ls-tree', '-r', tree).splitlines()}
         self.assertEqual((modes['new.sh'], modes['a.txt']), ('100755', '100644'))
 
+    def test_the_candidate_tree_holds_an_extensionless_path_that_a_committed_project_glob_matches_as_executable(self):
+        (self.root / ac.PROJECT_POLICY).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / ac.PROJECT_POLICY).write_text(json.dumps({'version': 4, 'executable_paths': ['bin/*']}), encoding='utf-8')
+        self.git('add', '--', ac.PROJECT_POLICY)
+        self.git('commit', '-m', 'Add the project policy')
+        (self.root / 'bin').mkdir()
+        (self.root / 'bin' / 'tool').write_text('#!/bin/sh\n')
+        (self.root / 'other').write_text('x\n')
+        tree = ea.candidate_tree(self.tool, ['bin/tool', 'other'])
+        modes = {row.split('\t')[1]: row.split()[0] for row in self.git('ls-tree', '-r', tree).splitlines()}
+        self.assertEqual((modes['bin/tool'], modes['other']), ('100755', '100644'))
+
+    def test_a_policy_edit_outside_the_manifest_does_not_change_the_candidate_modes(self):
+        (self.root / ac.PROJECT_POLICY).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / ac.PROJECT_POLICY).write_text(json.dumps({'version': 4, 'executable_paths': ['bin/*']}), encoding='utf-8')
+        (self.root / 'bin').mkdir()
+        (self.root / 'bin' / 'tool').write_text('#!/bin/sh\n')
+        tree = ea.candidate_tree(self.tool, ['bin/tool'])
+        modes = {row.split('\t')[1]: row.split()[0] for row in self.git('ls-tree', '-r', tree).splitlines()}
+        self.assertEqual(modes['bin/tool'], '100644')
+        tree = ea.candidate_tree(self.tool, ['bin/tool', ac.PROJECT_POLICY])  # in the manifest, the edit is the candidate's
+        modes = {row.split('\t')[1]: row.split()[0] for row in self.git('ls-tree', '-r', tree).splitlines()}
+        self.assertEqual(modes['bin/tool'], '100755')
+
     def test_preview_is_read_only(self):
         before = (self.git('status', '--porcelain'), self.git('rev-parse', 'HEAD'), self.git('diff', '--cached'))
         self.preview()
