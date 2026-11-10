@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from governance.tests.continuity import test_continuity as fixtures
+from governance.tests.continuity.test_continuity import patch_scope as PS
 from governance.tools.continuity import artifact_classification as ac
 from governance.tools.continuity import validate_continuity as v
 
@@ -120,7 +121,7 @@ class FreezingIsAlwaysAllowedTest(FrozenCase):
             root = Path(directory) / 'repo'
             checkpoint, _, _ = fixtures.build_fixture(root, frozen_with='checkpoint')
             scope = lambda r: (fixtures.FIXTURE_FROZEN, fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)
-            with patch.object(v, 'scope', scope):
+            with PS(scope):
                 _, facts = v.verify_repository(root)
             self.assertEqual(facts['implementation_checkpoint'], checkpoint)
             self.assertIs(facts[v.FROZEN_FACT], True)
@@ -290,7 +291,7 @@ class ChangingAFreezeIsRestrictedTest(FrozenCase):
             for args in (('add', '-A'), ('commit', '-q', '-m', 'Another runtime commit')):
                 subprocess.run(['git', '-C', str(root), *args], capture_output=True, env=ENV, check=True)
             scope = lambda r: (fixtures.FIXTURE_FROZEN, fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)
-            with patch.object(v, 'scope', scope):
+            with PS(scope):
                 with self.assertRaisesRegex(ValueError, 'Stale implementation checkpoint'):
                     v.verify_repository(root)
 
@@ -420,7 +421,7 @@ class FrozenRowsNeedNoFactTest(unittest.TestCase):
                                  and k in ('service', 'manual_acceptance', 'next_authorized_action')}
             contract.pop('completion_evidence_fact')
         (root / v.CONTRACT).write_text(json.dumps(contract), encoding='utf-8')
-        patcher = patch.object(v, 'scope', self.SCOPE)
+        patcher = PS(self.SCOPE)
         patcher.start()
         self.addCleanup(patcher.stop)
         return root
@@ -493,7 +494,7 @@ class FrozenRowsNeedNoFactTest(unittest.TestCase):
                 root = self.build(runtime)
                 (root / ac.FROZEN_MANIFEST).unlink()
                 (root / 'contracts' / 'c.txt').write_bytes(b'anything\n')
-                with patch.object(v, 'scope', return_value=([], fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)):
+                with PS(return_value=([], fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)):
                     self.assertFalse(v.frozen_in_force(root))
                     v.verify_repository(root)
 
@@ -505,7 +506,7 @@ class FrozenRowsNeedNoFactTest(unittest.TestCase):
         root = self.build(runtime=False)
         _, facts = v.verify_repository(root)
         self.assertEqual(v.pass_line(root, facts), 'PASS: recovery documents, links, logs and frozen invariants.')
-        with patch.object(v, 'scope', return_value=([], fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)):
+        with PS(return_value=([], fixtures.FIXTURE_RUNTIME, fixtures.FIXTURE_REQUIRED)):
             (root / ac.FROZEN_MANIFEST).unlink()
             self.assertEqual(v.pass_line(root, facts), 'PASS: recovery documents, links and logs.')
 

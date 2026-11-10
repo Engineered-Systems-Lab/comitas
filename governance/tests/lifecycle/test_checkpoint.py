@@ -1596,6 +1596,101 @@ class RequiredContinuityCheckpointTest(unittest.TestCase):
             self.tool.preparation_gate(['a.txt', *manifest])  # What adopts without a row is no exemption with one.
         self.tool.preparation_gate([rp.PROGRESS, 'devlog/20261016-entry.md'])
 
+    # A runtime row can be a filter (`rt/*.py`, any depth below its folder); a row nested inside it can clear the boundary.
+    FILTER_ROWS = [('rt/*.py', 'runtime', 'test', 'runtime'), ('rt/inner/*.py', 'tooling', 'test', '-')]
+
+    def commit_file(self, name, text='x\n'):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        self.git('add', '--', name)
+        self.git('commit', '-m', 'Change ' + name)
+        return self.tool.head()
+
+    def filter_fixture(self):
+        """The table gains a runtime filter row with a non-runtime row nested in it; a runtime commit touches only paths
+        the filter matches and is newer than the last commit of the file row; the progress record names it."""
+        self.checkpoint_gate.stop()
+        (self.root / ac.TABLE).write_text(fixture_table(sorted(FIXTURE_ROWS + self.FILTER_ROWS)), encoding='utf-8')
+        self.git('add', '--', ac.TABLE)
+        self.git('commit', '-m', 'Add the filter rows')
+        (self.root / 'docs').mkdir()
+        runtime = self.commit_file('rt/deep/er/a.py')  # matched by the filter alone, below a folder
+        self.assertNotEqual(runtime, self.git('log', '-1', '--format=%H', '--', 'runtime.txt').strip())
+        (self.root / rp.PROGRESS).write_text('| implementation_checkpoint | ' + runtime + ' |\n')
+        self.git('add', '--', rp.PROGRESS)
+        self.git('commit', '-m', 'Record the checkpoint')
+        return runtime
+
+    def test_a_runtime_commit_that_only_filter_rows_match_is_the_checkpoint(self):
+        from governance.tools.continuity import validate_continuity as continuity
+        runtime = self.filter_fixture()
+        self.assertEqual(continuity.latest_runtime_commit(self.root), runtime)
+        self.tool.preparation_gate(['a.txt'])  # The checkpoint is current: a change that is not a record may be prepared.
+
+    def test_an_outstanding_filter_only_runtime_commit_still_restricts_prepares_to_records(self):
+        from governance.tools.continuity import validate_continuity as continuity
+        runtime = self.filter_fixture()
+        later = self.commit_file('rt/b.py')
+        self.assertEqual(continuity.latest_runtime_commit(self.root), later)
+        self.assertNotEqual(later, runtime)
+        with self.assertRaisesRegex(ValueError, 'only continuity records'):
+            self.tool.preparation_gate(['a.txt'])
+        self.tool.preparation_gate([rp.PROGRESS])
+
+    def test_a_row_nested_in_a_runtime_filter_is_not_runtime_for_the_gate_or_the_validator(self):
+        from governance.tools.continuity import validate_continuity as continuity
+        runtime = self.filter_fixture()
+        self.commit_file('rt/inner/tool.py')
+        self.assertEqual(continuity.latest_runtime_commit(self.root), runtime)
+        self.tool.preparation_gate(['a.txt'])
+
+    def test_adoption_refuses_a_manifest_that_touches_a_filter_matched_runtime_path(self):
+        runtime = self.filter_fixture()
+        settings = self.root / ac.DEVLOG
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{"enabled": false}\n')
+        (self.root / rp.PROGRESS).write_text('# Progress\n\nNo checkpoint row yet.\n')
+        self.git('add', '--', ac.DEVLOG, rp.PROGRESS)
+        self.git('commit', '-m', 'Progress record without the row')
+        (self.root / ac.PROJECT_CONTRACT).write_text(CONTRACT_WITH_FACT)
+        (self.root / rp.PROGRESS).write_text('| implementation_checkpoint | ' + runtime + ' |\n')
+        with self.assertRaisesRegex(ValueError, 'Adopting implementation_checkpoint: .*must not touch runtime paths'):
+            self.tool.preparation_gate([rp.PROGRESS, ac.PROJECT_CONTRACT, 'rt/deep/er/a.py'])
+        self.tool.preparation_gate([rp.PROGRESS, ac.PROJECT_CONTRACT, 'rt/inner/new.py'])  # a nested row: not runtime
+
+    def test_a_working_table_edit_cannot_hide_an_outstanding_runtime_commit(self):
+        self.filter_fixture()
+        self.commit_file('rt/b.py')
+        rows = sorted(FIXTURE_ROWS + self.FILTER_ROWS + [('rt/b.py', 'tooling', 'test', '-')])
+        (self.root / ac.TABLE).write_text(fixture_table(rows), encoding='utf-8')  # uncommitted: the latest edit looks non-runtime
+        with self.assertRaisesRegex(ValueError, 'only continuity records'):
+            self.tool.preparation_gate(['a.txt'])
+
+    def test_adoption_judges_the_manifest_by_the_table_at_head_and_the_candidates(self):
+        runtime = self.filter_fixture()
+        settings = self.root / ac.DEVLOG
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{"enabled": false}\n')
+        (self.root / rp.PROGRESS).write_text('# Progress\n\nNo checkpoint row yet.\n')
+        self.git('add', '--', ac.DEVLOG, rp.PROGRESS)
+        self.git('commit', '-m', 'Progress record without the row')
+        (self.root / ac.PROJECT_CONTRACT).write_text(CONTRACT_WITH_FACT)
+        (self.root / rp.PROGRESS).write_text('| implementation_checkpoint | ' + runtime + ' |\n')
+        rows = sorted(FIXTURE_ROWS + self.FILTER_ROWS + [('rt/inner/new.py', 'runtime', 'test', 'runtime')])
+        (self.root / ac.TABLE).write_text(fixture_table(rows), encoding='utf-8')  # the candidate makes the path runtime
+        with self.assertRaisesRegex(ValueError, 'Adopting implementation_checkpoint: .*must not touch runtime paths'):
+            self.tool.preparation_gate([rp.PROGRESS, ac.PROJECT_CONTRACT, 'rt/inner/new.py'])
+
+    def test_a_candidate_that_retires_a_profile_does_not_stop_the_gate(self):
+        self.filter_fixture()
+        profiles = json.loads(json.dumps(self.profiles))
+        profiles['profiles']['test2'] = profiles['profiles'].pop('test')
+        self.write_json(c.PROFILES, profiles)  # uncommitted: the profile the committed rows name is gone here
+        rows = [(path, klass, 'test2', boundary) for path, klass, _, boundary in FIXTURE_ROWS + self.FILTER_ROWS]
+        (self.root / ac.TABLE).write_text(fixture_table(sorted(rows)), encoding='utf-8')
+        self.tool.preparation_gate(['a.txt'])
+
     def test_missing_committed_progress_is_not_replaced_by_working_repair(self):
         self.checkpoint_gate.stop()
         (self.root / 'docs').mkdir()

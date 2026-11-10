@@ -69,12 +69,19 @@ class Lifecycle:
                     'Main is integration territory while other worktrees exist')
         # Committed continuity owns the obligation even if local scratch is lost.
         from governance.tools.continuity import validate_continuity as continuity
-        runtime_paths = continuity.scope(self.root)[1]
+        # The obligation is judged by the table as committed at HEAD, never by the working copy, so an edit of the
+        # table cannot reclassify the committed history and hide an outstanding runtime commit.
+        # The profiles it names are read at HEAD too, so a candidate that retires a profile and moves its rows is no obstacle.
+        try:
+            table = self.head_table(artifact_classification.profiles_from(self.head_text))
+        except (ValueError, UnicodeError):
+            table = None
+        require(table is not None, 'The artifact classification table at HEAD cannot be read')
         # A project with no runtime boundary has no runtime checkpoint to keep current. The change that adopts the
         # recovery chain adds the first checkpoint row, so it cannot find one at HEAD.
-        if runtime_paths and not self.adopts_checkpoint(manifest, runtime_paths):
+        if table.boundary_paths('runtime') and not self.adopts_checkpoint(manifest, table, continuity.classification(self.root)):
             checkpoint = self.committed_checkpoint()
-            latest = self.git('log', '-1', '--format=%H', 'HEAD', '--', *runtime_paths).decode().strip()
+            latest = continuity.latest_runtime_commit(self.root, 'HEAD', table)
             require(latest, 'Runtime history unavailable for committed continuity')
             if checkpoint != latest:
                 require(all(self.continuity_record(n) for n in manifest),
@@ -87,11 +94,11 @@ class Lifecycle:
             require(all(self.continuity_record(n) for n in manifest),
                     'Pending runtime permits only continuity records')
 
-    def adopts_checkpoint(self, manifest, runtime_paths):
+    def adopts_checkpoint(self, manifest, table, candidate=None):
         """Whether the manifest is the change that adds the first implementation_checkpoint row.
 
         Only when HEAD's progress record holds no such row and the manifest holds the progress record. The change then
-        MUST touch no runtime path, so that the latest runtime commit at HEAD is the checkpoint; add exactly one row
+        MUST touch no runtime path (by the table at HEAD or the candidate's), so that the latest runtime commit at HEAD is the checkpoint; add exactly one row
         naming it; add the fact to the project's part of the reconstruction contract; and, when the project keeps a
         devlog, add the entry that carries the pointer. Anything short of that is refused here, not left to the
         committed-row rule. A HEAD that holds a row, malformed or not, is never adopting."""
@@ -103,9 +110,11 @@ class Lifecycle:
                                                       for line in committed.splitlines()):
             return False
         reason = 'Adopting implementation_checkpoint: '
-        require(not [n for n in manifest if any(n == p or n.startswith(p + '/') for p in runtime_paths)],
+        from governance.tools.continuity import validate_continuity as continuity
+        # A path counts as runtime by the table at HEAD or by the candidate's own, like the rest of the selection.
+        require(not [n for n in manifest if any(continuity.is_runtime_path(t, n) for t in (table, candidate) if t)],
                 reason + 'the change must not touch runtime paths')
-        latest = self.git('log', '-1', '--format=%H', 'HEAD', '--', *runtime_paths).decode().strip()
+        latest = continuity.latest_runtime_commit(self.root, 'HEAD', table)
         require(latest, 'Runtime history unavailable for committed continuity')
         rows = [line for line in (self.root / 'docs/PROGRESS.md').read_text(encoding='utf-8').splitlines()
                 if line.startswith('| implementation_checkpoint |')]

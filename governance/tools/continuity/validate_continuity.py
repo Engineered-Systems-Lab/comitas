@@ -3,6 +3,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -49,6 +50,72 @@ def scope(root):
     table = classification(root)
     require(table is not None, 'The repository has no artifact classification table')
     return (table.boundary_paths('frozen'), table.boundary_paths('runtime'), table.reachable_paths())
+
+
+def runtime_table(root):
+    """The table the runtime boundary is read from: the root's classification table."""
+    table = classification(root)
+    require(table is not None, 'The repository has no artifact classification table')
+    return table
+
+
+def is_runtime_path(table, path):
+    """Whether the table resolves the path with the runtime boundary: the most specific row wins, so a filter row
+    (`dir/*.py`) covers it at any depth and a row nested inside a runtime folder or filter can take it out."""
+    return table.in_boundary(path, 'runtime')
+
+
+def latest_runtime_commit(root, revision='HEAD', table=None):
+    """The latest commit reachable from the revision that touches a runtime path, or '' when there is none.
+
+    This is the one definition of the runtime checkpoint, shared by the continuity validator, the preparation gate and
+    the adoption check, so they cannot disagree. Git cannot express the table's resolution in a pathspec (a nested row
+    may clear the boundary), so Git only narrows: the log is limited to the folders and files of the runtime rows,
+    written as literal pathspecs and never as globs, and each commit it lists is judged path by path with
+    `is_runtime_path`. The log is read as a stream and stops at the first commit with a runtime path, so the cost
+    follows the distance to the latest runtime commit and not the size of the history. The whole history is walked (`--full-history`),
+    because Git's default simplification follows one parent of a merge that matches it on the selected paths and can
+    skip a newer runtime commit on the other side. Renames count as a delete and
+    an add, so both sides are judged; a merge counts through the files that differ from all its parents.
+    """
+    root = Path(root)
+    if table is None:
+        table = runtime_table(root)
+    prefixes = table.boundary_prefixes('runtime')
+    if not prefixes:
+        return ''
+    process = subprocess.Popen(['git', '-C', str(root), 'log', '--format=%x01%H', '--name-only', '-z', '--no-renames',
+                                '--cc', '--full-history', revision, '--', *[':(literal)' + p for p in prefixes]],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # The stream is: 0x01 and the id, NUL, a line feed and the first path, NUL, each next path and NUL, the next commit.
+    found, commit, names, pending = '', None, [], b''
+    try:
+        while True:
+            chunk = os.read(process.stdout.fileno(), 65536)
+            pending += chunk
+            tokens = pending.split(b'\0')
+            pending = b'' if not chunk else tokens.pop()
+            if not chunk:
+                tokens.append(b'\x01')  # a sentinel that ends the last commit
+            for token in tokens:
+                if token.startswith(b'\x01'):  # the next commit begins: judge the one that ended
+                    if commit and any(is_runtime_path(table, name) for name in names):
+                        found = commit
+                        break
+                    commit, names = token[1:].decode('ascii'), []
+                elif token.strip(b'\n'):
+                    names.append(token.lstrip(b'\n').decode('utf-8', 'surrogateescape'))
+            if found or not chunk:
+                break
+    finally:
+        if found and process.poll() is None:
+            process.kill()
+        stderr = process.stderr.read().decode('utf-8', 'replace')
+        process.stdout.close()
+        process.stderr.close()
+        process.wait()
+    require(found or process.returncode == 0, 'Git evidence unavailable: log ' + revision + ': ' + stderr.strip())
+    return found
 
 
 def git(root, *args):
@@ -368,7 +435,7 @@ def verify_repository(root=ROOT):
     checkpoint = facts['implementation_checkpoint']
     require(re.fullmatch(r'[a-f0-9]{40}', checkpoint), 'Checkpoint must be a full Git SHA')
     git(root, 'merge-base', '--is-ancestor', checkpoint, 'HEAD')
-    latest = git(root, 'log', '-1', '--format=%H', 'HEAD', '--', *scope(root)[1]).decode().strip()
+    latest = latest_runtime_commit(root)
     require(checkpoint == latest, 'Stale implementation checkpoint: runtime history has advanced')
     settings = artifact_classification.devlog_settings(root)
     if settings['enabled']:  # A project that keeps no devlog needs no entry beside the pointer

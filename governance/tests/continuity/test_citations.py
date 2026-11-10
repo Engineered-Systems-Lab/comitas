@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from governance.tests.continuity.test_continuity import FIXTURE_FROZEN, FIXTURE_REQUIRED, FIXTURE_RUNTIME, build_fixture
+from governance.tests.continuity.test_continuity import patch_scope as PS
 from governance.tools.continuity import artifact_classification as ac
 from governance.tools.continuity import validate_continuity as v
 
@@ -74,7 +75,7 @@ class DevlogEntryTest(unittest.TestCase):
 
         def scope(where):
             return (FIXTURE_FROZEN, FIXTURE_RUNTIME, FIXTURE_REQUIRED)
-        patcher = patch.object(v, 'scope', scope)
+        patcher = PS(scope)
         patcher.start()
         self.addCleanup(patcher.stop)
 

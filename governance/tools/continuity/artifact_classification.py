@@ -615,6 +615,15 @@ class Table:
         return [row.path.rstrip('/') for row in self.rows
                 if token in self._resolve_row(row, self._enclosing(row)).boundary]
 
+    def boundary_prefixes(self, token):
+        """The literal Git pathspecs that cover every row whose resolved boundary carries the token: a file row as it is,
+        a directory row and a filter row (`a/b/*.ext`) as the folder they live in. The set is only a superset of the
+        paths the boundary holds, because a filter keeps its suffix out and a nested row may clear the token; the exact
+        answer for one path is `in_boundary`, which is `resolve`. Sorted, without repeats and without a covered entry."""
+        found = {row.path if row.kind == 'file' else row.prefix for row in self.rows
+                 if token in self._resolve_row(row, self._enclosing(row)).boundary}
+        return sorted(p for p in found if not any(q != p and q.endswith('/') and p.startswith(q) for q in found))
+
     def classify(self, path):
         """(class, subclasses) of a live or historical path; None when no row knows it."""
         resolved = self.resolve(path)

@@ -183,6 +183,40 @@ def build_fixture(root, folder='devlog', pattern=None, keep_log=True, frozen_wit
     return checkpoint, base, entry
 
 
+class patch_scope:
+    """Patch `v.scope` as `patch.object(v, 'scope', ...)` does, and give `v.runtime_table` a table with the same runtime
+    and frozen rows, because the runtime checkpoint is now found through the table and these fixtures have none."""
+    VOCAB = {'profiles': {'p'}, 'invariants': set(), 'subclasses': set()}
+
+    def __init__(self, new=None, return_value=None):
+        scope = new if new is not None else (lambda root: return_value)
+        self.patchers = [patch.object(v, 'scope', scope), patch.object(v, 'runtime_table', lambda root: self.table(scope(root)))]
+
+    def table(self, scope):
+        frozen, runtime, _ = scope
+        rows = {'README.md': ('record', '-')}
+        rows.update({p.rstrip('/') + '/': ('governance', 'frozen') for p in frozen})
+        rows.update({p.rstrip('/') + '/': ('runtime', 'runtime') for p in runtime})
+        lines = [ac.HEADER, ac.SEPARATOR] + ['| `%s` | %s | p | %s | - | - | - | - | - |' % (path, *rows[path])
+                                            for path in sorted(rows)]
+        return ac.Table.parse('\n'.join(lines) + '\n', self.VOCAB)
+
+    def start(self):
+        for patcher in self.patchers:
+            patcher.start()
+
+    def stop(self):
+        for patcher in reversed(self.patchers):
+            patcher.stop()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
+
+
 class ContinuityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -195,7 +229,7 @@ class ContinuityTest(unittest.TestCase):
             if Path(root).resolve() == cls.root.resolve():
                 return FIXTURE_FROZEN, FIXTURE_RUNTIME, FIXTURE_REQUIRED
             return live_scope(root)
-        patcher = patch.object(v, 'scope', scope)
+        patcher = patch_scope(scope)
         patcher.start()
         cls.addClassCleanup(patcher.stop)
         cls.checkpoint, cls.base, cls.entry = build_fixture(cls.root)
@@ -364,14 +398,14 @@ class NoRuntimeBoundaryTest(unittest.TestCase):
             contract.pop('completion_evidence_fact')
         with tempfile.TemporaryDirectory(prefix='continuity-no-runtime-') as directory:
             root = self.fixture_with_contract(directory, change)
-            with patch.object(v, 'scope', return_value=([], [], FIXTURE_REQUIRED)):
+            with patch_scope(return_value=([], [], FIXTURE_REQUIRED)):
                 _, facts = v.verify_repository(root)
             self.assertEqual(sorted(facts), ['manual_acceptance', 'next_authorized_action', 'service'])
 
     def test_a_frozen_fact_needs_a_checkpoint_fact(self):
         with tempfile.TemporaryDirectory(prefix='continuity-no-runtime-') as directory:
             root = self.fixture_with_contract(directory, lambda contract: contract['facts'].pop('implementation_checkpoint'))
-            with patch.object(v, 'scope', return_value=([], [], FIXTURE_REQUIRED)):
+            with patch_scope(return_value=([], [], FIXTURE_REQUIRED)):
                 with self.assertRaisesRegex(ValueError, 'need an implementation_checkpoint'):
                     v.verify_repository(root)
 
@@ -397,7 +431,7 @@ class DevlogConventionsTest(unittest.TestCase):
         path.write_text(text, encoding='utf-8')
 
     def validate(self):
-        with patch.object(v, 'scope', return_value=([], [], [])), \
+        with patch_scope(return_value=([], [], [])), \
                 patch.object(v, 'git', FakeGit().rooted):
             return v.validate_docs(self.root)
 
@@ -485,7 +519,7 @@ class NonDefaultDevlogTest(unittest.TestCase):
         cls.addClassCleanup(cls.fixture.cleanup)
         cls.root = Path(cls.fixture.name) / 'repo'
         cls.checkpoint, cls.base, cls.entry = build_fixture(cls.root, cls.FOLDER, cls.PATTERN)
-        patcher = patch.object(v, 'scope', lambda root: (FIXTURE_FROZEN, FIXTURE_RUNTIME, required_documents(cls.FOLDER)))
+        patcher = patch_scope(lambda root: (FIXTURE_FROZEN, FIXTURE_RUNTIME, required_documents(cls.FOLDER)))
         patcher.start()
         cls.addClassCleanup(patcher.stop)
 
@@ -544,7 +578,7 @@ class DevlogOptOutTest(unittest.TestCase):
         root = Path(directory.name) / 'repo'
         built = build_fixture(root, **options)
         required = self.REQUIRED if not options.get('keep_log', True) else required_documents()
-        patcher = patch.object(v, 'scope', lambda r: (FIXTURE_FROZEN, FIXTURE_RUNTIME, required))
+        patcher = patch_scope(lambda r: (FIXTURE_FROZEN, FIXTURE_RUNTIME, required))
         patcher.start()
         self.addCleanup(patcher.stop)
         return (root, *built)
@@ -674,6 +708,116 @@ class IsolatedOptOutTest(unittest.TestCase):
         result = self.isolated(root)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('exactly one indexed log', result.stderr)
+
+
+class LatestRuntimeCommitTest(unittest.TestCase):
+    """The one definition of the latest runtime commit follows the table's resolution, not Git's reading of its rows."""
+    VOCAB = {'profiles': {'p'}, 'invariants': set(), 'subclasses': set()}
+    ROWS = [  # path, class, boundary: a file, a folder, a filter, a row nested in the folder and one nested in the filter
+        ('app.py', 'runtime', 'runtime'), ('docs/', 'record', '-'), ('notes.md', 'record', '-'),
+        ('svc/', 'runtime', 'runtime'), ('svc/docs/', 'record', '-'),
+        ('fed/*.py', 'runtime', 'runtime'), ('fed/tests/*.py', 'tooling', '-')]
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='latest-runtime-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for command in (['init', '-b', 'main'], ['config', 'user.name', 'T'], ['config', 'user.email', 't@example.invalid']):
+            self.git(*command)
+        lines = [ac.HEADER, ac.SEPARATOR] + ['| `%s` | %s | p | %s | - | - | - | - | - |' % row for row in sorted(self.ROWS)]
+        self.table = ac.Table.parse('\n'.join(lines) + '\n', self.VOCAB)
+
+    def git(self, *args):
+        return subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True).stdout.decode().strip()
+
+    def commit(self, *names, remove=()):
+        for name in names:
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text(name + ' ' + self.git('rev-list', '--all', '--count') + '\n')
+        for name in remove:
+            self.git('rm', '-q', '--', name)
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'Change ' + ' '.join(names or remove))
+        return self.git('rev-parse', 'HEAD')
+
+    def latest(self, revision='HEAD'):
+        return v.latest_runtime_commit(self.root, revision, self.table)
+
+    def test_prefixes_are_literal_folders_and_files_of_the_runtime_rows_only(self):
+        self.assertEqual(self.table.boundary_prefixes('runtime'), ['app.py', 'fed/', 'svc/'])
+        self.assertEqual(self.table.boundary_paths('runtime'), ['app.py', 'fed/*.py', 'svc'])
+
+    def test_a_filter_row_matches_at_any_depth_and_a_file_row_exactly(self):
+        self.commit('notes.md')
+        self.assertEqual(self.latest(), '')  # no runtime commit yet
+        first = self.commit('app.py')
+        self.assertEqual(self.latest(), first)
+        deep = self.commit('fed/a/b/c.py')
+        self.assertEqual(self.latest(), deep)
+        self.commit('fed/readme.txt', 'notes.md')  # a suffix the filter does not take, below the filter's folder
+        self.assertEqual(self.latest(), deep)
+
+    def test_the_old_literal_pathspec_log_misses_what_the_table_resolves(self):
+        first = self.commit('app.py')
+        deep = self.commit('fed/x/y.py')
+        self.assertEqual(self.git('--literal-pathspecs', 'log', '-1', '--format=%H', 'HEAD', '--', 'app.py', 'fed/*.py', 'svc'),
+                         first)
+        self.assertEqual(self.latest(), deep)
+
+    def test_a_row_nested_inside_a_runtime_folder_or_filter_takes_its_paths_out(self):
+        runtime = self.commit('svc/main.py', 'fed/a.py')
+        self.commit('svc/docs/guide.md', 'fed/tests/t.py', 'fed/tests/deeper/u.py')
+        self.assertEqual(self.latest(), runtime)
+        both = self.commit('svc/docs/guide.md', 'svc/other.go')  # one runtime path is enough
+        self.assertEqual(self.latest(), both)
+
+    def test_a_deleted_or_renamed_away_runtime_path_counts(self):
+        self.commit('fed/a.py', 'svc/docs/x.md')
+        self.git('mv', 'fed/a.py', 'svc/docs/a.md')
+        self.git('commit', '-qm', 'Move a runtime file out of the runtime space')
+        moved = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.latest(), moved)
+        removed = self.commit(remove=['svc/docs/x.md'])  # a deletion of a non-runtime path is not runtime
+        self.assertEqual(self.latest(), moved)
+        self.assertNotEqual(removed, moved)
+
+    def test_a_merge_does_not_hide_a_newer_runtime_commit_of_the_other_side(self):
+        """Git's default history simplification follows one parent of a merge that matches it on the selected paths."""
+        self.commit('fed/base.py')
+        self.git('checkout', '-q', '-b', 'side')
+        side = self.commit('fed/side.py')
+        self.git('checkout', '-q', 'main')
+        self.commit('docs/main.md')
+        self.git('merge', '-q', '-s', 'ours', '--no-edit', 'side')
+        self.assertEqual(self.latest(), side)
+
+    def test_the_revision_is_honoured_and_a_bad_one_refuses(self):
+        first = self.commit('fed/a.py')
+        self.commit('svc/b.go')
+        self.assertEqual(self.latest(first), first)
+        with self.assertRaisesRegex(ValueError, 'Git evidence unavailable'):
+            self.latest('no-such-revision')
+
+    def test_a_long_history_is_read_only_as_far_as_the_answer(self):
+        self.commit('fed/a.py')
+        runtime = self.commit('fed/b.py')
+        for number in range(30):
+            self.commit('docs/n%d.md' % number)
+        self.assertEqual(self.latest(), runtime)
+        with patch.object(v.subprocess, 'Popen', wraps=v.subprocess.Popen) as popen:
+            self.assertEqual(self.latest(), runtime)
+        self.assertEqual(popen.call_count, 1)  # one log, filtered to the runtime rows; documents never enter the stream
+
+    def test_the_validator_and_the_table_agree_on_the_checkpoint(self):
+        """verify_repository compares the progress checkpoint with this same function, so a filter-only runtime commit is
+        the current checkpoint and an older file-row commit is stale."""
+        file_commit = self.commit('app.py')
+        filter_commit = self.commit('fed/z/a.py')
+        self.assertNotEqual(file_commit, filter_commit)
+        self.assertEqual(self.latest(), filter_commit)
+        self.assertTrue(v.is_runtime_path(self.table, 'fed/z/a.py'))
+        self.assertFalse(v.is_runtime_path(self.table, 'fed/tests/a.py'))
+        self.assertFalse(v.is_runtime_path(self.table, 'svc/docs/a.py'))
 
 
 if __name__ == '__main__':
