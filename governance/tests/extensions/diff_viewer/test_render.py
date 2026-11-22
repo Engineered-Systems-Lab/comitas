@@ -1132,5 +1132,410 @@ class IntralinePageTest(Fixture):
             self.assertNotIn('THE WORKING TREE CHANGED LATER', text)
 
 
+class RoundsFixture(unittest.TestCase):
+    """A mission `m1` with its review folder and three previews, the second reviewed; the third is the candidate.
+
+    parent: a b c d e f g h i j, and g.txt
+    R1: b -> b1, d removed, ZZ added after h, g.txt edited
+    R2: b1 -> b2 (b changes in two rounds), ZZ removed (added in R1, removed in R2: in neither side), f -> f2, the findings file is written
+    R3: j -> j3, k added at the end, long.txt (40 lines) edited at its middle
+    r.txt: edited in R1 and restored in R2, so the candidate and the parent hold the same r.txt"""
+    KEY = b'k' * 32
+    LINES = list('abcdefghij')
+    G_BASE = ['g%d' % n for n in range(10)]
+    G_EDITED = ['g0', 'g1 edited'] + ['g%d' % n for n in range(2, 10)]
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        base = Path(self.temp.name).resolve()
+        self.root = base / 'm1'
+        self.review = base / '_review' / 'm1'
+        self.root.mkdir()
+        self.review.mkdir(parents=True)
+        git(self.root, 'init', '-q', '-b', 'main')
+        self.put(self.LINES, 'g.txt', self.G_BASE)
+        self.long(False)
+        self.r_text = 'r0\nr1\nr2\n'
+        (self.root / 'r.txt').write_text(self.r_text, encoding='utf-8')
+        git(self.root, 'add', '-A')
+        git(self.root, 'commit', '-q', '-m', 'base')
+        self.parent = git(self.root, 'rev-parse', 'HEAD')
+        store = self.root / '.git' / 'governance'
+        store.mkdir()
+        (store / 'receipt.key').write_bytes(self.KEY)
+        r1 = ['a', 'b1', 'c', 'e', 'f', 'g', 'h', 'ZZ', 'i', 'j']
+        r2 = ['a', 'b2', 'c', 'e', 'f2', 'g', 'h', 'i', 'j']
+        r3 = ['a', 'b2', 'c', 'e', 'f2', 'g', 'h', 'i', 'j3', 'k']
+        (self.root / 'r.txt').write_text('r0\nr1 reverted later\nr2\n', encoding='utf-8')
+        t1 = self.tree_of(r1, self.G_EDITED)
+        (self.root / 'r.txt').write_text(self.r_text, encoding='utf-8')
+        self.trees = [t1, self.tree_of(r2, self.G_EDITED), self.tree_of(r3, self.G_EDITED, True)]
+        self.ids = [('%d' % n) * 32 for n in (1, 2, 3)]
+        self.entries = [self.entry(n, self.ids[n - 1], self.trees[n - 1]) for n in (1, 2, 3)]
+        for entry in self.entries:
+            self.save(entry)
+        (self.review / ('review-%s.md' % self.ids[1])).write_text('findings\n', encoding='utf-8')
+
+    def put(self, lines, other, other_lines):
+        (self.root / 'f.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        (self.root / other).write_text('\n'.join(other_lines) + '\n', encoding='utf-8')
+
+    def long(self, edited):
+        (self.root / 'long.txt').write_text(''.join('L%d%s\n' % (n, ' edited' if edited and n == 20 else '') for n in range(1, 41)), encoding='utf-8')
+
+    def tree_of(self, lines, other_lines, edited=False):
+        self.put(lines, 'g.txt', other_lines)
+        self.long(edited)
+        git(self.root, 'add', '-A')
+        return git(self.root, 'write-tree')
+
+    def entry(self, seq, preview_id, tree):
+        return {'version': 1, 'kind': render.HISTORY_KIND, 'seq': seq, 'owner': 'm1', 'branch': 'refs/heads/tx/m1', 'preview_id': preview_id,
+                'parent': self.parent, 'tree': tree, 'eligible': True, 'job_handle': None, 'recorded_at': '2026-11-22T10:0%d:00Z' % seq}
+
+    def sign(self, body):
+        return json.dumps({'body': body, 'mac': hmac.new(self.KEY, render.canonical(body), hashlib.sha256).hexdigest()})
+
+    def save(self, entry):
+        (self.review / ('history-%s.json' % entry['preview_id'])).write_text(self.sign(entry), encoding='utf-8')
+
+    def record(self, n=3):
+        return {'id': self.ids[n - 1], 'branch': 'refs/heads/tx/m1', 'parent': self.parent, 'tree': self.trees[n - 1], 'manifest': ['f.txt', 'g.txt']}
+
+    def page(self, n=3):
+        rounds, reason = render.load_rounds(self.root, render.PREVIEW, self.record(n))
+        return render.build(self.root, render.PREVIEW, self.record(n), 'demo_job', [], rounds, reason)
+
+    def item(self, path):
+        return [i for i in render.changes(self.root, self.parent, self.trees[2]) if i['path'] == path][0]
+
+    def plan(self, rounds=None):
+        rounds = rounds or render.load_rounds(self.root, render.PREVIEW, self.record())[0]
+        return render.history_plan(self.root, self.parent, self.trees[2], render.changes(self.root, self.parent, self.trees[2]), rounds)
+
+
+class RoundsTest(RoundsFixture):
+    def test_the_rounds_are_the_previews_up_to_the_candidate_and_only_one_is_reviewed(self):
+        rounds, reason = render.load_rounds(self.root, render.PREVIEW, self.record())
+        self.assertIsNone(reason)
+        self.assertEqual([(r['number'], r['id'], r['reviewed'], r['available'], r['rank']) for r in rounds],
+                         [(1, self.ids[0], False, True, 2), (2, self.ids[1], True, True, 1), (3, self.ids[2], False, True, 0)])
+        earlier, _ = render.load_rounds(self.root, render.PREVIEW, self.record(2))
+        self.assertEqual([r['number'] for r in earlier], [1, 2])  # the page of an older preview stops at it
+        sealed, _ = render.load_rounds(self.root, render.SEALED, dict(self.record(), id='s' * 32))
+        self.assertEqual([r['number'] for r in sealed], [1, 2, 3])
+        moved, _ = render.load_rounds(self.root, render.SEALED, dict(self.record(), id='s' * 32, tree=self.parent))  # no preview has this tree: one more round of its own
+        self.assertEqual([(r['number'], r['id']) for r in moved][-1], (4, None))
+
+    def test_without_a_history_the_page_says_so_and_is_the_plain_comparison_with_the_parent(self):
+        for path in self.review.glob('history-*.json'):
+            path.unlink()
+        rounds, reason = render.load_rounds(self.root, render.PREVIEW, self.record())
+        self.assertIsNone(rounds)
+        self.assertIn('not in the mission', reason)
+        text = self.page()
+        self.assertIn('Previews made before the history existed have none', text)
+        self.assertNotIn('id="mode-b"', text)
+        self.assertNotIn('class="cmp', text)
+
+    def test_an_edited_history_record_is_refused_and_the_rest_is_still_read(self):
+        path = self.review / ('history-%s.json' % self.ids[0])
+        envelope = json.loads(path.read_text(encoding='utf-8'))
+        envelope['body']['tree'] = self.trees[2]
+        path.write_text(json.dumps(envelope), encoding='utf-8')
+        entries, problems = render.read_history(self.root, self.review, self.record())
+        self.assertEqual([e['seq'] for e in entries], [2, 3])
+        self.assertIn('edited', problems[0])
+        (self.review / ('history-%s.json' % self.ids[1])).write_text(self.sign(dict(self.entries[1], parent='0' * 40)), encoding='utf-8')
+        self.assertIn('another parent', render.read_history(self.root, self.review, self.record())[1][1])
+
+    def test_a_history_of_another_checkout_is_refused(self):
+        (self.root / '.git' / 'governance' / 'receipt.key').write_bytes(b'x' * 32)
+        entries, problems = render.read_history(self.root, self.review, self.record())
+        self.assertEqual((entries, len(problems)), ([], 3))
+
+    def test_the_default_base_is_the_last_reviewed_preview_else_the_previous_one_else_the_parent(self):
+        plan = self.plan()
+        self.assertEqual([(b['k'], b['number']) for b in plan['bases']], [(1, 1), (2, 2)])  # k numbers the embedded bases in order
+        self.assertEqual(plan['default'], 2)  # R2 is the reviewed one
+        (self.review / ('review-%s.md' % self.ids[1])).unlink()
+        unreviewed = self.plan()
+        self.assertEqual(unreviewed['default'], 2)  # the previous preview, R2 again
+        (self.review / ('history-%s.json' % self.ids[1])).unlink()
+        skipped = self.plan(render.load_rounds(self.root, render.PREVIEW, self.record())[0])
+        self.assertEqual([b['number'] for b in skipped['bases']], [1])
+        first = self.plan(render.load_rounds(self.root, render.PREVIEW, self.record(1))[0])
+        self.assertEqual((first['default'], first['bases']), (0, []))  # the first preview: only the parent
+        text = self.page(1)
+        self.assertIn('first preview of the mission', text)
+        self.assertNotIn('id="mode-b"', text)
+
+
+class CompareModeTest(RoundsFixture):
+    def test_the_page_has_the_toggle_and_each_base_with_the_reviewed_one_checked(self):
+        text = self.page()
+        self.assertIn('id="mode-b" checked', text)  # every round at once is the view the page opens on, and its radio button comes first
+        self.assertLess(text.index('id="mode-b"'), text.index('id="mode-a"'))
+        self.assertNotIn('id="mode-a" checked', text)
+        self.assertIn('id="base-0"', text)
+        self.assertRegex(text, r'id="base-1"> R1 &middot; 2026-11-22T10:01:00Z &middot; not reviewed')
+        self.assertRegex(text, r'id="base-2" checked> R2 &middot; 2026-11-22T10:02:00Z &middot; reviewed')
+        for k in (0, 1, 2):
+            self.assertIn('body:has(#mode-a:checked):has(#base-%d:checked) .cmp-%d{display:flex' % (k, k), text)
+        self.assertIn('body:has(#mode-a:checked):has(#base-2:checked) tr[data-n]:not(.ck-2)', text)  # the list shows only the files that differ from the chosen base
+        self.assertIn('body:has(#mode-b:checked) .cmp-0{display:flex', text)
+        self.assertEqual(text.count('<script'), 1)  # a plain control: still no other script
+
+    def test_a_base_shows_only_what_changed_since_that_preview_and_names_it(self):
+        text = self.page()
+        section = re.search(r'<section id="f1">.*?</section>', text, re.S).group(0)
+        base2 = re.search(r'<div class="cmp cmp-2">(.*?)</div></section>', section, re.S).group(1)
+        self.assertIn('R2 preview', base2)
+        self.assertIn('j3', base2)
+        self.assertNotIn('b1', base2)
+        self.assertNotIn('</span>f2<', base2)  # f2 was in R2 already
+        base1 = re.search(r'<div class="cmp cmp-1">(.*?)</div><div class="cmp cmp-2">', section, re.S).group(1)
+        self.assertIn('b2', base1)  # changed since R1
+        self.assertIn('f2', base1)
+        self.assertNotIn('b1', base1.split('<th class="pane">')[0])  # (the heading row only)
+        long = re.search(r'<section id="f3">.*?</section>', text, re.S).group(0)
+        self.assertEqual(long.count('The complete file is shown in the comparison with the parent'), 2)  # a base keeps only the changes and their context
+        self.assertNotIn('L1</td>', long.split('cmp-1')[1])
+        other = re.search(r'<section id="f2">.*?</section>', text, re.S).group(0)
+        self.assertIn('No change since this preview', re.search(r'<div class="cmp cmp-2">(.*?)</div></section>', other, re.S).group(1))
+
+    def test_files_changed_since_the_last_reviewed_preview_are_marked_in_the_list_and_the_tree(self):
+        text = self.page()
+        self.assertRegex(text, r'<a href="#f1">f.txt</a></td><td></td><td>\+\d+ -\d+</td><td>changed since R2</td>')
+        self.assertRegex(text, r'<a href="#f2">g.txt</a></td><td></td><td>\+\d+ -\d+</td><td></td>')
+        self.assertIn('Since review', text)
+        self.assertEqual(text.count('Changed since R2, the last reviewed preview'), 2)  # f.txt and long.txt in the tree, not g.txt
+        (self.review / ('review-%s.md' % self.ids[1])).unlink()
+        unmarked = self.page()
+        self.assertNotIn('changed since R', unmarked)
+        self.assertIn('No earlier preview of this mission was reviewed', unmarked)
+
+    def test_the_page_holds_at_most_the_newest_bases_and_says_why_for_the_rest(self):
+        original = render.MAX_BASES
+        render.MAX_BASES = 1
+        self.addCleanup(setattr, render, 'MAX_BASES', original)
+        plan = self.plan()
+        self.assertEqual([b['number'] for b in plan['bases']], [2])
+        self.assertIn('at most 1 earlier preview', [b for b in plan['earlier'] if b['number'] == 1][0]['state'])
+        self.assertIn('not embedded', self.page())
+        render.MAX_BASES = original
+        budget = render.PAGE_BUDGET
+        render.PAGE_BUDGET = 1
+        self.addCleanup(setattr, render, 'PAGE_BUDGET', budget)
+        self.assertEqual(self.plan()['bases'], [])
+
+    def test_a_preview_with_the_same_tree_as_the_candidate_and_one_whose_tree_is_gone_are_listed_but_not_offered(self):
+        entries = [dict(e) for e in self.entries]
+        entries[0]['tree'] = 'f' * 40  # pruned by Git
+        entries[1]['tree'] = self.trees[2]  # a preview that changed nothing since
+        for entry in entries:
+            self.save(entry)
+        text = self.page()
+        self.assertIn('no longer in the repository', text)
+        self.assertIn('it holds the same tree as the candidate', text)
+        self.assertNotIn('id="base-1"', text)
+        self.assertEqual(self.plan()['default'], 0)
+
+
+class AllRoundsModeTest(RoundsFixture):
+    def test_each_changed_line_is_attributed_to_the_round_that_last_changed_it(self):
+        old, new = render.attribute(self.root, self.plan(), self.item('f.txt'))
+        self.assertEqual(new, {2: 2, 5: 2, 9: 3, 10: 3})  # b2 and f2 in round 2 (b changed in rounds 1 and 2: the last counts), j3 in round 3
+        self.assertEqual(old, {2: 1, 4: 1, 6: 2, 10: 3})  # b and d were removed in round 1, f in round 2, j in round 3
+        self.assertNotIn('ZZ', render.git(self.root, 'show', self.trees[2] + ':f.txt').decode())  # added in round 1 and removed in round 2: in neither side, so no mark
+        self.assertEqual(render.attribute(self.root, self.plan(), self.item('g.txt')), ({2: 1}, {2: 1}))
+
+    def test_the_page_stripes_changed_lines_with_the_round_number_and_a_hover_text_and_keeps_the_backgrounds(self):
+        text = self.page()
+        self.assertIn('<span class="rd s1" title="Round 2, preview 22222222, reviewed">R2</span>', text)
+        self.assertIn('<span class="rd s0" title="Round 3, preview 33333333, not reviewed">R3</span>', text)
+        self.assertIn('<span class="rd s2" title="Removed in Round 1, preview 11111111, not reviewed">R1</span>', text)
+        self.assertIn('data-rtip="Round 3, preview 33333333, not reviewed"', text)
+        self.assertIn('data-rtip="Removed in Round 1, preview 11111111, not reviewed"', text)
+        self.assertRegex(text, r'<td class="new added"><span class="rd s0"')  # the add background stays
+        self.assertRegex(text, r'<td class="old removed"><span class="rd s2"')  # the delete background stays
+        self.assertNotRegex(text, r'<td class="old same"><span class="rd')  # an unchanged line has no stripe
+        self.assertIn('body:has(#mode-b:checked) .rd{display:inline-block}', text)
+        self.assertIn('.legend,.rd,.sr-col{display:none}', text)
+
+    def test_the_hover_box_of_the_script_names_the_round_in_this_view_only(self):
+        self.assertIn("getAttribute('data-tip')", render.SCRIPT)
+        self.assertIn("getAttribute('data-rtip')", render.SCRIPT)
+        self.assertIn("document.getElementById('mode-b')", render.SCRIPT)
+        self.assertIn("closest('[data-hint]')", render.SCRIPT)  # the same instant box shows the explanations of the View and Rounds boxes, on the whole box
+        self.assertIn('.tip.wrap{white-space:normal', render.STYLE)
+        self.assertNotIn('title="Every changed line', self.page())  # not the browser's delayed tooltip
+
+    def test_the_legend_names_the_rounds_and_says_what_this_view_cannot_show(self):
+        text = self.page()
+        box = re.search(r'<fieldset class="legend" data-hint="([^"]*)"><legend>Rounds</legend>(.*?)</fieldset>', text, re.S)
+        for needle in ('Round 3, preview 33333333, not reviewed', 'Round 2, preview 22222222, reviewed', 'Round 1, preview 11111111, not reviewed'):
+            self.assertIn(needle, box.group(2))
+        self.assertNotIn('Every changed line', box.group(2))  # the explanations are on hover, not on the page
+        for needle in ('Every changed line carries the round', 'added in one round and removed in a later one is in neither the parent nor the candidate', 'the comparison with an earlier preview can'):
+            self.assertIn(needle, box.group(1))
+        self.assertRegex(text, r'<fieldset data-hint="Display only: neither view approves anything or changes what the checkpoint tool records\."><legend>View</legend>')
+        self.assertNotIn('class="why"', text)
+
+    def test_the_list_and_the_tree_carry_the_comparisons_each_file_belongs_to(self):
+        text = self.page()
+        self.assertRegex(text, r'<tr data-n="1" data-size="\d+" class="ck-0 ck-1 ck-2">')  # f.txt differs from R1 and from R2
+        self.assertRegex(text, r'<tr data-n="2" data-size="\d+" class="ck-0">')  # g.txt: R1 already had its edit, so no earlier preview differs in it
+        self.assertRegex(text, r'<li class="f ck-0 ck-1 ck-2"><a class="m" href="#f1"')
+        self.assertRegex(text, r'<tr class="ob ob-1"><td><span class="kind modified">R1 only</span></td><td><a href="#fo1-1">r.txt</a>')  # a file only R1 differs in
+
+    def test_the_last_three_rounds_have_their_own_stripe_and_older_ones_share_one(self):
+        info = {n: {'number': n, 'id': 'ab' * 16, 'reviewed': False, 'rank': 5 - n} for n in range(1, 6)}
+        marks = {'info': info}
+        styles = {n: re.search(r'class="rd (\w+)"', render.stripe(n, marks, False)).group(1) for n in range(1, 6)}
+        self.assertEqual(styles, {5: 's0', 4: 's1', 3: 's2', 2: 'se', 1: 'se'})
+        self.assertIn('>R1<', render.stripe(1, marks, False))  # the number is always there, never colour alone
+        self.assertIn('.rd.se{border-left:5px double', render.STYLE)
+        self.assertIn('.legend .rd{display:inline-block;width:auto;', render.STYLE)  # a legend label such as R1-R4 is as wide as its text and never runs into the words after it
+
+    def test_a_round_whose_tree_is_gone_marks_the_lines_changed_across_it_as_unknown(self):
+        entries = [dict(e) for e in self.entries]
+        entries[0]['tree'] = 'f' * 40
+        for entry in entries:
+            self.save(entry)
+        old, new = render.attribute(self.root, self.plan(), self.item('f.txt'))
+        self.assertEqual(new, {2: -1, 5: -1, 9: 3, 10: 3})  # b2 and f2 changed in the step that spans the gone round and round 2
+        self.assertEqual(old[4], -1)
+        text = self.page()
+        self.assertIn('<span class="rd su"', text)
+        self.assertIn('a preview between two rounds is unavailable', text)
+
+    def test_a_file_the_steps_cannot_explain_gets_no_stripes_and_nothing_is_guessed(self):
+        plan = self.plan()
+        plan['budget'] = 0
+        self.assertIsNone(render.attribute(self.root, plan, self.item('f.txt')))
+        plan = self.plan()
+        plan['steps'] = None
+        self.assertIsNone(render.attribute(self.root, plan, self.item('f.txt')))
+        self.assertIsNone(render.attribute(self.root, self.plan(), dict(self.item('f.txt'), new_id='0' * 40)))
+
+    def test_an_added_deleted_and_renamed_file_follow_their_path_through_the_rounds(self):
+        lines = ['a', 'b2', 'c', 'e', 'f2', 'g', 'h', 'i', 'j3']
+        (self.root / 'new.txt').write_text('n1\nn2\n', encoding='utf-8')
+        t4 = self.tree_of(lines, self.G_EDITED)
+        (self.root / 'new.txt').write_text('n1\nn2 changed\nn3\n', encoding='utf-8')
+        git(self.root, 'mv', 'g.txt', 'moved.txt')
+        git(self.root, 'rm', '-q', '-f', 'f.txt')
+        git(self.root, 'add', '-A')
+        t5 = git(self.root, 'write-tree')
+        for seq, tree in ((4, t4), (5, t5)):
+            self.save(self.entry(seq, str(seq) * 32, tree))
+        record = dict(self.record(), id='5' * 32, tree=t5)
+        rounds, _ = render.load_rounds(self.root, render.PREVIEW, record)
+        items = render.changes(self.root, self.parent, t5)
+        plan = render.history_plan(self.root, self.parent, t5, items, rounds)
+        found = {i['path']: i for i in items}
+        self.assertEqual(found['new.txt']['status'], 'A')
+        self.assertEqual(render.attribute(self.root, plan, found['new.txt']), ({}, {1: 4, 2: 5, 3: 5}))  # n1 from round 4, the rest from round 5
+        self.assertEqual(found['f.txt']['status'], 'D')
+        old, new = render.attribute(self.root, plan, found['f.txt'])
+        self.assertEqual(new, {})
+        self.assertEqual(old, {2: 1, 4: 1, 6: 2, 10: 3, 1: 5, 3: 5, 5: 5, 7: 5, 8: 5, 9: 5})  # each line of the parent in the round that removed it: the deletion of round 5 took the rest
+        self.assertEqual(found['moved.txt']['status'], 'R')
+        old, new = render.attribute(self.root, plan, found['moved.txt'])
+        self.assertEqual(new, {2: 1})  # the line edited in round 1, carried across the rename of round 5
+        text = render.build(self.root, render.PREVIEW, record, 'demo_job', [], rounds, None)
+        self.assertEqual(text.count('<section id="f'), 3 + 2 + 2)  # three files, the two sides of the rename, and r.txt and long.txt, which rounds 1 and 3 changed and the parent's content is back
+
+
+class ReviewFindingsTest(RoundsFixture):
+    def test_a_file_a_later_round_reverted_has_its_own_section_in_the_comparison_with_that_preview(self):
+        plan = self.plan()
+        self.assertEqual([b['only'] for b in plan['bases']], [['r.txt'], []])  # R1 differs from the candidate in r.txt, which the parent's list does not have
+        text = self.page()
+        self.assertIn('<a href="#fo1-1">r.txt</a>', text)
+        section = re.search(r'<section id="fo1-1">.*?</section>', text, re.S).group(0)
+        self.assertIn('R1 preview', section)
+        self.assertIn('r1 reverted later', section)
+        self.assertIn('Differs from R1 only', section)
+        self.assertNotIn('id="f4"', text)  # it is not a file of the parent's list
+
+    def test_a_file_renamed_in_an_earlier_round_and_restored_links_sections_that_exist(self):
+        git(self.root, 'mv', 'r.txt', 'rr.txt')
+        git(self.root, 'add', '-A')
+        entries = [dict(e) for e in self.entries]
+        entries[0]['tree'] = git(self.root, 'write-tree')
+        git(self.root, 'mv', 'rr.txt', 'r.txt')
+        for entry in entries:
+            self.save(entry)
+        text = self.page()
+        for target in ('fo1-1', 'fo1-1-old', 'fo1-1-new'):
+            self.assertIn('<section id="%s">' % target, text)
+        for target in re.findall(r'href="#(f[^"]+)"', text):
+            self.assertIn('<section id="%s">' % target, text)  # no link leads nowhere
+
+    def test_a_refused_history_record_leaves_an_unknown_round_and_a_notice(self):
+        path = self.review / ('history-%s.json' % self.ids[1])
+        envelope = json.loads(path.read_text(encoding='utf-8'))
+        envelope['mac'] = '0' * 64
+        path.write_text(json.dumps(envelope), encoding='utf-8')
+        rounds, reason = render.load_rounds(self.root, render.PREVIEW, self.record())
+        self.assertEqual([(r['number'], r['available'], bool(r.get('missing'))) for r in rounds], [(1, True, False), (2, False, True), (3, True, False)])
+        self.assertIn('refused', reason)
+        old, new = render.attribute(self.root, self.plan(rounds), self.item('f.txt'))
+        self.assertEqual(new, {2: -1, 5: -1, 9: -1, 10: -1})  # b2 and f2 came in round 2, which is unknown: nothing is attributed to round 3
+        text = self.page()
+        self.assertIn('Rounds notice', text)
+        self.assertIn('history-%s.json' % self.ids[1], text)
+        self.assertIn('its history record was refused or is missing', text)
+        self.assertNotIn('Round 2, preview', text)
+
+    def test_the_baseline_of_since_review_is_the_latest_reviewed_preview_even_when_it_equals_the_candidate(self):
+        entries = [dict(e) for e in self.entries]
+        entries[1]['tree'] = self.trees[2]  # R2, the reviewed one, is the candidate's own tree
+        for entry in entries:
+            self.save(entry)
+        (self.review / ('review-%s.md' % self.ids[0])).write_text('findings\n', encoding='utf-8')  # R1 was reviewed too, earlier
+        plan = self.plan()
+        self.assertEqual((plan['since']['number'], plan['since']['items']), (2, {}))  # R2, not R1
+        text = self.page()
+        self.assertNotIn('changed since R1', text)
+        self.assertNotIn('changed since R2</td>', text)
+        self.assertIn('Files marked changed since R2', text)
+
+    def test_when_the_latest_reviewed_preview_cannot_be_compared_no_older_one_stands_in(self):
+        entries = [dict(e) for e in self.entries]
+        entries[1]['tree'] = 'f' * 40
+        for entry in entries:
+            self.save(entry)
+        (self.review / ('review-%s.md' % self.ids[0])).write_text('findings\n', encoding='utf-8')
+        plan = self.plan()
+        self.assertIsNone(plan['since'])
+        self.assertEqual(plan['since_gone']['number'], 2)
+        text = self.page()
+        self.assertIn('The last reviewed preview, R2, cannot be compared', text)
+        self.assertNotIn('changed since R1', text)
+
+
+class PreviewHistoryRunTest(RoundsFixture):
+    def test_the_command_writes_a_page_with_the_rounds_beside_the_record(self):
+        path = self.review / 'preview-3.json'
+        path.write_text(self.sign(self.record()), encoding='utf-8')
+        args = type('A', (), {'repo': str(self.root), 'preview': path, 'job': 'demo_job', 'output_dir': None})
+        text = render.run_preview(args).read_text(encoding='utf-8')
+        self.assertIn('id="mode-b"', text)
+        self.assertIn('3 previews of the mission up to this candidate (R1, R2, R3)', text)
+
+    def test_a_sealed_review_whose_tree_is_the_last_preview_has_the_same_rounds(self):
+        packet = dict(self.record(), id='s' * 32, diff=render.candidate_diff(self.root, self.parent, self.trees[2]), job_handle='demo_job')
+        original = render.load_sealed
+        render.load_sealed = lambda repo: (packet, 's' * 64)
+        self.addCleanup(setattr, render, 'load_sealed', original)
+        text = render.run_sealed(type('A', (), {'repo': str(self.root), 'job': None, 'output_dir': None})).read_text(encoding='utf-8')
+        self.assertIn('SEALED REVIEW', text)
+        self.assertIn('id="mode-b"', text)
+
+
 if __name__ == '__main__':
     unittest.main()

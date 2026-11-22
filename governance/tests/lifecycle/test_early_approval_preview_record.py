@@ -73,14 +73,56 @@ class PreviewRecordTest(MissionCase):
                          (result['body']['id'], result['body']['tree'], self.parent, OWNER, HANDLE))
         self.assertEqual((Path(body['output']), body['go']), (output.resolve(), None))
 
-    def test_a_new_preview_replaces_the_record_and_nothing_else_is_written_beside_it(self):
+    def test_a_new_preview_replaces_the_pointer_and_adds_a_history_record_and_nothing_else_is_written_beside_them(self):
         first, _, _ = self.preview()
         second, _, _ = self.preview()
         body = preview_record.load(self.tool, self.review / preview_record.FILE)
         self.assertNotEqual(first['body']['id'], second['body']['id'])
         self.assertEqual(body['preview_id'], second['body']['id'])
         self.assertEqual(sorted(p.name for p in self.review.iterdir()),
-                         ['last-preview.json', 'preview-1.json', 'preview-1.md', 'preview-2.json', 'preview-2.md'])
+                         sorted(['last-preview.json', 'preview-1.json', 'preview-1.md', 'preview-2.json', 'preview-2.md',
+                                 'history-%s.json' % first['body']['id'], 'history-%s.json' % second['body']['id']]))
+
+    def test_every_preview_leaves_an_authenticated_history_record_in_the_mission_s_order(self):
+        results = [self.preview()[0]['body'] for _ in range(3)]
+        entries, problems = preview_record.history(self.tool, self.review)
+        self.assertEqual(problems, [])
+        self.assertEqual([(e['seq'], e['preview_id'], e['tree'], e['parent'], e['branch'], e['owner'], e['job_handle']) for e in entries],
+                         [(n, r['id'], r['tree'], self.parent, 'refs/heads/tx/' + OWNER, OWNER, HANDLE) for n, r in enumerate(results, 1)])
+        self.assertEqual(preview_record.load(self.tool, self.review / preview_record.FILE)['preview_id'], results[2]['id'])  # the pointer is still the newest
+        body = results[0]
+        preview_record.add_history(self.tool, self.review, body, HANDLE)  # recording a preview again keeps its place
+        self.assertEqual([e['seq'] for e in preview_record.history(self.tool, self.review)[0]], [1, 2, 3])
+
+    def test_a_history_record_that_was_edited_or_is_not_what_its_name_says_is_reported_and_left_out(self):
+        first, _, _ = self.preview()
+        second, _, _ = self.preview()
+        path = preview_record.history_path(self.review, first['body']['id'])
+        envelope = json.loads(path.read_bytes())
+        envelope['body']['tree'] = '0' * 40
+        path.write_bytes(ea.canonical(envelope))
+        (self.review / ('history-%s.json' % ('a' * 32))).write_bytes(preview_record.history_path(self.review, second['body']['id']).read_bytes())
+        (self.review / 'history-notes.json').write_bytes(b'{}')
+        entries, problems = preview_record.history(self.tool, self.review)
+        self.assertEqual([e['preview_id'] for e in entries], [second['body']['id']])
+        self.assertEqual(len(problems), 3)
+        self.assertTrue(any('does not follow the pattern' in problem for problem in problems))
+
+    def test_a_preview_made_before_the_history_has_none_and_the_next_one_starts_it(self):
+        self.preview()
+        for path in self.review.glob('history-*.json'):
+            path.unlink()
+        self.assertEqual(preview_record.history(self.tool, self.review), ([], []))
+        second, _, _ = self.preview()
+        self.assertEqual([(e['seq'], e['preview_id']) for e in preview_record.history(self.tool, self.review)[0]], [(1, second['body']['id'])])
+
+    def test_an_output_named_like_a_history_record_is_left_as_the_preview_wrote_it(self):
+        result = self.tool.preview(['a.txt'], self.base.message, None, self.parent, 'refs/heads/tx/' + OWNER)
+        output = preview_record.history_path(self.review, result['body']['id'])
+        ea.write_new(output, ea.canonical(result))
+        before = output.read_bytes()
+        self.assertIn('reserved name', preview_record.write(self.tool, result, output, self.review / 'x.md', None))
+        self.assertEqual(output.read_bytes(), before)
 
     def test_a_go_is_added_to_the_record_of_its_own_preview_only(self):
         result, _, _ = self.preview()

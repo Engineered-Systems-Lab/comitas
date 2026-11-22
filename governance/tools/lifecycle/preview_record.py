@@ -1,10 +1,17 @@
-"""The last preview of a mission, kept in a fixed-name file of its review folder, so that a Job handle can lead to it.
+"""The previews of a mission, kept in its review folder: the last one in a fixed-name file, and every one in a record of its own.
 
 `checkpoint.py preview` writes its record wherever the worker chooses (`--output`) and keeps no copy, so nothing could map
 a mission to its preview. This module writes one small authenticated record, `last-preview.json`, in the mission's
 review folder: the preview's id, tree, parent, branch, time and where its record and readable block were written. A new
 preview replaces it, `preview-go` adds the go to it, and it goes with the review folder when the mission is removed
 ([G025 review folder lifecycle extension](../../DECISIONS.md#g025-review-folder-lifecycle-extension-2026-10-18)).
+
+Every preview also leaves `history-<preview id>.json` beside it, in the same authenticated form: the preview's id, tree, parent,
+branch and time, and its place in the mission's order (`seq`, 1 for the first). `last-preview.json` stays the pointer to the
+newest, so the lookup and its tests do not change; the history lets a reader (the diff viewer) compare the rounds of a mission.
+A history record is never replaced or removed by a later preview, goes with the review folder, and is read back only through
+`history`, which verifies each file and says what it could not read instead of guessing. A preview made before the history
+existed has no such record: it is simply absent from the list.
 
 The record is a convenience for the read-only lookup (`local_jobs.py where`) and grants nothing: it is signed with the
 receipt key of the mission's checkout like every preview record, so that an edited record or one from another checkout is
@@ -22,6 +29,9 @@ from governance.tools.worktrees import claims
 FILE = 'last-preview.json'
 VERSION = 1
 KIND = 'last-preview'
+HISTORY_KIND = 'preview-history'
+HISTORY_PREFIX = 'history-'
+HISTORY_NAME = re.compile(HISTORY_PREFIX + r'([0-9a-f]{32})\.json')
 BRANCH = re.compile(r'refs/heads/tx/(' + mission_layout.MISSION_ID + ')')
 
 
@@ -50,6 +60,46 @@ def record_path(tool, branch):
     return path, None
 
 
+def history_path(folder, preview_id):
+    return Path(folder) / (HISTORY_PREFIX + preview_id + '.json')
+
+
+def history(tool, folder):
+    """(entries, problems) of the preview history in `folder`: the verified records in the mission's order, and one line for each file
+    that could not be used (edited, from another checkout, misnamed or unreadable). Nothing is written or guessed."""
+    entries, problems = [], []
+    folder = Path(folder)
+    if local_state.indirect(folder) or not folder.is_dir():
+        return entries, ['the review folder %s is not a plain folder' % folder]
+    for path in sorted(folder.iterdir()):
+        named = HISTORY_NAME.fullmatch(path.name)
+        if not path.name.startswith(HISTORY_PREFIX) or not path.name.endswith('.json'):
+            continue
+        try:
+            early_approval.require(named is not None, 'the name does not follow the pattern ' + HISTORY_PREFIX + '<preview id>.json')
+            early_approval.require(path.is_file() and not path.is_symlink() and not path.is_junction(), 'not a plain file')
+            body = early_approval.unsign(tool, json.loads(path.read_bytes()))
+            early_approval.require(isinstance(body, dict) and body.get('kind') == HISTORY_KIND and body.get('preview_id') == named.group(1)
+                                   and isinstance(body.get('seq'), int) and body['seq'] >= 1, 'not a history record of this preview')
+            entries.append(body)
+        except (ValueError, OSError, TypeError) as error:
+            problems.append('%s: %s' % (path.name, error))
+    entries.sort(key=lambda body: body['seq'])
+    return entries, problems
+
+
+def add_history(tool, folder, body, job_handle):
+    """Record the preview `body` in the history; a preview already in it keeps its place. Raises ValueError or OSError."""
+    path = history_path(folder, body['id'])
+    entries, _ = history(tool, folder)
+    known = [entry for entry in entries if entry['preview_id'] == body['id']]
+    seq = known[0]['seq'] if known else 1 + max([entry['seq'] for entry in entries] + [len(entries)])
+    data = {'version': VERSION, 'kind': HISTORY_KIND, 'seq': seq, 'owner': mission_of(body['branch']), 'branch': body['branch'],
+            'preview_id': body['id'], 'parent': body['parent'], 'tree': body['tree'], 'eligible': body['eligible'],
+            'job_handle': job_handle, 'recorded_at': claims.now()}
+    early_approval.atomic(path, early_approval.canonical(early_approval.sign(tool, data)))
+
+
 def load(tool, path):
     """The authenticated body of the record at `path`; ValueError when it is missing, edited or not this checkout's."""
     early_approval.require(path.is_file() and not path.is_symlink(), 'No preview record at ' + str(path))
@@ -59,7 +109,8 @@ def load(tool, path):
 def write(tool, result, output, readable, job_handle):
     """Record `result` (the signed preview envelope) as the mission's last preview. Returns None, or a note saying why not.
 
-    Best effort by design: a failure here never changes what the preview did, and the note is for the worker."""
+    The preview is also added to the history of the mission's previews. Best effort by design: a failure here never changes what
+    the preview did, and the note is for the worker."""
     body = result['body']
     try:
         path, why = record_path(tool, body['branch'])
@@ -74,9 +125,17 @@ def write(tool, result, output, readable, job_handle):
                 'job_handle': job_handle, 'recorded_at': claims.now(),
                 'output': str(Path(output).resolve()), 'readable': str(Path(readable).resolve()), 'go': None}
         early_approval.atomic(path, early_approval.canonical(early_approval.sign(tool, data)))
-        return None
     except (ValueError, OSError, KeyError, TypeError) as error:
         return 'no last-preview record written: ' + str(error)
+    try:
+        folder = path.parent
+        taken = [str(Path(name).resolve()) for name in (output, readable) if Path(name).resolve() == history_path(folder, body['id']).resolve()]
+        if taken:
+            return 'no history record written: the preview output is the reserved name of the history record of this preview'
+        add_history(tool, folder, body, job_handle)
+        return None
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        return 'no history record written: ' + str(error)
 
 
 def attach_go(tool, preview, go_result, go_output):
