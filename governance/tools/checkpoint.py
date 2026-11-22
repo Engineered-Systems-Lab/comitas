@@ -26,6 +26,7 @@ if __name__ == '__main__':
 
 from governance.tools.worktrees import claims
 from governance.tools.lifecycle import early_approval
+from governance.tools.lifecycle import preview_record
 from governance.tools.lifecycle import review_render
 
 # The components, and every name that the tool, its guard and its tests have always imported from this module.
@@ -112,12 +113,18 @@ def main():
             text = review_render.render_preview(dict(review, body=result['body'])).encode('utf-8')
             early_approval.write_new(record, canonical(result))
             early_approval.write_new(readable, text)  # Beside the record, which stays the machine record.
+            note = preview_record.write(tool, result, record, readable, args.job_handle)  # The mission's last preview, for the Job lookup.
+            if note:
+                print('NOTICE: ' + note, file=sys.stderr)
             sys.stdout.buffer.write(text)
             return 0
         if args.action == 'preview-go':
             result = early_approval.record_go(tool, json.loads(args.preview.read_text(encoding='utf-8-sig')),
                                               json.loads(args.go.read_text(encoding='utf-8-sig')))
             early_approval.write_new(args.output, canonical(result))
+            note = preview_record.attach_go(tool, result['body']['preview'], result, args.output)  # Same record, for the Job lookup.
+            if note:
+                print('NOTICE: ' + note, file=sys.stderr)
             print(json.dumps({'go': result['body']['go']['response'], 'preview': result['body']['preview']['id'],
                               'tree': result['body']['preview']['tree'], 'output': str(args.output)}, indent=2))
             return 0

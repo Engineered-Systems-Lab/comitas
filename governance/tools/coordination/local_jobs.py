@@ -1199,6 +1199,9 @@ def main():
     close.add_argument('--route', action='append', default=[], metavar='N=HANDLE',
                        help='Route pending entry N (from 1), which has no disposition yet, to another live Job')
     close.add_argument('--recorded', action='store_true', help=argparse.SUPPRESS)
+    find = sub.add_parser('where', help='Read-only: from a Job handle to its live work (missions, worktrees, previews, landings)')
+    find.add_argument('name')
+    find.add_argument('--json-only', action='store_true', help='Print the JSON alone, without the short text form')
     guide = sub.add_parser('brief', help='Print the standard worker brief for a Job; reads only, writes no record')
     guide.add_argument('name')
     guide.add_argument('--stagger', action='store_true', help='Add the staggered-landing paragraph')
@@ -1226,6 +1229,15 @@ def main():
     if args.command == 'brief':
         text = brief(primary, args.name, args.stagger, args.extra_file)
         sys.stdout.buffer.write(text.encode('utf-8'))  # bytes, so Windows never turns the LF line ends into CRLF
+        sys.stdout.buffer.flush()
+        return
+    if args.command == 'where':
+        from governance.tools.coordination import job_where  # late: it imports the worktree guard, which imports this module
+        found = job_where.where(primary, args.name)
+        text = json.dumps(found, ensure_ascii=True, indent=2) + '\n'
+        if not args.json_only:
+            text = job_where.render_text(found) + '\n\n' + text
+        sys.stdout.buffer.write(text.encode('utf-8'))
         sys.stdout.buffer.flush()
         return
     directory = safe_directory(primary if args.primary or args.command in ('pointer', 'read', 'queue', 'rename', 'complete', 'dispose', 'claim-coordinator') else root,

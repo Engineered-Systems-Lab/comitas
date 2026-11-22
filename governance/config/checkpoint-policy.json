@@ -252,7 +252,7 @@
       "-s",
       "governance/tests",
       "-p",
-      "test_early_approval.py",
+      "test_early_approval*.py",
       "-v"
     ],
     "interpreter-pin-tests": [

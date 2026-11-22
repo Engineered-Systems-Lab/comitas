@@ -219,6 +219,34 @@ Pruning shared COMPLETE Jobs verifies integration, removes their satisfied prere
 
 Completed job memory has no permanent archive. If later work still needs its contents, the job's durable recording or transfer is incomplete. devlog material can outlive implementation only under the job responsible for recording it. Coordinator context is reviewed on handoff and cleared when recorded or no longer useful.
 
+## Finding the work of a Job
+
+`where` is the read-only lookup from a Job handle to the work that stands for it, so that a reviewer or another session needs nothing else:
+
+```sh
+python -B governance/tools/local_jobs.py --repo . where '<handle>'
+python -B governance/tools/local_jobs.py --repo . where '<handle>' --json-only
+```
+
+It reads primary storage from any checkout, as `queue` and `read` do, prints a short text form followed by the JSON (`--json-only` prints the JSON alone) and writes nothing: no record, claim, folder or database, and it gives no approval or authority. It derives everything from the live sources and keeps no copy, so an answer is never older than its sources: the Job record (status, step, activity, worker, commits and whether it awaits the lead developer), the claims database, the worktree list and Git refs, each mission's review folder and checkpoint store, and the [execution status](#execution-status). For each mission that has claimed paths or a window, or a landed event, under the handle (a plain handle, or `epic--job`), it prints:
+
+- the mission id, whether it is `live` (its worktree is registered) or `gone`, its claims (the open ones, and how and when the last one closed), and any other handle that also names the mission, never merged into this one;
+- the branch `tx/<mission-id>` and its tip, the worktree path, its HEAD and the number of paths with uncommitted changes, the review folder, the main tip, the merge base, how many commits the branch is ahead of main and whether main has moved since the base;
+- the last preview: its id, tree and parent, whether the parent is the worktree's HEAD, whether it is eligible for an early go, the path of its record and readable block, whether the record file still exists and names the same preview, and whether a go is recorded on it (with the go's file and time);
+- an open transaction of the checkpoint store, if any, with its state, id, parent and tree;
+- the landing: from the landing record in the worktree's checkpoint store while the worktree stands (commit, parent, tree, branch, subject and how it was approved), and after the removal from the `landed` event of the claims database with the facts Git still holds for that commit (parent, tree and subject); each says whether the commit is on main;
+- the findings files of the review folder, below.
+
+The last preview comes from `last-preview.json` in the mission's review folder, which `checkpoint.py preview` writes (and overwrites at each re-preview, so it always names the last one) and `preview-go` adds the go to. It is signed with the receipt key of the mission's checkout, like every preview record, so the lookup refuses an edited record or one from another checkout and does not use its content; it goes with the review folder when the mission is removed. It is written only when the mission's review folder exists, because the worker makes the folder with the review inputs and the tool never creates it; when it is not written the preview prints one `NOTICE` that says why. A preview made before this record existed has none: the lookup says that no preview record was found and never searches other files or guesses.
+
+**Findings files.** A review's findings are plain files in the mission's review folder, one per reviewed preview, named `review-<preview id>.md` with the 32-character preview id (the pattern is `FINDINGS_PATTERN` in `governance/tools/coordination/job_where.py`, and a reviewer follows it). The lookup lists each file with the preview id its name carries and marks it: `for the last preview`, `for an older preview, not current` (never shown as current), `last preview unknown` when the mission has no readable preview record, or `name does not follow the pattern` for any other `review-*.md`. A findings file is a note for the worker and the lead developer: it grants no approval and goes with the review folder.
+
+**Response files.** The worker answers a findings file with `response-<preview id>.md` in the same review folder (`RESPONSE_PATTERN`), holding the outcome of each finding. The lookup pairs each findings file with the response of the same preview id and says `no response yet` when there is none; a response with no findings file, or a `response-*.md` whose name does not follow the pattern, is listed as such. Like findings files, response files grant nothing.
+
+**What it cannot find.** A mission is linked to a Job when its preview declares the handle with `--job-handle`, so a worktree that has not previewed yet, or previewed without the handle, is not found from the handle; the output says so under `cannot_find` and never guesses a mission from a name or a branch. A claims database that is missing names no mission, and one that cannot be read is reported with its state. A section that a source cannot answer says why instead of failing the command.
+
+**During a lifecycle operation.** The command is READ in the [runtime guard](CHECKPOINT-TOOL-COMMANDS.md#runtime-guard): it answers also while another owner's create, reconcile, integrate or remove holds the lifecycle lock. Its output then begins with a note that the facts may be stale or torn until the operation finishes, and `lifecycle_operation` in the JSON says the same. The worker brief names no lookup, because a worker knows its own mission; a reviewer's brief does.
+
 ## Pointer-only chat signals
 
 Use the existing guarded JSON records and chat messaging tools for two-way signals when the lead developer explicitly authorizes messages between the named chats. Authorization should cover both directions in the dispatch; receiving a signal does not authorize a reply. A signal carries only `primary:<record>@<SHA-256>`, with no repeated report or directive. The pointer is repository-relative: both chats must already share this repository. It names the discovered primary record and the exact byte digest observed after a successful guarded write, not a historical snapshot or an approval token.

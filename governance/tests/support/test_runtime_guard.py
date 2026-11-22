@@ -78,7 +78,7 @@ class RegistryTest(unittest.TestCase):
                 self.assertEqual(names, set(g.REGISTRY[name]['modes']))
 
     def test_the_reads_write_nothing_and_the_writes_are_gated(self):
-        reads = {'local_jobs': {'paths', 'list', 'pointer', 'read', 'queue', 'kinds', 'brief'},
+        reads = {'local_jobs': {'paths', 'list', 'pointer', 'read', 'queue', 'kinds', 'brief', 'where'},
                  'worktree': {'paths', 'execution-status'}, 'timing_record': {'stats'}}
         for name, expected in reads.items():
             modes = g.REGISTRY[name]['modes']
