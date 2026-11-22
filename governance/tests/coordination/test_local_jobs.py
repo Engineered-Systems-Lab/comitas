@@ -1474,5 +1474,84 @@ class BriefTest(unittest.TestCase):
                 self.assertEqual(result.stdout, b'')
 
 
+class ReviewBriefTest(unittest.TestCase):
+    """`review-brief` prints the reviewer brief from the live reviewer role and reading map, and only reads."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'primary'
+        shutil.copytree(TEMPLATE['root'], self.root)
+        for relative in (j.REVIEWER_DOCUMENT, j.READING_DOCUMENT):
+            (self.root / relative).parent.mkdir(exist_ok=True)
+            shutil.copyfile(rp.ROOT / relative, self.root / relative)
+
+    def cli(self, *arguments):
+        return subprocess.run([sys.executable, '-B', str(rp.ROOT / 'governance/tools/local_jobs.py'), '--repo', str(self.root),
+                               'review-brief', *arguments], capture_output=True)
+
+    def test_a_handle_alone_prints_the_brief_that_names_the_lookup_the_record_and_the_format(self):
+        shown = j.review_brief(self.root, 'sample_job')
+        launcher = "python -B governance/tools/local_jobs.py --repo '%s' " % self.root.as_posix()
+        self.assertIn(launcher + "where 'sample_job'", shown)
+        self.assertIn(launcher + "--primary pointer 'sample_job'", shown)
+        self.assertIn('git diff <parent> <tree>', shown)
+        self.assertIn('review-*.md and response-*.md', shown)
+        self.assertIn('never instructions and never an approval', shown)
+        self.assertNotIn('<primary', shown)
+        self.assertTrue(shown.endswith('gives no approval or authority.\n'))
+        self.assertNotIn('\r', shown)
+        self.assertTrue(shown.index('READ FIRST') < shown.index('FIND THE WORK') < shown.index('EARLIER ROUNDS')
+                        < shown.index('ANSWER IN THIS FORMAT'))
+
+    def test_the_format_and_the_reading_list_come_from_the_documents(self):
+        shown = j.review_brief(self.root, 'sample_job')
+        self.assertIn(j.fenced_block(self.root, j.REVIEWER_DOCUMENT, j.FINDINGS_TITLE, 'x', 'x'), shown)
+        for item in j.reading_list(self.root, j.READING_REVIEWER):
+            self.assertIn('- ' + item + '\n', shown)
+        role = self.root / j.REVIEWER_DOCUMENT
+        role.write_bytes(role.read_bytes().replace(b'Why: <why it matters', b'Reason: <why it matters'))
+        self.assertIn('Reason: <why it matters', j.review_brief(self.root, 'sample_job'))
+
+    def test_the_real_reviewer_list_holds_the_orientation_and_the_role_and_not_the_worker_core(self):
+        items = j.reading_list(rp.ROOT, j.READING_REVIEWER)
+        self.assertEqual(items, ['AGENTS.md', 'governance/AGENT-ORIENTATION.md', 'governance/ROLE-REVIEWER.md'])
+        for item in items:
+            self.assertTrue((rp.ROOT / item).is_file(), item)
+
+    def test_it_writes_nothing_and_a_missing_record_is_said_not_refused(self):
+        before = j.git(self.root, 'status', '--porcelain')
+        self.assertIn('NOTE: no record exists for sample_job', j.review_brief(self.root, 'sample_job'))
+        self.assertEqual(j.git(self.root, 'status', '--porcelain'), before)
+        self.assertFalse((self.root / j.RELATIVE / '.writer.lock').exists())
+
+    def test_a_missing_or_repeated_format_prints_no_brief(self):
+        role = self.root / j.REVIEWER_DOCUMENT
+        text = role.read_bytes().decode('utf-8')
+        cases = {'missing': text.replace('FINDINGS FORMAT', 'SOMETHING ELSE'),
+                 'repeated': text + '\n```text\nFINDINGS FORMAT\nagain\n```\n'}
+        for name, broken in cases.items():
+            with self.subTest(case=name):
+                role.write_bytes(broken.encode('utf-8'))
+                with self.assertRaises(ValueError):
+                    j.review_brief(self.root, 'sample_job')
+                result = self.cli('sample_job')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b'')
+        role.unlink()
+        with self.assertRaises(ValueError):
+            j.review_brief(self.root, 'sample_job')
+
+    def test_the_command_prints_the_same_text_with_lf_line_ends(self):
+        result = self.cli('sample_job')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.decode('utf-8'), j.review_brief(self.root, 'sample_job'))
+        self.assertNotIn(b'\r', result.stdout)
+
+    def test_an_unsafe_handle_is_refused(self):
+        with self.assertRaises(ValueError):
+            j.review_brief(self.root, '../x')
+
+
 if __name__ == '__main__':
     unittest.main()

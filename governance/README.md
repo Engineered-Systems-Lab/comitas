@@ -7,6 +7,7 @@ Governance describes how this repository is managed, validated, recorded, decide
 | [Agent orientation](AGENT-ORIENTATION.md) | The short common entry every agent reads first: roles, vocabulary, shortcuts and where each kind of truth lives; no rules of its own |
 | [Coordinator role](ROLE-COORDINATOR.md) | What only the Coordinator does: R and SR, delegation, the horizon rule, release, takeover and recovery |
 | [Worker role](ROLE-WORKER.md) | What only a worker does: the Job, the mission worktree, validation scope and the preview waiver |
+| [Reviewer role](ROLE-REVIEWER.md) | What a read-only reviewer does: one review, the findings format and where the review files live |
 | [Constraints](CONSTRAINTS.md) | Active operating rules and frozen-artifact precedence |
 | [Decisions](DECISIONS.md) | Complete standing registry; IDs and history stay together |
 | [Rationale](RATIONALE.md) | Explanations and evidence; non-normative |

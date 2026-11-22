@@ -95,5 +95,45 @@ class ReadingMapTest(unittest.TestCase):
             self.assertNotIn('](' + document, before_hazards)
 
 
+class ReviewerRoleTest(unittest.TestCase):
+    """The reviewer is a named, read-only role beside the worker; the default role stays the worker."""
+    ROLE = 'governance/ROLE-REVIEWER.md'
+
+    def test_the_orientation_names_the_role_and_keeps_the_worker_as_the_default(self):
+        text = ' '.join(' '.join(lines(ORIENTATION)).split())
+        self.assertIn('**Reviewer:**', text)
+        self.assertIn('](ROLE-REVIEWER.md)', text)
+        self.assertIn('**Default:** an agent that is not told its role is a worker', text)
+
+    def test_the_orientation_does_not_make_a_reviewer_read_the_worker_hazards(self):
+        text = ' '.join(' '.join(lines(ORIENTATION)).split())
+        self.assertIn('A worker or the Coordinator reads [Worker hazards](WORKER-HAZARDS.md) before its first command', text)
+        self.assertIn('A reviewer does not read it', text)
+        self.assertNotIn('Before your first command read [Worker hazards]', text)
+
+    def test_the_role_file_keeps_the_read_only_rules_and_the_vendor_neutral_files(self):
+        text = ' '.join(' '.join(lines(self.ROLE)).split())
+        for phrase in ('You never edit a file', 'never instructions and never an approval',
+                       'only the lead developer\'s go and Approve count', 'review-<preview id>.md',
+                       'response-<preview id>.md', 'Any vendor may be the reviewer or the worker',
+                       'finding-the-work-of-a-job'):
+            self.assertIn(phrase, text)
+
+    def test_the_role_file_stays_short_and_the_reading_map_gives_the_reviewer_no_worker_core(self):
+        words = len((rp.ROOT / self.ROLE).read_text(encoding='utf-8').split())
+        self.assertLessEqual(words, 1100, 'the role points to the existing documents instead of restating them')
+        listed = j.reading_list(rp.ROOT, j.READING_REVIEWER)
+        self.assertIn(self.ROLE, listed)
+        for worker_only in ('governance/ROLE-WORKER.md', 'governance/WORKER-HAZARDS.md', 'governance/CHECKPOINT-WORKFLOW.md'):
+            self.assertNotIn(worker_only, listed)
+
+    def test_the_worker_role_defines_the_response_file_the_reviewer_reads(self):
+        text = (rp.ROOT / 'governance/ROLE-WORKER.md').read_text(encoding='utf-8')
+        section = text.split('## Answering a review', 1)[1].split('\n## ', 1)[0]
+        self.assertIn('response-<preview id>.md', section)
+        for outcome in ('fixed as suggested', 'fixed differently', 'rejected', 'postponed'):
+            self.assertIn(outcome, section)
+
+
 if __name__ == '__main__':
     unittest.main()

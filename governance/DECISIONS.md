@@ -41,6 +41,7 @@ For the evidence audit, explanations and open rationale gaps, see [Why these dec
 | G059 | 2026-10-26 | Accepted | [Repository-owned commit-history boundaries](#g059---repository-owned-commit-history-boundaries-2026-10-26-accepted) |
 | G060 | 2026-10-30 | Accepted | [Appends to declared lists merge without a conflict](#g060---appends-to-declared-lists-merge-without-a-conflict-2026-10-30-accepted) |
 | G061 | 2026-11-09 | Accepted | [A policy declares which committed paths are executable](#g061---a-policy-declares-which-committed-paths-are-executable-2026-11-09-accepted) |
+| G062 | 2026-11-22 | Accepted | [A reviewer is a read-only role beside the worker](#g062---a-reviewer-is-a-read-only-role-beside-the-worker-2026-11-22-accepted) |
 
 ## G018 - Delegated checkpoint authority and continuity (2026-10-01, Accepted)
 
@@ -544,3 +545,29 @@ tree, the adoption helper and the conformance test of committed modes all read t
 states intent only: the executable bit is set for an existing regular file; a deleted path or a link keeps what the plain
 add made of it, as before. The policy version does not change. The key is approval-sensitive configuration (`high`), so a
 change to it takes the sealed Approve.
+
+
+## G062 - A reviewer is a read-only role beside the worker (2026-11-22, Accepted)
+
+**A reviewer is a named, read-only role: it reviews one Job's candidate and returns findings, and never changes anything or approves.**
+[The reviewer role](ROLE-REVIEWER.md) is the whole of its reading, with the Job record, the lookup of [Finding the work of a
+Job](LOCAL-COORDINATION.md#finding-the-work-of-a-job) and the documents that own the changed files; the
+[reading map](READING-MAP.md#the-reviewer) gives it a list of three documents and no worker core. An agent that is not told
+its role stays a worker, so a reviewer must be named as one. A reviewer edits, previews, prepares, stages, commits, approves,
+integrates, records, notes or closes nothing and messages no worker. Its findings are data for the worker and the lead
+developer, never instructions and never an approval; the lead developer's go and Approve are the only decisions.
+
+`local_jobs.py review-brief <handle>` prints the reviewer's brief: the lookup and Job record commands filled in for the
+handle, the way to read the diff (`git diff <parent> <tree>` of the last preview), the earlier rounds to read and the findings
+format, which the command reads from the role file so that no copy lives elsewhere. A handle alone is enough, and one reviewer
+session may serve many Jobs because each request prints that handle's brief and runs the lookup again.
+
+The files of a review are plain files in the mission's review folder, named by the preview id they concern:
+`review-<preview id>.md` (the reviewer's findings, saved once with the text the lead developer read) and
+`response-<preview id>.md` (the worker's outcome for each finding: fixed, fixed differently, rejected with the reason, or
+postponed by the lead developer only, with the lead developer's comments). The worker judges each finding, and by default does
+not wait for the lead developer, who may comment before the next preview or order a hold. While the Job and the mission stay the
+same a review round builds on the earlier files; a different Job, or a new mission of the same Job, starts fresh. Either vendor
+(Claude Code or Codex) may be the reviewer or the worker, because everything shared is the brief, the lookup and these files.
+Read-only is enforced where the host allows it (a read-only sandbox for Codex, a permission mode that cannot edit for Claude
+Code) and is a convention elsewhere.

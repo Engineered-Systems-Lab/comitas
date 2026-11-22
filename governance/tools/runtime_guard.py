@@ -77,7 +77,7 @@ REGISTRY = {
         'valued': ('--repo',),
         'modes': {
             'paths': READ, 'list': READ, 'pointer': READ, 'read': READ, 'queue': READ, 'kinds': READ, 'brief': READ,
-            'where': READ,
+            'where': READ, 'review-brief': READ,
             'put': GATED, 'transfer': GATED, 'prune': GATED, 'rename': GATED, 'note': GATED, 'complete': GATED,
             'dispose': GATED, 'claim-coordinator': GATED,
         },

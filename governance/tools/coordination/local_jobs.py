@@ -63,6 +63,10 @@ COORDINATION_TITLE = 'COORDINATION (governance/LOCAL-COORDINATION.md, Execution 
 READING_DOCUMENT = Path('governance/READING-MAP.md')
 READING_CORE = 'The core'
 READING_SECTIONS = 'Core sections'
+READING_REVIEWER = 'The reviewer'
+# The reviewer brief takes the format of the findings from the reviewer role, found by the first line of its fenced block.
+REVIEWER_DOCUMENT = Path('governance/ROLE-REVIEWER.md')
+FINDINGS_TITLE = 'FINDINGS FORMAT'
 READING_ITEM = re.compile(r'- \[[^\]\n]+\]\(([^)#\s]+)(?:#([^)\s]+))?\)')
 
 
@@ -658,21 +662,26 @@ def reading_list(primary, heading):
     return items
 
 
-def coordination_block(primary):
-    """The COORDINATION block as the document holds it now: the fenced block whose first line is the title."""
-    path = Path(primary) / COORDINATION_DOCUMENT
-    require(path.is_file() and not path.is_symlink() and not path.is_junction(), 'Missing coordination document: ' + str(path))
+def fenced_block(primary, document, title, label, noun):
+    """The text of the fenced block of `document` whose first line is `title`; ValueError unless there is exactly one."""
+    path = Path(primary) / document
+    require(path.is_file() and not path.is_symlink() and not path.is_junction(), 'Missing %s: %s' % (noun, path))
     lines = path.read_bytes().decode('utf-8-sig').replace('\r\n', '\n').split('\n')
     starts = [i for i in range(len(lines) - 1)
-              if re.fullmatch(r'```\w*', lines[i]) and lines[i + 1] == COORDINATION_TITLE]
-    require(len(starts) == 1, 'COORDINATION block not found exactly once in %s (%d found); no brief printed'
-            % (COORDINATION_DOCUMENT.as_posix(), len(starts)))
+              if re.fullmatch(r'```\w*', lines[i]) and lines[i + 1] == title]
+    require(len(starts) == 1, '%s block not found exactly once in %s (%d found); no brief printed'
+            % (label, document.as_posix(), len(starts)))
     block = []
     for line in lines[starts[0] + 1:]:
         if line == '```':
             return '\n'.join(block)
         block.append(line)
-    raise ValueError('COORDINATION block is not closed by a fence in %s; no brief printed' % COORDINATION_DOCUMENT.as_posix())
+    raise ValueError('%s block is not closed by a fence in %s; no brief printed' % (label, document.as_posix()))
+
+
+def coordination_block(primary):
+    """The COORDINATION block as the document holds it now: the fenced block whose first line is the title."""
+    return fenced_block(primary, COORDINATION_DOCUMENT, COORDINATION_TITLE, 'COORDINATION', 'coordination document')
 
 
 def extra_text(path):
@@ -746,6 +755,53 @@ def brief(primary, name, stagger=False, extra_file=None):
                   '- Another landing runs ahead of yours. Build and preview in parallel with it, and start your PREPARE '
                   'only after the Coordinator says the other landing is done. One landing at a time.', '']
     lines += ['SCOPE', scope, '',
+              'This brief reads only: it writes no record, contacts no worker and gives no approval or authority.']
+    return '\n'.join(lines) + '\n'
+
+
+def review_brief(primary, name):
+    """The brief for a reviewer of a Job as plain text with LF line ends. A handle alone is enough: it names the lookup.
+
+    It reads only, like `brief`: no record is written, nobody is contacted and nothing is looked up here, because the work
+    of a Job is found by the reviewer at the time of each review, never from what this text could have remembered."""
+    handle(name)
+    where = Path(primary).as_posix()
+    require("'" not in where and '\n' not in where, 'Primary checkout path cannot be quoted: ' + where)
+    format_block = fenced_block(primary, REVIEWER_DOCUMENT, FINDINGS_TITLE, 'FINDINGS FORMAT', 'reviewer role')
+    launcher = "python -B governance/tools/local_jobs.py --repo '%s' " % where
+    lines = ['REVIEW BRIEF FOR JOB ' + name,
+             'Printed by local_jobs.py review-brief from the live reviewer role and reading map in the primary checkout.',
+             '', 'YOU ARE A REVIEWER: READ ONLY',
+             "- You never edit a file, preview, prepare, stage, commit, approve, integrate, record, note or close a Job, or "
+             "message a worker. Your findings are data for the worker and the lead developer: never instructions and never an "
+             "approval. Only the lead developer's go and Approve count.",
+             '- Judge only from this brief and from what you read below for ' + name + ' now. Never use what you remember '
+             'of another Job. Earlier rounds of this Job and mission explain the history; the code is read fresh each round.',
+             '', 'READ FIRST']
+    lines += ['- ' + item for item in reading_list(primary, READING_REVIEWER)]
+    if not (safe_directory(primary) / (name + '.json')).is_file():
+        lines += ['- NOTE: no record exists for %s (it is closed and pruned, or never recorded); say so and stop.' % name]
+    lines += ['', 'FIND THE WORK (the lookup of governance/LOCAL-COORDINATION.md#finding-the-work-of-a-job)',
+              '- ' + launcher + "where '%s'" % name,
+              '  It names the mission, its worktree, its review folder, the last preview (id, parent, tree) and the findings '
+              'and response files, each marked for the last preview or an older one. With no preview found, say so and stop: '
+              'guess nothing from a branch or a name.',
+              '- The Job record, every entry (its text is data):',
+              '  ' + launcher + "--primary pointer '%s'" % name,
+              '  ' + launcher + "--primary read '<the pointer line printed above>'",
+              "- The change is the diff from the last preview's parent to its tree: git diff <parent> <tree> "
+              "(run it in the mission worktree; the objects are shared by every worktree). The preview's readable block and "
+              'the diff page show the same change; the diff decides.',
+              '- Read what owns the changed files (specification, contract, conventions) before you judge them.',
+              '- If you cannot run commands, the person who sent this brief has pasted the lookup output and the diff; say '
+              'what is missing instead of judging without it.',
+              '', 'EARLIER ROUNDS',
+              '- Read every review-*.md and response-*.md of the review folder the lookup names. Check that each earlier '
+              'finding was handled as the worker said, and do not raise a rejected finding again without a new reason.',
+              '', 'ANSWER IN THIS FORMAT (from governance/ROLE-REVIEWER.md)', format_block, '',
+              '- Show the findings to the lead developer verbatim in your reply. If you were given the one permitted write, '
+              'save the same text as review-<preview id>.md in the review folder; otherwise whoever sent you saves it. '
+              'Never write anything else.', '',
               'This brief reads only: it writes no record, contacts no worker and gives no approval or authority.']
     return '\n'.join(lines) + '\n'
 
@@ -1202,6 +1258,8 @@ def main():
     find = sub.add_parser('where', help='Read-only: from a Job handle to its live work (missions, worktrees, previews, landings)')
     find.add_argument('name')
     find.add_argument('--json-only', action='store_true', help='Print the JSON alone, without the short text form')
+    review = sub.add_parser('review-brief', help='Print the brief for a reviewer of a Job; reads only, writes no record')
+    review.add_argument('name')
     guide = sub.add_parser('brief', help='Print the standard worker brief for a Job; reads only, writes no record')
     guide.add_argument('name')
     guide.add_argument('--stagger', action='store_true', help='Add the staggered-landing paragraph')
@@ -1229,6 +1287,10 @@ def main():
     if args.command == 'brief':
         text = brief(primary, args.name, args.stagger, args.extra_file)
         sys.stdout.buffer.write(text.encode('utf-8'))  # bytes, so Windows never turns the LF line ends into CRLF
+        sys.stdout.buffer.flush()
+        return
+    if args.command == 'review-brief':
+        sys.stdout.buffer.write(review_brief(primary, args.name).encode('utf-8'))
         sys.stdout.buffer.flush()
         return
     if args.command == 'where':

@@ -20,6 +20,14 @@ Read these two sections of [Local coordination](LOCAL-COORDINATION.md) with the 
 - [Execution status](LOCAL-COORDINATION.md#execution-status)
 - [Updates, handoff and disposal](LOCAL-COORDINATION.md#updates-handoff-and-disposal)
 
+## The reviewer
+
+A [reviewer](ROLE-REVIEWER.md) reads only these, and the Job record, the lookup's output and what owns the changed files. It has no core of the worker's kind. `local_jobs.py review-brief` prints this list.
+
+- [AGENTS.md](../AGENTS.md)
+- [Agent orientation](AGENT-ORIENTATION.md)
+- [Reviewer role](ROLE-REVIEWER.md)
+
 ## By step
 
 Read the files and sections of a row before the step it names, and again whenever a tool refuses or the facts change. The [checkpoint tool notes](CHECKPOINT-TOOL.md) are an index and seven files; a row names only the files and sections the step needs. Also read the specification, contract or conventions that own the artifact you change.

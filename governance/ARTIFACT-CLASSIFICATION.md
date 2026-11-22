@@ -81,6 +81,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/READING-MAP.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/README.md` | governance | governance | - | yes | conformance, guidance | - | yes | - |
 | `governance/ROLE-COORDINATOR.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
+| `governance/ROLE-REVIEWER.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/ROLE-WORKER.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/VERSION` | governance | governance | - | - | conformance, guidance | - | - | - |
 | `governance/WORKER-HAZARDS.md` | governance | governance | - | - | conformance, guidance | agent-guidance | yes | medium |

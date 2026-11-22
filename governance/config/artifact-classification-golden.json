@@ -317,6 +317,22 @@
       "why": "Coordinator entry point; carries the delegation, release and takeover rules",
       "approval_sensitivity": "medium"
     },
+    "governance/ROLE-REVIEWER.md": {
+      "class": "governance",
+      "profile": "governance",
+      "boundary": [],
+      "bound": true,
+      "invariants": [
+        "conformance",
+        "guidance"
+      ],
+      "subclass": [
+        "agent-guidance"
+      ],
+      "reachable": true,
+      "why": "reviewer entry point; carries the read-only rules and the findings format",
+      "approval_sensitivity": "medium"
+    },
     "governance/ROLE-WORKER.md": {
       "class": "governance",
       "profile": "governance",
