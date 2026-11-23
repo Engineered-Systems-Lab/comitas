@@ -208,10 +208,11 @@ class Selection:
         It is the union of the framework's table and the project's, both read at HEAD with the same loader as the
         working tree's. The early approval judges every path by the higher of this table's row and the candidate's
         own, so a candidate never lowers its own sensitivity, and a row it adds to or moves into the project's table
-        has no row here to lower; None makes every path count as `high`."""
+        has no row here to lower; None makes every path count as `high`. Profiles of the wrong shape, such as a
+        profiles file without its `profiles` object, also make the table unreadable."""
         try:
             return artifact_classification.table_from(self.head_text, profiles)
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, KeyError, TypeError):
             return None
 
     def link_retargets(self, manifest, policy, table):

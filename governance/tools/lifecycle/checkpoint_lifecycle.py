@@ -74,7 +74,7 @@ class Lifecycle:
         # The profiles it names are read at HEAD too, so a candidate that retires a profile and moves its rows is no obstacle.
         try:
             table = self.head_table(artifact_classification.profiles_from(self.head_text))
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, KeyError, TypeError):  # KeyError, TypeError: profiles of the wrong shape
             table = None
         require(table is not None, 'The artifact classification table at HEAD cannot be read')
         # A project with no runtime boundary has no runtime checkpoint to keep current. The change that adopts the
@@ -135,15 +135,16 @@ class Lifecycle:
 
     def continuity_record(self, name):
         """Whether a path is a continuity record: the progress record, or a path of the devlog folder that the
-        classification table calls class record, when the project keeps a devlog. Both the devlog settings and the table
-        are read as committed at HEAD, never from the working copy, so a candidate cannot move the folder or reclassify
-        a path to make itself a record. Anything that cannot be read at HEAD is not a record."""
+        classification table calls class record, when the project keeps a devlog. The devlog settings, the table and the
+        profiles the table is parsed with are all read as committed at HEAD, never from the working copy, so a candidate
+        cannot move the folder, reclassify a path or edit a profile to make itself a record. Anything that cannot be
+        read at HEAD is not a record."""
         if name == 'docs/PROGRESS.md':
             return True
         try:
             settings = artifact_classification.devlog_settings_from(self.head_text(artifact_classification.DEVLOG))
-            table = self.head_table(artifact_classification.load_profiles(self.root))
-        except (ValueError, UnicodeError):
+            table = self.head_table(artifact_classification.profiles_from(self.head_text))
+        except (ValueError, UnicodeError, KeyError, TypeError):  # KeyError, TypeError: a profiles file of the wrong shape
             return False
         if not settings['enabled'] or table is None or not name.startswith(settings['folder'] + '/'):
             return False

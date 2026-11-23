@@ -223,6 +223,48 @@ class RuntimeOverlayRecoveryTest(unittest.TestCase):
         self.assertFalse(rule(ac.DEVLOG) or rule('project-governance/anything.md'))
         self.assertTrue(rule('devlog/new-entry.md'))
 
+    def edit_profiles(self, change):
+        """Write the profiles file with `change` applied, uncommitted."""
+        path = self.root / ac.PROFILES
+        edited = json.loads(path.read_text(encoding='utf-8'))
+        change(edited['profiles'])
+        path.write_text(json.dumps(edited), encoding='utf-8')
+
+    def test_a_working_copy_that_retires_a_profile_does_not_unmake_a_continuity_record(self):
+        self.edit_profiles(lambda profiles: profiles.update(retired=profiles.pop('test')))
+        self.assertTrue(self.tool.continuity_record('devlog/new-entry.md'))
+
+    def test_a_working_profile_cannot_make_a_path_a_continuity_record(self):
+        # A HEAD table that names a profile HEAD's own profiles lack cannot be read at HEAD, so no devlog path is a
+        # record there; adding the missing profile to the working copy must not change that.
+        table = self.root / ac.TABLE
+        text = table.read_text(encoding='utf-8')
+        folder = '| `devlog/` | record | test |'
+        self.assertIn(folder, text)
+        table.write_text(text.replace(folder, '| `devlog/` | record | extra |'), encoding='utf-8')
+        self.tool.git('add', '--', ac.TABLE)
+        self.tool.git('commit', '-qm', 'Name a profile the committed profiles lack')
+        self.assertFalse(self.tool.continuity_record('devlog/new-entry.md'))
+        self.edit_profiles(lambda profiles: profiles.update(extra=profiles['test']))
+        self.assertFalse(self.tool.continuity_record('devlog/new-entry.md'))
+
+    def test_committed_profiles_of_the_wrong_shape_make_the_head_table_unreadable(self):
+        # Without a project profiles file the shape fails in head_table; with one, already in the merge of the two.
+        project = '{"version": 4, "profiles": {}}'
+        for text, overlay in (('{}', None), ('{"profiles": 1}', None),
+                              ('{"version": 4}', project), ('{"version": 4, "profiles": 1}', project)):
+            with self.subTest(profiles=text, project=overlay):
+                (self.root / ac.PROFILES).write_text(text, encoding='utf-8')
+                if overlay is not None:
+                    (self.root / ac.PROJECT_PROFILES).parent.mkdir(parents=True, exist_ok=True)
+                    (self.root / ac.PROJECT_PROFILES).write_text(overlay, encoding='utf-8')
+                self.tool.git('add', '--', *[p for p in (ac.PROFILES, ac.PROJECT_PROFILES) if (self.root / p).exists()])
+                self.tool.git('commit', '-qm', 'Commit profiles of the wrong shape')
+                self.assertFalse(self.tool.continuity_record('devlog/new-entry.md'))
+                self.assertTrue(self.tool.continuity_record('docs/PROGRESS.md'))
+                with self.assertRaisesRegex(ValueError, 'table at HEAD cannot be read'):
+                    self.tool.preparation_gate(['a.txt'])
+
     def test_a_path_that_differs_in_only_one_of_the_two_views_is_listed(self):
         self.pending_with_conventions()
         packet = self.tool.load()

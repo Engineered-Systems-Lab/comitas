@@ -85,9 +85,10 @@ the paths (`Working copy differs from the sealed transaction at: ...`). `verify`
 `finish` stay strict and name the paths too, and add that a records worker runs
 `continue-records` first. A path is a continuity record when it is `docs/PROGRESS.md`,
 or lies under the devlog folder and the artifact classification table calls it class
-`record`; the folder and the table are read as committed at HEAD, never from the
-working copy, so `devlog/CONVENTIONS.md` (governance) never qualifies and a candidate
-cannot move the folder or reclassify a path. The same rule limits the next
+`record`; the folder, the table and the profiles the table is parsed with are read as
+committed at HEAD, never from the working copy, so `devlog/CONVENTIONS.md` (governance)
+never qualifies and a candidate cannot move the folder, reclassify a path or edit a
+profile to make itself a record. The same rule limits the next
 preparation. The subsequent transaction uses ordinary exact
 approval and all normal checks; `finish` then checks the predecessor and clears both
 packets. No unrelated transaction can bypass stale committed runtime continuity,
