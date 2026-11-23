@@ -228,7 +228,7 @@ APPROVAL_MEDIUM = (
     'governance/READING-MAP.md',
     'governance/CHECKPOINT-TOOL-CARRY.md', 'governance/CHECKPOINT-TOOL-CLAIMS.md', 'governance/CHECKPOINT-TOOL-COMMANDS.md', 'governance/CHECKPOINT-TOOL-CONSENT.md', 'governance/CHECKPOINT-TOOL-EVIDENCE.md', 'governance/CHECKPOINT-TOOL-INTERNALS.md', 'governance/CHECKPOINT-TOOL-RECOVERY.md',
     'governance/CONSTRAINTS.md', 'governance/DECISIONS.md', 'governance/LOCAL-COORDINATION.md',
-    'governance/AGENT-ORIENTATION.md', 'governance/ROLE-COORDINATOR.md', 'governance/ROLE-REVIEWER.md', 'governance/ROLE-WORKER.md',
+    'governance/AGENT-ORIENTATION.md', 'governance/ROLE-COORDINATOR.md', 'governance/REVIEW-STEP.md', 'governance/ROLE-REVIEWER.md', 'governance/ROLE-WORKER.md',
     'governance/WORKTREE-WORKFLOW.md',
     'governance/config/artifact-classification-golden.json',
     'governance/tools/continuity/artifact_classification.py', 'governance/config/checkpoint-profiles.json',

@@ -42,6 +42,7 @@ For the evidence audit, explanations and open rationale gaps, see [Why these dec
 | G060 | 2026-10-30 | Accepted | [Appends to declared lists merge without a conflict](#g060---appends-to-declared-lists-merge-without-a-conflict-2026-10-30-accepted) |
 | G061 | 2026-11-09 | Accepted | [A policy declares which committed paths are executable](#g061---a-policy-declares-which-committed-paths-are-executable-2026-11-09-accepted) |
 | G062 | 2026-11-22 | Accepted | [A reviewer is a read-only role beside the worker](#g062---a-reviewer-is-a-read-only-role-beside-the-worker-2026-11-22-accepted) |
+| G063 | 2026-11-23 | Accepted | [A worker has its preview reviewed by the other vendor, at the lead developer's choice](#g063---a-worker-has-its-preview-reviewed-by-the-other-vendor-at-the-lead-developers-choice-2026-11-23-accepted) |
 
 ## G018 - Delegated checkpoint authority and continuity (2026-10-01, Accepted)
 
@@ -571,3 +572,11 @@ same a review round builds on the earlier files; a different Job, or a new missi
 (Claude Code or Codex) may be the reviewer or the worker, because everything shared is the brief, the lookup and these files.
 Read-only is enforced where the host allows it (a read-only sandbox for Codex, a permission mode that cannot edit for Claude
 Code) and is a convention elsewhere.
+
+
+## G063 - A worker has its preview reviewed by the other vendor, at the lead developer's choice (2026-11-23, Accepted)
+
+**A worker may offer `Review first` before it asks for the go; the review is bound to the preview shown, runs by paste or by the other vendor's CLI, is saved as the findings file of the reviewer role and never approves.**
+[The review step](REVIEW-STEP.md) holds the procedure. The offer is a message of its own, answered before the go is asked (G047); the lead developer chooses each time among no review, the paste path and the run path. The worker captures the mission, preview id, parent and tree before anything starts, and a review is of exactly that candidate: the run saves nothing unless the answer names the captured candidate and the last preview, read again under the lifecycle lock immediately before an exclusive save, is still the captured one; a saved file is never withdrawn. A preview takes no lock, so the mission's one owner makes no preview and saves no other findings while its own review runs. A fix after a review is a new preview and takes a fresh go.
+
+Both paths share one bundle that `local_jobs.py review-brief <handle> --with-diff --preview <id>` prints: the candidate, the lookup output, every Job record entry, the whole diff, every earlier findings and response file and a statement of what is not included; the command refuses with the sizes rather than cut the diff. `review_step.py run <handle> --preview <id> --reviewer codex|claude` starts the CLI read-only (Codex: read-only sandbox, no session files, no user configuration, MCP servers off; Claude Code: read tools only, no settings files or MCP servers, no session), keeps the answer apart from diagnostics, checks it and publishes `review-<preview id>.md` atomically, keeping an existing file. A CLI is found by an explicit variable, then `PATH`, then for Codex the copy the Codex desktop app bundles (highest version), and its version and flags are checked before use. A missing or failing CLI falls back to the paste path. Nothing in a review is part of the seal or the Job record.

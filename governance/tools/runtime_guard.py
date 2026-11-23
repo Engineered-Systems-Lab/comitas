@@ -82,6 +82,12 @@ REGISTRY = {
             'dispose': GATED, 'claim-coordinator': GATED,
         },
     },
+    # The review step: `tools` only reads; `run` reads the preview and the mission from Git state, starts the other vendor's
+    # CLI read-only and then writes one findings file into the mission's review folder, so it is GATED.
+    'review_step': {
+        'valued': ('--repo',),
+        'modes': {'tools': READ, 'run': GATED},
+    },
     # The policy commands run it for every check; it writes only its per-run folder in the scratch folder beside the
     # main checkout, and a prepare must not be refused because another mission is integrating.
     'run_tests': LOCAL,

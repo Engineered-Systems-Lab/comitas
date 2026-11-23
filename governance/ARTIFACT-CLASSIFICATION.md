@@ -80,6 +80,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/RATIONALE.md` | record | record-only | - | - | conformance, mission-control-generator | rationale | yes | - |
 | `governance/READING-MAP.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/README.md` | governance | governance | - | yes | conformance, guidance | - | yes | - |
+| `governance/REVIEW-STEP.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/ROLE-COORDINATOR.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/ROLE-REVIEWER.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
 | `governance/ROLE-WORKER.md` | governance | governance | - | yes | conformance, guidance | agent-guidance | yes | medium |
@@ -147,6 +148,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/tests/coordination/test_local_jobs_claim.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tests/coordination/test_local_jobs_concurrency.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tests/coordination/test_local_jobs_where.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
+| `governance/tests/coordination/test_review_step.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tests/extensions/__init__.py` | tooling | tooling | - | - | - | - | - | medium |
 | `governance/tests/extensions/diff_viewer/__init__.py` | tooling | tooling | - | - | - | diff-viewer | - | medium |
 | `governance/tests/extensions/diff_viewer/test_render.py` | tooling | tooling | - | - | diff-viewer | diff-viewer | - | - |
@@ -211,6 +213,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/tools/lifecycle/review_render.py` | tooling | tooling | - | - | review | checkpoint | - | medium |
 | `governance/tools/local_jobs.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tools/repo_paths.py` | tooling | tooling | - | - | - | checkpoint | - | - |
+| `governance/tools/review_step.py` | tooling | tooling | - | - | conformance, jobs | - | - | - |
 | `governance/tools/run_tests.py` | tooling | tooling | - | - | test-runner | checkpoint | - | medium |
 | `governance/tools/runtime_guard.py` | tooling | tooling | - | - | governance-runtime | - | - | high |
 | `governance/tools/show_classification.py` | tooling | tooling | - | - | classification | checkpoint | - | - |

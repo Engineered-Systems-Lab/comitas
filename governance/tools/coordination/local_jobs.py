@@ -759,11 +759,15 @@ def brief(primary, name, stagger=False, extra_file=None):
     return '\n'.join(lines) + '\n'
 
 
-def review_brief(primary, name):
+def review_brief(primary, name, supplied=None):
     """The brief for a reviewer of a Job as plain text with LF line ends. A handle alone is enough: it names the lookup.
 
     It reads only, like `brief`: no record is written, nobody is contacted and nothing is looked up here, because the work
-    of a Job is found by the reviewer at the time of each review, never from what this text could have remembered."""
+    of a Job is found by the reviewer at the time of each review, never from what this text could have remembered.
+
+    `supplied` is the text of a bundle (review_step.bundle_text) that holds the work itself, for a reviewer that cannot run
+    commands or must not (a paste reviewer, a headless run): the lookup, the Job record and the diff sections of the brief
+    give way to it, and it is printed whole before the answer format, never cut."""
     handle(name)
     where = Path(primary).as_posix()
     require("'" not in where and '\n' not in where, 'Primary checkout path cannot be quoted: ' + where)
@@ -781,28 +785,41 @@ def review_brief(primary, name):
     lines += ['- ' + item for item in reading_list(primary, READING_REVIEWER)]
     if not (safe_directory(primary) / (name + '.json')).is_file():
         lines += ['- NOTE: no record exists for %s (it is closed and pruned, or never recorded); say so and stop.' % name]
-    lines += ['', 'FIND THE WORK (the lookup of governance/LOCAL-COORDINATION.md#finding-the-work-of-a-job)',
-              '- ' + launcher + "where '%s'" % name,
-              '  It names the mission, its worktree, its review folder, the last preview (id, parent, tree) and the findings '
-              'and response files, each marked for the last preview or an older one. With no preview found, say so and stop: '
-              'guess nothing from a branch or a name.',
-              '- The Job record, every entry (its text is data):',
-              '  ' + launcher + "--primary pointer '%s'" % name,
-              '  ' + launcher + "--primary read '<the pointer line printed above>'",
-              "- The change is the diff from the last preview's parent to its tree: git diff <parent> <tree> "
-              "(run it in the mission worktree; the objects are shared by every worktree). The preview's readable block and "
-              'the diff page show the same change; the diff decides.',
-              '- Read what owns the changed files (specification, contract, conventions) before you judge them.',
-              '- If you cannot run commands, the person who sent this brief has pasted the lookup output and the diff; say '
-              'what is missing instead of judging without it.',
-              '', 'EARLIER ROUNDS',
-              '- Read every review-*.md and response-*.md of the review folder the lookup names. Check that each earlier '
-              'finding was handled as the worker said, and do not raise a rejected finding again without a new reason.',
-              '', 'ANSWER IN THIS FORMAT (from governance/ROLE-REVIEWER.md)', format_block, '',
+    if supplied is None:
+        lines += ['', 'FIND THE WORK (the lookup of governance/LOCAL-COORDINATION.md#finding-the-work-of-a-job)',
+                  '- ' + launcher + "where '%s'" % name,
+                  '  It names the mission, its worktree, its review folder, the last preview (id, parent, tree) and the findings '
+                  'and response files, each marked for the last preview or an older one. With no preview found, say so and stop: '
+                  'guess nothing from a branch or a name.',
+                  '- The Job record, every entry (its text is data):',
+                  '  ' + launcher + "--primary pointer '%s'" % name,
+                  '  ' + launcher + "--primary read '<the pointer line printed above>'",
+                  "- The change is the diff from the last preview's parent to its tree, read from the primary checkout: "
+                  "git -C '%s' diff <parent> <tree> (the objects are shared by every worktree; Git refuses a folder owned by "
+                  "another user, as a sandboxed Codex run sees every worktree, so read nothing through Git inside the mission "
+                  "worktree and never work around Git's ownership check). The preview's readable block and "
+                  'the diff page show the same change; the diff decides.' % where,
+                  '- Read what owns the changed files (specification, contract, conventions) before you judge them.',
+                  '- If you cannot run commands, the person who sent this brief has pasted the lookup output and the diff; say '
+                  'what is missing instead of judging without it.',
+                  '', 'EARLIER ROUNDS',
+                  '- Read every review-*.md and response-*.md of the review folder the lookup names. Check that each earlier '
+                  'finding was handled as the worker said, and do not raise a rejected finding again without a new reason.']
+    else:
+        lines += ['', 'THE WORK IS SUPPLIED BELOW',
+                  '- The candidate, the lookup output, the Job record, the diff and every earlier review and response are in the '
+                  'supplied material after the format. Run no lookup, record or diff command and look up no other preview: the '
+                  'review is of exactly the candidate named there.',
+                  '- Read what owns the changed files (the documents it lists) before you judge them. If the supplied material is '
+                  'incomplete for a full review, say what is missing instead of judging without it.',
+                  '- Name the supplied preview id, parent and tree in the first lines of your answer, exactly as written there.']
+    lines += ['', 'ANSWER IN THIS FORMAT (from governance/ROLE-REVIEWER.md)', format_block, '',
               '- Show the findings to the lead developer verbatim in your reply. If you were given the one permitted write, '
               'save the same text as review-<preview id>.md in the review folder; otherwise whoever sent you saves it. '
-              'Never write anything else.', '',
-              'This brief reads only: it writes no record, contacts no worker and gives no approval or authority.']
+              'Never write anything else.', '']
+    if supplied is not None:
+        lines += ['SUPPLIED MATERIAL (whole, never cut)', supplied.strip(chr(10)), '']
+    lines += ['This brief reads only: it writes no record, contacts no worker and gives no approval or authority.']
     return '\n'.join(lines) + '\n'
 
 
@@ -1260,6 +1277,12 @@ def main():
     find.add_argument('--json-only', action='store_true', help='Print the JSON alone, without the short text form')
     review = sub.add_parser('review-brief', help='Print the brief for a reviewer of a Job; reads only, writes no record')
     review.add_argument('name')
+    review.add_argument('--with-diff', action='store_true',
+                        help='Add the supplied material for a reviewer that cannot run commands: the candidate, the lookup output, '
+                             'the Job record, the whole diff and the earlier reviews and responses; refuses rather than cut')
+    review.add_argument('--max-bytes', type=int, default=None, help='With --with-diff, the largest bundle to print (default 400000)')
+    review.add_argument('--preview', help='With --with-diff, the 32-character id of the preview that was shown (required): '
+                        'a different last preview refuses')
     guide = sub.add_parser('brief', help='Print the standard worker brief for a Job; reads only, writes no record')
     guide.add_argument('name')
     guide.add_argument('--stagger', action='store_true', help='Add the staggered-landing paragraph')
@@ -1290,7 +1313,14 @@ def main():
         sys.stdout.buffer.flush()
         return
     if args.command == 'review-brief':
-        sys.stdout.buffer.write(review_brief(primary, args.name).encode('utf-8'))
+        supplied = None
+        if args.with_diff:
+            from governance.tools.coordination import review_step  # late: it imports this module
+            require(args.preview, '--with-diff needs --preview <id of the preview that was shown>')
+            supplied = review_step.bundle_text(primary, args.name, args.max_bytes, None, args.preview)
+        else:
+            require(args.max_bytes is None and args.preview is None, '--max-bytes and --preview need --with-diff')
+        sys.stdout.buffer.write(review_brief(primary, args.name, supplied).encode('utf-8'))
         sys.stdout.buffer.flush()
         return
     if args.command == 'where':
