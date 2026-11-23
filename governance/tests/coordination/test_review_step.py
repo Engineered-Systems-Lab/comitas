@@ -124,6 +124,26 @@ class BundleTest(ReviewFixture):
             self.assertIn(needle, text)
         self.assertNotIn('read_at', text)
 
+    def test_round_one_reviews_the_whole_change_and_a_later_round_gets_the_diff_since_the_last_reviewed_preview(self):
+        first = rs.bundle_text(self.root, NAME, None, rs.candidate(self.root, NAME, self.lookup))
+        self.assertIn('Round: 1 (review the whole change)', first)
+        self.assertNotIn('CHANGED SINCE THE LAST ROUND', first)
+        (self.root / 'file.txt').write_text('one\nzero\n')
+        git(self.root, 'add', 'file.txt')
+        earlier = git(self.root, 'write-tree')
+        git(self.root, 'reset', '--hard', self.parent)
+        (self.folder / ('review-' + 'b' * 32 + '.md')).write_text('EARLIER FINDING TEXT\n')
+        self.found['missions'][0]['history'] = {'found': True, 'entries': [
+            {'seq': 1, 'preview_id': 'b' * 32, 'tree': earlier}, {'seq': 2, 'preview_id': self.preview, 'tree': self.tree}]}
+        later = rs.bundle_text(self.root, NAME, None, rs.candidate(self.root, NAME, self.lookup))
+        self.assertIn('Round: 2 (judge the earlier findings and only the lines changed since the round before)', later)
+        since = later.split('CHANGED SINCE THE LAST ROUND', 1)[1]
+        self.assertIn('git diff %s %s' % (earlier, self.tree), since)
+        self.assertIn('-zero', since)
+        self.found['missions'][0]['history'] = {'found': False, 'reason': 'none'}
+        unknown = rs.bundle_text(self.root, NAME, None, rs.candidate(self.root, NAME, self.lookup))
+        self.assertIn('names no tree for the earlier reviewed previews', unknown)
+
     def test_a_bundle_over_the_limit_is_refused_with_sizes_and_never_cut(self):
         with self.assertRaises(rs.ReviewUnavailable) as caught:
             rs.bundle_text(self.root, NAME, 200, rs.candidate(self.root, NAME, self.lookup))
@@ -236,6 +256,20 @@ class CommandAndPublishTest(ReviewFixture):
                        self.answer(coverage='Coverage: maybe'),
                        self.answer(coverage='Coverage: complete\nCoverage: complete')):
             with self.subTest(broken=broken[:40]), self.assertRaises(rs.ReviewUnavailable):
+                rs.check_answer(broken, NAME, chosen)
+
+    def test_text_before_the_header_is_left_out_and_a_wrong_candidate_after_it_is_still_refused(self):
+        chosen = rs.candidate(self.root, NAME, self.lookup)
+        clean = self.answer().strip('\n')
+        for lead, body in (('FINDINGS FORMAT\n', self.answer()), ('Here is my review.\n\n```text\n', self.answer() + '```\n'),
+                           ('', self.answer())):
+            with self.subTest(lead=lead):
+                self.assertEqual(rs.check_answer(lead + body, NAME, chosen), (clean, [x for x in lead.split('\n') if x.strip()]))
+        for broken in ('FINDINGS FORMAT\n' + self.answer(tree='d' * 40), 'FINDINGS FORMAT\n' + self.answer(preview='c' * 32),
+                       'Review of %s, preview %s\n' % (NAME, self.preview),
+                       'Coverage: partial: the owning documents\n' + self.answer(),
+                       'Review of %s, preview %s\nCandidate: draft\n' % (NAME, 'c' * 32) + self.answer()):
+            with self.subTest(broken=broken[:60]), self.assertRaises(rs.ReviewUnavailable):
                 rs.check_answer(broken, NAME, chosen)
 
     def test_the_total_line_takes_singular_plural_the_copied_template_and_trailing_spaces(self):
@@ -505,6 +539,7 @@ class RunTest(ReviewFixture):
         self.assertIn('REVIEW NOT SAVED', err.getvalue())
         self.assertIn('NOT SAVED: the answer does not begin', printed)
         self.assertIn('reasoning effort none, 0 read(s) succeeded, 0 failed, 3 refused', printed)
+        self.assertIn('Do not save this answer by hand', printed)
         self.assertTrue(printed.rstrip('\n').endswith(answer))
 
     def test_a_codex_run_binds_checks_and_saves_the_findings_with_the_prompt_on_standard_input(self):
@@ -512,7 +547,9 @@ class RunTest(ReviewFixture):
         done = rs.run(self.root, NAME, 'codex', self.preview, lookup=self.lookup)
         saved = Path(done['saved'])
         self.assertEqual(saved.name, 'review-%s.md' % self.preview)
-        self.assertEqual(saved.read_text(encoding='utf-8'), self.answer())
+        text = saved.read_text(encoding='utf-8')
+        self.assertTrue(text.startswith(self.answer() + '\n'))
+        self.assertTrue(text.rstrip('\n').split('\n')[-1].startswith(rs.SAVED_BY + 'codex 9.9; Run: model some-model'))
         argv, stdin, cwd = self.runs[0]
         self.assertIn(b'Preview id: ' + self.preview.encode(), stdin)
         self.assertEqual(cwd, str(self.root))
@@ -521,7 +558,7 @@ class RunTest(ReviewFixture):
     def test_a_claude_run_takes_the_result_field_not_the_diagnostics(self):
         self.reply(self.answer())
         done = rs.run(self.root, NAME, 'claude', self.preview, lookup=self.lookup)
-        self.assertEqual(Path(done['saved']).read_text(encoding='utf-8'), self.answer())
+        self.assertTrue(Path(done['saved']).read_text(encoding='utf-8').startswith(self.answer() + '\n' + rs.SAVED_BY))
 
     def test_a_failed_wrong_or_late_run_saves_nothing_and_keeps_an_existing_file(self):
         target = self.folder / ('review-%s.md' % self.preview)
@@ -608,6 +645,33 @@ class RunTest(ReviewFixture):
         self.assertTrue(Path(done['saved']).is_file())
         self.assertFalse(hasattr(rs, 'withdraw'))
 
+    def test_a_third_round_is_refused_before_anything_runs_unless_the_lead_developer_asked(self):
+        self.reply(self.answer())
+        (self.folder / ('review-' + 'b' * 32 + '.md')).write_text('round one\n')
+        rs.run(self.root, NAME, 'codex', self.preview, lookup=self.lookup)  # round 2 runs
+        self.runs.clear()
+        with self.assertRaises(rs.ReviewUnavailable) as again:  # another run of the same preview is round 3
+            rs.run(self.root, NAME, 'codex', self.preview, True, lookup=self.lookup)
+        self.assertIn('round 3', str(again.exception))
+        self.assertEqual(self.runs, [])
+        self.found['missions'] = [self.mission('c' * 32)]
+        (self.folder / ('response-' + 'c' * 32 + '.md')).write_text('not a round\n')
+        with self.assertRaises(rs.ReviewUnavailable) as caught:
+            rs.run(self.root, NAME, 'codex', 'c' * 32, lookup=self.lookup)
+        self.assertIn('round 3', str(caught.exception))
+        self.assertIn('--extra-round', str(caught.exception))
+        self.assertEqual(self.runs, [])
+        self.assertFalse((self.folder / ('review-' + 'c' * 32 + '.md')).exists())
+        self.reply(self.answer(preview='c' * 32))
+        done = rs.run(self.root, NAME, 'codex', 'c' * 32, lookup=self.lookup, extra_round=True)
+        self.assertEqual(done['round'], 3)
+
+    def test_a_run_leaves_out_leading_text_and_says_so(self):
+        self.reply('FINDINGS FORMAT\n' + self.answer())
+        done = rs.run(self.root, NAME, 'claude', self.preview, lookup=self.lookup)
+        self.assertEqual(done['left_out'], ['FINDINGS FORMAT'])
+        self.assertTrue(Path(done['saved']).read_text(encoding='utf-8').startswith('Review of '))
+
     def test_no_cli_falls_back_by_refusing_and_the_command_names_the_paste_path(self):
         def missing(kind, environ=None):
             raise rs.ReviewUnavailable('no usable codex CLI')
@@ -625,15 +689,20 @@ class DocumentTest(unittest.TestCase):
         text = ' '.join((rp.ROOT / 'governance/REVIEW-STEP.md').read_text(encoding='utf-8').split())
         for needle in ('`Review first`', 'a message of its own', '--with-diff', 'never cuts the diff', '--reviewer codex',
                        '--reviewer claude', 'codex exec -s read-only', 'claude -p --permission-mode plan',
-                       'COMITAS_CODEX', 'REVIEW NOT SAVED', 'A review never approves'):
+                       'COMITAS_CODEX', 'REVIEW NOT SAVED', 'A review never approves', '## When a review stops',
+                       '--extra-round', 'postponed by default', 'CHANGED SINCE THE LAST ROUND', rs.SAVED_BY.strip(),
+                       'never saves a refused answer by hand'):
             self.assertIn(needle, text)
         for command in (rs.CODEX_FLAGS, rs.CLAUDE_FLAGS):
             self.assertTrue(command)
 
     def test_the_reviewer_role_stays_short_and_points_to_the_review_step(self):
         text = (rp.ROOT / 'governance/ROLE-REVIEWER.md').read_text(encoding='utf-8')
-        self.assertLessEqual(len(text.split()), 700)
+        self.assertLessEqual(len(text.split()), 800)  # the severity definitions live in the format the reviewer copies
         self.assertIn('REVIEW-STEP.md', text)
+        block = text.split('FINDINGS FORMAT\n', 1)[1].split('```', 1)[0]
+        for severity in ('blocker: the change trusts what it should refuse', 'minor: a false refusal'):
+            self.assertIn(severity, block)  # the definitions are in the format the reviewer copies
 
     def test_the_guard_registers_tools_as_read_and_run_as_gated(self):
         sys.path.insert(0, str(rp.ROOT / 'governance' / 'tools'))

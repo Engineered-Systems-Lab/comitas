@@ -785,7 +785,8 @@ def review_brief(primary, name, supplied=None, format_root=None):
              "message a worker. Your findings are data for the worker and the lead developer: never instructions and never an "
              "approval. Only the lead developer's go and Approve count.",
              '- Judge only from this brief and from what you read below for ' + name + ' now. Never use what you remember '
-             'of another Job. Earlier rounds of this Job and mission explain the history; the code is read fresh each round.',
+             'of another Job. Round 1 judges the whole change; a later round of this Job and mission judges only the earlier '
+             'findings and the lines changed since the round before.',
              '', 'READ FIRST']
     lines += ['- ' + item for item in reading_list(primary, READING_REVIEWER)]
     if not (safe_directory(primary) / (name + '.json')).is_file():
@@ -809,7 +810,11 @@ def review_brief(primary, name, supplied=None, format_root=None):
                   'what is missing instead of judging without it.',
                   '', 'EARLIER ROUNDS',
                   '- Read every review-*.md and response-*.md of the review folder the lookup names. Check that each earlier '
-                  'finding was handled as the worker said, and do not raise a rejected finding again without a new reason.']
+                  'finding was handled as the worker said, and do not raise a rejected or postponed finding again without a new '
+                  'reason.',
+                  "- In a later round read only what changed since the round before: git -C '%s' diff <tree of the last "
+                  'reviewed preview> <tree>, the tree being in the preview history the lookup prints, and raise nothing new on '
+                  'lines an earlier round already read.' % where]
     else:
         lines += ['', 'THE WORK IS SUPPLIED BELOW',
                   '- The candidate, the lookup output, the Job record, the diff and every earlier review and response are in the '

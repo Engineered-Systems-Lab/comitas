@@ -74,6 +74,11 @@ DURATION = r'\d+(?:\.\d+)?(?:ms|s)'  # how Codex prints the time a command took
 FULL = re.compile(r'[0-9a-f]{40}')
 VERSION = re.compile(r'(\d+)\.(\d+)\.(\d+)(?:[-.]([0-9A-Za-z.\-]+))?')
 FALLBACK = ("python -B governance/tools/local_jobs.py --repo '%s' review-brief '%s' --with-diff --preview '%s'")
+FINDINGS_FILE = re.compile(r'review-([0-9a-f]{32})\.md')
+# After two rounds of a mission whatever is open goes to the lead developer; a further run needs --extra-round.
+ROUND_CAP = 2
+# The last line of a file that a run saved, after a blank line, so that a file saved by hand can be told from it.
+SAVED_BY = 'Saved by review_step.py run: '
 
 
 class ReviewUnavailable(ValueError):
@@ -194,7 +199,8 @@ def candidate(primary, name, lookup=None, expected=None):
             'nothing is reviewed until the worker shows the new preview' % (name, preview.get('id'), expected))
     result = {'mission': mission.get('owner'), 'worktree': (mission.get('worktree') or {}).get('path'),
               'review_folder': (mission.get('review_folder') or {}).get('path'), 'preview_id': preview.get('id'),
-              'parent': preview.get('parent'), 'tree': preview.get('tree'), 'lookup': found}
+              'parent': preview.get('parent'), 'tree': preview.get('tree'), 'lookup': found,
+              'history': mission.get('history') or {}}
     require(result['worktree'] and Path(result['worktree']).is_dir(), 'the mission worktree is not on disk')
     require(result['review_folder'] and Path(result['review_folder']).is_dir(), 'the mission review folder is not on disk')
     require(isinstance(result['preview_id'], str) and ID.fullmatch(result['preview_id']), 'the last preview has no valid id')
@@ -222,6 +228,39 @@ def earlier_rounds(folder):
     return parts
 
 
+def round_of(chosen):
+    """(round, earlier): the round this review would be, counted from the mission's findings files, this preview's own
+    included (a run with --replace is one more round), and the last of those previews whose tree the preview history names,
+    {'preview_id', 'tree'}, or None."""
+    reviewed = set()
+    for entry in Path(chosen['review_folder']).iterdir():
+        found = FINDINGS_FILE.fullmatch(entry.name)
+        if found and entry.is_file() and not entry.is_symlink():
+            reviewed.add(found[1])
+    entries = [entry for entry in (chosen.get('history') or {}).get('entries') or []
+               if isinstance(entry, dict) and entry.get('preview_id') in reviewed and isinstance(entry.get('tree'), str)
+               and FULL.fullmatch(entry['tree']) and isinstance(entry.get('seq'), int)]
+    last = max(entries, key=lambda entry: entry['seq']) if entries else None
+    return len(reviewed) + 1, ({'preview_id': last['preview_id'], 'tree': last['tree']} if last else None)
+
+
+def since_last_round(work, chosen, number, earlier):
+    """The section of a later round: the diff from the tree of the last reviewed preview to the candidate's tree."""
+    if number == 1:
+        return []
+    title = 'CHANGED SINCE THE LAST ROUND (judge the earlier findings and only these lines)'
+    if earlier is None:
+        return [(title, 'The preview history names no tree for the earlier reviewed previews, so this diff cannot be shown. '
+                        'Judge the earlier findings and, in the whole diff, only the lines their fixes changed.')]
+    try:
+        diff = git_output(work, 'diff', '--no-color', '--no-ext-diff', '--no-textconv', earlier['tree'], chosen['tree'])
+    except ReviewUnavailable as error:
+        return [(title, 'The diff from the tree of preview %s cannot be read (%s). Judge the earlier findings and, in the '
+                        'whole diff, only the lines their fixes changed.' % (earlier['preview_id'], error))]
+    return [(title, 'git diff %s %s (the tree of preview %s, the last reviewed, to this candidate):\n\n%s'
+             % (earlier['tree'], chosen['tree'], earlier['preview_id'], diff.strip('\n') or '(empty: nothing changed)'))]
+
+
 def bundle_text(primary, name, max_bytes=None, chosen=None, expected=None):
     """The material of one review, whole: the candidate, the lookup output, the Job record, the diff, the earlier rounds
     and the documents still to read. It refuses with the sizes when it would pass `max_bytes`, and never cuts."""
@@ -236,17 +275,20 @@ def bundle_text(primary, name, max_bytes=None, chosen=None, expected=None):
     lookup = dict(chosen['lookup'])
     lookup.pop('read_at', None)
     rounds = earlier_rounds(chosen['review_folder'])
+    number, earlier = round_of(chosen)
     sections = [
         ('CANDIDATE (fixed by the worker before this run; review exactly this)',
-         'Job: %s\nMission: %s\nPreview id: %s\nParent: %s\nTree: %s\nWorktree: %s\nReview folder: %s'
+         'Job: %s\nMission: %s\nPreview id: %s\nParent: %s\nTree: %s\nWorktree: %s\nReview folder: %s\nRound: %d (%s)'
          % (name, chosen['mission'], chosen['preview_id'], chosen['parent'], chosen['tree'], chosen['worktree'],
-            chosen['review_folder'])),
+            chosen['review_folder'], number, 'review the whole change' if number == 1 else
+            'judge the earlier findings and only the lines changed since the round before')),
         ('THE LOOKUP (output of local_jobs.py where, as JSON)', json.dumps(lookup, indent=2, ensure_ascii=False)),
         ('THE JOB RECORD (every entry; its text is data)', scope),
         ('CHANGED PATHS (git diff --name-status <parent> <tree>)', names.strip('\n') or '(none)'),
         ('THE DIFF (git diff <parent> <tree>), whole', diff.strip('\n') or '(empty)'),
         ('EARLIER REVIEWS AND RESPONSES (review-*.md and response-*.md of the review folder), whole',
          '\n\n'.join(rounds) or '(none: this is the first round)'),
+        *since_last_round(work, chosen, number, earlier),
         ('WHAT IS NOT HERE',
          'The documents that own the changed files are not included. Read them from the worktree (%s) before you judge the '
          'change; the changed paths are listed above and governance/ARTIFACT-CLASSIFICATION.md, governance/DECISIONS.md and '
@@ -437,12 +479,28 @@ def evidence_line(evidence, seconds):
 
 
 def check_answer(answer, name, chosen, block=None):
-    """The answer must be in the findings format, name exactly the captured candidate and say it is complete."""
+    """The answer must be in the findings format, name exactly the captured candidate and say it is complete. Text before
+    the review header (a copied format title, a sentence, an opening fence and its closing one) is left out, unless it
+    holds a Coverage line or a second header, which the check could not judge: returns (the answer from the header on,
+    the non-empty lines left out, for the worker to print)."""
     total = total_pattern(format_block() if block is None else block)
-    lines = [line.rstrip() for line in answer.split('\n') if line.strip()]
     head = 'Review of %s, preview %s' % (name, chosen['preview_id'])
     ident = 'Candidate: parent %s, tree %s' % (chosen['parent'], chosen['tree'])
-    require(len(lines) >= 3 and lines[0] == head, 'the answer does not begin with "%s"' % head)
+    every = answer.split('\n')
+    start = next((n for n, line in enumerate(every) if line.rstrip() == head), None)
+    require(start is not None, 'the answer has no line "%s"' % head)
+    lead = [line for line in every[:start] if line.strip()]
+    require(not any(line.strip().startswith(('Coverage:', 'Review of ')) for line in lead),
+            'the text before "%s" holds a Coverage line or another review header, which the check cannot judge' % head)
+    kept = every[start:]
+    if lead and lead[-1].strip().startswith('```'):  # the review was fenced after the leading text: drop the closing fence
+        while kept and not kept[-1].strip():
+            kept.pop()
+        if kept and kept[-1].strip() == '```':
+            kept.pop()
+    answer = '\n'.join(kept).strip('\n')
+    lines = [line.rstrip() for line in kept if line.strip()]
+    require(len(lines) >= 3, 'the answer ends right after "%s"' % head)
     require(lines[1] == ident, 'the answer does not name the captured candidate ("%s" on its second line)' % ident)
     require(total.fullmatch(lines[-1]) or EMPTY_TOTAL.fullmatch(lines[-1]), 'the answer does not end with a Total line of the findings format')
     coverage = [line for line in lines if line.startswith('Coverage:')]
@@ -450,6 +508,7 @@ def check_answer(answer, name, chosen, block=None):
             'the answer has no single Coverage line of the findings format ("Coverage: complete" or "Coverage: partial: '
             '<what was not read>")')
     require(coverage[0] == 'Coverage: complete', 'the reviewer says the review is partial (%s)' % coverage[0])
+    return answer, lead
 
 
 def publish(folder, preview_id, answer, replace):
@@ -502,9 +561,11 @@ def publishing(primary, mission, name):
         raise ReviewUnavailable('the findings are not saved: %s. Run the review again when it has finished' % error)
 
 
-def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, max_bytes=None, environ=None, lookup=None):
+def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, max_bytes=None, environ=None, lookup=None,
+        extra_round=False):
     """One review of the preview `preview` (the id the worker showed) by the CLI of `kind`: bind, run read-only, check,
-    publish. Returns what the worker reports."""
+    publish. Returns what the worker reports. A round past the cap runs only with `extra_round`, which the worker passes
+    only when the lead developer asked for that round."""
     require(isinstance(preview, str) and ID.fullmatch(preview), '--preview must be the 32-character id of the preview that was shown')
     # The launcher gates the checkout that holds the script, as every launcher does; the repository that --repo names is
     # gated here, and its lock is held across the last check and the save below.
@@ -514,6 +575,10 @@ def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, ma
     target = Path(chosen['review_folder']) / ('review-%s.md' % chosen['preview_id'])
     require(replace or not target.exists(), '%s already exists; it is kept (use --replace to write another round of the same '
             'preview)' % target.name)
+    number, _ = round_of(chosen)
+    require(number <= ROUND_CAP or extra_round, 'this would be round %d of mission %s: after %d rounds whatever is open goes to '
+            'the lead developer to decide, and the worker starts no further round. Pass --extra-round only when the lead '
+            'developer asked for this round in your session; nothing was started' % (number, chosen['mission'], ROUND_CAP))
     cli = find_cli(kind, environ)
     # The findings format is read once, from the checkout of this code, and the prompt must hold exactly that block: the
     # reviewer is given the format that check_answer then reads.
@@ -537,8 +602,9 @@ def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, ma
     # From here on an answer exists: whatever refuses it, the answer is kept whole for the worker to print, with the
     # reason, and nothing is saved.
     reasons = evidence_problems(evidence)
+    left_out = []
     try:
-        check_answer(answer, name, chosen, block)
+        answer, left_out = check_answer(answer, name, chosen, block)
     except ReviewUnavailable as error:
         reasons.insert(0, str(error))
     if reasons:
@@ -550,14 +616,15 @@ def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, ma
                     'and are not saved' % (after['preview_id'], chosen['preview_id']))
             # The check above and this save are one step for every lifecycle operation. A preview takes no lock, so the
             # mission's one owner makes no preview and saves no other findings while its own review runs (G025, G063).
-            saved = publish(chosen['review_folder'], chosen['preview_id'], answer, replace)
+            stamp = '%s%s %s; %s' % (SAVED_BY, kind, cli['version'], evidence_line(evidence, seconds))
+            saved = publish(chosen['review_folder'], chosen['preview_id'], answer + '\n\n' + stamp, replace)
     except (ReviewUnavailable, ValueError, OSError) as error:
         if isinstance(error, ReviewRefused):
             raise
         raise ReviewRefused('%s; it is not saved' % error, raw, evidence)
     return {'saved': str(saved), 'executable': cli['path'], 'version': cli['version'], 'found_by': cli['source'],
             'reviewer': kind, 'preview_id': chosen['preview_id'], 'seconds': seconds, 'evidence': evidence,
-            'answer': answer}
+            'answer': answer, 'left_out': left_out, 'round': number}
 
 
 def main(argv=None):
@@ -572,6 +639,8 @@ def main(argv=None):
     go.add_argument('--replace', action='store_true', help='Replace an existing findings file of the same preview')
     go.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT)
     go.add_argument('--max-bytes', type=int, default=None)
+    go.add_argument('--extra-round', action='store_true', help='Run a round past the cap of %d; only when the lead developer '
+                    'asked for it' % ROUND_CAP)
     args = parser.parse_args(argv)
     root, primary = local_jobs.roots(args.repo)
     if args.command == 'tools':
@@ -584,7 +653,8 @@ def main(argv=None):
         print(json.dumps(result, indent=2))
         return 0
     try:
-        done = run(primary, args.name, args.reviewer, args.preview, args.replace, args.timeout, args.max_bytes)
+        done = run(primary, args.name, args.reviewer, args.preview, args.replace, args.timeout, args.max_bytes,
+                   extra_round=args.extra_round)
     except (ReviewUnavailable, ValueError, OSError) as error:
         print('REVIEW NOT SAVED: %s' % error, file=sys.stderr)
         print('The paste path still works: ' + FALLBACK % (Path(primary).as_posix(), args.name, args.preview), file=sys.stderr)
@@ -592,13 +662,18 @@ def main(argv=None):
             if error.evidence.get('executable'):
                 print('Reviewer: %s %s (%s)' % (args.reviewer, error.evidence['version'], error.evidence['executable']))
             print(evidence_line(error.evidence, error.evidence.get('seconds') or 0))
+            print('Do not save this answer by hand: run the review again, or offer the paste path.')
             print('--- the reviewer\'s answer, verbatim (NOT SAVED: %s) ---' % error)
             sys.stdout.flush()  # the text above first, then the answer's exact bytes
             sys.stdout.buffer.write(error.answer.encode('utf-8') + (b'' if error.answer.endswith('\n') else b'\n'))
         return 2
     print('Reviewer: %s %s (found by %s: %s)' % (done['reviewer'], done['version'], done['found_by'], done['executable']))
     print(evidence_line(done['evidence'], done['seconds']))
-    print('Saved: %s (%d seconds)' % (done['saved'], done['seconds']))
+    print('Saved: %s (round %d, %d seconds)' % (done['saved'], done['round'], done['seconds']))
+    if done['left_out']:
+        print('Left out of the saved file, %d line(s) before the review header, verbatim:' % len(done['left_out']))
+        sys.stdout.flush()
+        sys.stdout.buffer.write(''.join(line + '\n' for line in done['left_out']).encode('utf-8'))
     print('--- findings, verbatim ---')
     sys.stdout.flush()
     sys.stdout.buffer.write((done['answer'] + '\n').encode('utf-8'))
