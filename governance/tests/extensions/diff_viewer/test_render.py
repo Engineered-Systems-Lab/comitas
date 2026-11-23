@@ -1250,6 +1250,20 @@ class RoundsTest(RoundsFixture):
         (self.review / ('history-%s.json' % self.ids[1])).write_text(self.sign(dict(self.entries[1], parent='0' * 40)), encoding='utf-8')
         self.assertIn('another parent', render.read_history(self.root, self.review, self.record())[1][1])
 
+    def test_a_history_record_nested_too_deeply_is_refused_alone_and_its_round_is_unavailable(self):
+        (self.review / ('history-%s.json' % self.ids[1])).write_text('[' * 200000, encoding='utf-8')
+        entries, problems = render.read_history(self.root, self.review, self.record())
+        self.assertEqual(([e['seq'] for e in entries], problems), ([1, 3], ['history-%s.json: nested too deeply to be parsed' % self.ids[1]]))
+        rounds, reason = render.load_rounds(self.root, render.PREVIEW, self.record())
+        self.assertEqual([(r['number'], r['available']) for r in rounds], [(1, True), (2, False), (3, True)])
+        self.assertIn('Rounds notice', self.page())
+        (self.review / ('review-%s.md' % self.ids[0])).write_text('findings\n')  # round 1 is reviewed and verifies
+        plan = self.plan()  # round 2 was reviewed too, so round 1 is no baseline: it could hide a revert made since round 2
+        self.assertEqual((plan['since'], plan['since_gone']['number']), (None, 2))
+        self.assertIn('cannot be compared', self.page())
+        (self.review / ('review-%s.md' % self.ids[1])).unlink()  # no findings file without a verified record: round 1 is the baseline
+        self.assertEqual((self.plan()['since']['number'], self.plan()['since_gone']), (1, None))
+
     def test_a_history_of_another_checkout_is_refused(self):
         (self.root / '.git' / 'governance' / 'receipt.key').write_bytes(b'x' * 32)
         entries, problems = render.read_history(self.root, self.review, self.record())

@@ -314,11 +314,7 @@ def history_section(folder, store, last, why=None):
                                           'existed. Nothing is guessed from other files.'}
     if store is None:
         return {'found': False, 'reason': 'history records are there but cannot be authenticated: ' + (why or 'no checkpoint store')}
-    try:
-        entries, problems = preview_record.history(StoreReader(store), folder)
-    except RecursionError:
-        return {'found': False, 'reason': 'cannot be read: a history file is nested too deeply to be parsed, and the reader of the '
-                                          'history (preview_record.history) does not refuse a single file, so none is listed'}
+    entries, problems = preview_record.history(StoreReader(store), folder)  # a file nested too deeply is refused alone
 
     names = {entry.name for entry in folder.iterdir()}
 

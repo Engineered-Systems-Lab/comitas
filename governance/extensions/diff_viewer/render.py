@@ -547,6 +547,8 @@ def read_history(repo, folder, record):
             entries.append(body)
         except (OSError, ValueError) as error:
             problems.append('%s: %s' % (path.name, error))
+        except RecursionError:  # json.loads of a deeply nested file: refused alone, so its round shows as unavailable
+            problems.append('%s: nested too deeply to be parsed' % path.name)
     return sorted(entries, key=lambda body: body['seq']), problems
 
 
@@ -582,9 +584,16 @@ def load_rounds(repo, kind, record):
     if not chosen:
         return None, 'No preview history is recorded for this mission, so only the comparison with the parent is possible. Previews made before the history existed have none.' + why
     rounds, previous = [], 0
+    known = {entry['preview_id'] for entry in entries}
+    try:  # a findings file for a preview without a verified record: an unknown round may be a reviewed one
+        unplaced = any(path.name.startswith(FINDINGS_PREFIX) and path.name.endswith('.md') and path.name[len(FINDINGS_PREFIX):-3] not in known
+                       for path in folder.iterdir())
+    except OSError:
+        unplaced = True
     for entry in chosen:
         for missing in range(previous + 1, entry['seq']):  # a record that was refused or is gone: the round stays, with nothing known of it
-            rounds.append({'number': missing, 'id': None, 'tree': None, 'time': None, 'reviewed': False, 'available': False, 'missing': True})
+            rounds.append({'number': missing, 'id': None, 'tree': None, 'time': None, 'reviewed': False, 'available': False, 'missing': True,
+                           'maybe_reviewed': unplaced})
         previous = entry['seq']
         findings = folder / (FINDINGS_PREFIX + entry['preview_id'] + '.md')
         rounds.append({'number': entry['seq'], 'id': entry['preview_id'], 'tree': entry['tree'], 'time': entry['recorded_at'],
@@ -654,7 +663,10 @@ def history_plan(repo, parent, tree, items, rounds):
     default = (reviewed or bases or [{'k': 0}])[-1]['k']
     since, since_gone = None, None  # the latest reviewed preview, embedded or not, even when it equals the candidate: then nothing changed since it
     latest = [item for item in earlier if item['reviewed']]
-    if latest:
+    unknown = [item for item in earlier if item.get('maybe_reviewed')]
+    if unknown and (not latest or unknown[-1]['number'] > latest[-1]['number']):
+        since_gone = unknown[-1]  # it may be the last reviewed preview: an older baseline could hide what changed since it, a revert included
+    elif latest:
         item = latest[-1]
         if item['items'] is not None:
             since = item

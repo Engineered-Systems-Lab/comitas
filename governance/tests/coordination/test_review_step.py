@@ -140,9 +140,13 @@ class BundleTest(ReviewFixture):
         since = later.split('CHANGED SINCE THE LAST ROUND', 1)[1]
         self.assertIn('git diff %s %s' % (earlier, self.tree), since)
         self.assertIn('-zero', since)
+        (self.folder / ('review-' + 'c' * 32 + '.md')).write_text('LATER FINDING TEXT\n')  # reviewed, its history record refused
+        refused = rs.bundle_text(self.root, NAME, None, rs.candidate(self.root, NAME, self.lookup))
+        self.assertIn('names no tree for an earlier reviewed preview', refused)  # never the older baseline, which could hide a revert
+        self.assertNotIn('git diff %s' % earlier, refused)
         self.found['missions'][0]['history'] = {'found': False, 'reason': 'none'}
         unknown = rs.bundle_text(self.root, NAME, None, rs.candidate(self.root, NAME, self.lookup))
-        self.assertIn('names no tree for the earlier reviewed previews', unknown)
+        self.assertIn('names no tree for an earlier reviewed preview', unknown)
 
     def test_a_bundle_over_the_limit_is_refused_with_sizes_and_never_cut(self):
         with self.assertRaises(rs.ReviewUnavailable) as caught:
@@ -631,6 +635,47 @@ class RunTest(ReviewFixture):
         rs.run(self.root, NAME, 'codex', self.preview, lookup=watching)
         self.assertEqual(seen, [False, True])  # the start, then the check under the lock just before the save
         self.assertFalse(lock.exists())
+
+    def test_a_preview_racing_the_run_cannot_write_its_records_between_the_last_check_and_the_save(self):
+        from governance.tools.lifecycle import preview_record
+        attempts = []
+
+        def racing(primary, name):  # a preview of the mission tries to record itself at the moment of each look
+            try:
+                with preview_record.records_lock(self.folder):
+                    attempts.append('written')
+            except ValueError:
+                attempts.append('refused')
+            return self.found
+        saving = rs.publish
+
+        def publish(*args, **kwargs):  # and once more at the moment of the save itself
+            racing(None, None)
+            return saving(*args, **kwargs)
+        self.addCleanup(setattr, rs, 'publish', saving)
+        rs.publish = publish
+        self.reply(self.answer())
+        done = rs.run(self.root, NAME, 'codex', self.preview, lookup=racing)
+        self.assertEqual(attempts, ['written', 'refused', 'refused'])  # free at the start, held from the last check through the save
+        self.assertTrue(Path(done['saved']).is_file())
+        self.assertFalse((self.folder / preview_record.LOCK).exists())
+
+    def test_a_records_lock_held_at_the_save_refuses_it_and_is_left_alone(self):
+        from governance.tools.lifecycle import preview_record
+        lock = self.folder / preview_record.LOCK
+        self.reply(self.answer())
+        reviewer = rs.execute
+
+        def taken(*args, **kwargs):  # a preview of the mission is writing its records when the run ends
+            lock.write_bytes(b'')
+            return reviewer(*args, **kwargs)
+        rs.execute = taken
+        with self.assertRaises(rs.ReviewUnavailable) as caught:
+            rs.run(self.root, NAME, 'codex', self.preview, lookup=self.lookup)
+        self.assertIn('records lock', str(caught.exception))
+        self.assertIn('not saved', str(caught.exception))
+        self.assertEqual([p.name for p in self.folder.iterdir()], [preview_record.LOCK])
+        self.assertFalse((self.root / '.local' / 'locks' / 'worktree-workflow.lock').exists())
 
     def test_the_last_preview_is_read_under_the_lock_immediately_before_the_save_and_nothing_after(self):
         lock = self.root / '.local' / 'locks' / 'worktree-workflow.lock'

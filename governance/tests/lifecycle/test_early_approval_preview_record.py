@@ -3,10 +3,12 @@
 `MissionCase` is also the fixture of the Job lookup tests (`governance/tests/coordination/test_job_where.py`).
 """
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import unittest
+from unittest.mock import patch
 
 from governance.tests.lifecycle import test_early_approval as fixtures
 from governance.tools.lifecycle import early_approval as ea
@@ -170,6 +172,92 @@ class PreviewRecordTest(MissionCase):
         go = self.go(result)
         self.assertIn('reserved name', preview_record.attach_go(self.tool, result['body'], go, output))
         self.assertEqual(output.read_bytes(), before)
+
+    def test_a_held_records_lock_makes_a_preview_and_a_go_write_nothing_and_say_why_and_is_left_alone(self):
+        first, _, _ = self.preview()
+        go = self.go(first)
+        lock = self.review / preview_record.LOCK
+        lock.write_bytes(b'')
+        before = {p.name: p.read_bytes() for p in self.review.iterdir()}
+        with patch.object(preview_record, 'WAIT_SECONDS', 0):
+            _, _, note = self.preview()
+            self.assertIn('records lock', note)
+            self.assertIn('records lock', preview_record.attach_go(self.tool, first['body'], go, self.review / 'go.json'))
+        self.assertTrue(lock.exists(), 'a lock that is not ours is never removed')
+        after = {p.name: p.read_bytes() for p in self.review.iterdir() if p.name not in ('preview-2.json', 'preview-2.md')}
+        self.assertEqual(after, before)  # no pointer and no history record was written
+        lock.unlink()
+        second, _, note = self.preview()
+        self.assertIsNone(note)
+        self.assertFalse(lock.exists())
+        self.assertEqual([(e['seq'], e['preview_id']) for e in preview_record.history(self.tool, self.review)[0]],
+                         [(1, first['body']['id']), (2, second['body']['id'])])
+
+    def test_a_preview_waits_for_the_lock_and_writes_once_it_is_free(self):
+        lock = self.review / preview_record.LOCK
+        lock.write_bytes(b'')
+        waits = []
+
+        def released(seconds):  # the holder (a review's save) finishes during the first wait
+            waits.append(seconds)
+            lock.unlink()
+        with preview_record.records_lock(self.review, 5, sleep=released):
+            self.assertTrue(lock.exists())
+        self.assertEqual((waits, lock.exists()), ([preview_record.POLL_SECONDS], False))
+
+    def test_a_history_file_nested_too_deeply_is_refused_alone_and_the_next_preview_still_records(self):
+        first, _, _ = self.preview()
+        (self.review / ('history-%s.json' % ('d' * 32))).write_text('[' * 200000)
+        entries, problems = preview_record.history(self.tool, self.review)
+        self.assertEqual(([e['preview_id'] for e in entries], problems),
+                         ([first['body']['id']], ['history-%s.json: nested too deeply to be parsed' % ('d' * 32)]))
+        second, _, note = self.preview()
+        self.assertIsNone(note)
+        self.assertEqual([(e['seq'], e['preview_id']) for e in preview_record.history(self.tool, self.review)[0]],
+                         [(1, first['body']['id']), (3, second['body']['id'])])  # the refused file keeps a number of its own
+
+    def test_a_refused_newest_history_record_keeps_its_number_and_the_next_preview_comes_after_it(self):
+        first, _, _ = self.preview()
+        second, _, _ = self.preview()
+        preview_record.history_path(self.review, second['body']['id']).write_text('[' * 200000)
+        third, _, note = self.preview()
+        self.assertIsNone(note)
+        entries, problems = preview_record.history(self.tool, self.review)
+        self.assertEqual([(e['seq'], e['preview_id']) for e in entries], [(1, first['body']['id']), (3, third['body']['id'])])
+        self.assertEqual(len(problems), 1)  # round 2 stays a round, unavailable, and nobody takes its number
+
+    def test_a_refused_record_older_than_the_newest_verified_one_opens_no_new_gap(self):
+        first, _, _ = self.preview()
+        second, _, _ = self.preview()
+        old = preview_record.history_path(self.review, first['body']['id'])
+        old.write_text('[' * 200000)
+        newest = preview_record.history_path(self.review, second['body']['id']).stat().st_mtime
+        os.utime(old, (newest - 60, newest - 60))  # refused, and older than round 2, which verifies
+        numbers = [self.preview()[0]['body']['id'] for _ in range(2)]
+        self.assertEqual([(e['seq'], e['preview_id']) for e in preview_record.history(self.tool, self.review)[0]],
+                         [(2, second['body']['id']), (3, numbers[0]), (4, numbers[1])])
+
+    def test_a_refused_newest_record_keeps_its_number_when_an_older_file_is_missing(self):
+        first, _, _ = self.preview()
+        second, _, _ = self.preview()
+        third, _, _ = self.preview()
+        preview_record.history_path(self.review, first['body']['id']).unlink()  # round 1's file is gone, round 2 verifies
+        preview_record.history_path(self.review, third['body']['id']).write_text('[' * 200000)  # and round 3 is refused
+        fourth, _, note = self.preview()
+        self.assertIsNone(note)
+        self.assertEqual([(e['seq'], e['preview_id']) for e in preview_record.history(self.tool, self.review)[0]],
+                         [(2, second['body']['id']), (4, fourth['body']['id'])])
+
+    def test_an_output_named_like_the_records_lock_is_named_at_once_and_nothing_waits_for_it(self):
+        result = self.tool.preview(['a.txt'], self.base.message, None, self.parent, 'refs/heads/tx/' + OWNER)
+        output = self.review / preview_record.LOCK
+        ea.write_new(output, ea.canonical(result))
+        with patch.object(preview_record, 'records_lock', side_effect=AssertionError('no wait for its own output')):
+            note = preview_record.write(self.tool, result, output, self.review / 'x.md', None)
+            self.assertIn('reserved name of the records lock', note)
+            self.assertIn('move it', note)
+            self.assertIn('reserved name of the records lock', preview_record.attach_go(self.tool, result['body'], self.go(result), output))
+        self.assertFalse((self.review / preview_record.FILE).exists())
 
     def test_the_layout_the_record_uses_equals_the_lifecycle_guards(self):
         from governance.tools.worktrees import guard

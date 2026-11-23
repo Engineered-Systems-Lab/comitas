@@ -231,7 +231,8 @@ def earlier_rounds(folder):
 def round_of(chosen):
     """(round, earlier): the round this review would be, counted from the mission's findings files, this preview's own
     included (a run with --replace is one more round), and the last of those previews whose tree the preview history names,
-    {'preview_id', 'tree'}, or None."""
+    {'preview_id', 'tree'}, or None. It is None too when a reviewed preview has no verified history record (refused or
+    missing): that preview may be the latest reviewed one, and an older baseline could hide what changed since it."""
     reviewed = set()
     for entry in Path(chosen['review_folder']).iterdir():
         found = FINDINGS_FILE.fullmatch(entry.name)
@@ -240,7 +241,8 @@ def round_of(chosen):
     entries = [entry for entry in (chosen.get('history') or {}).get('entries') or []
                if isinstance(entry, dict) and entry.get('preview_id') in reviewed and isinstance(entry.get('tree'), str)
                and FULL.fullmatch(entry['tree']) and isinstance(entry.get('seq'), int)]
-    last = max(entries, key=lambda entry: entry['seq']) if entries else None
+    unknown = reviewed - {entry['preview_id'] for entry in entries} - {chosen.get('preview_id')}
+    last = max(entries, key=lambda entry: entry['seq']) if entries and not unknown else None
     return len(reviewed) + 1, ({'preview_id': last['preview_id'], 'tree': last['tree']} if last else None)
 
 
@@ -250,7 +252,7 @@ def since_last_round(work, chosen, number, earlier):
         return []
     title = 'CHANGED SINCE THE LAST ROUND (judge the earlier findings and only these lines)'
     if earlier is None:
-        return [(title, 'The preview history names no tree for the earlier reviewed previews, so this diff cannot be shown. '
+        return [(title, 'The preview history names no tree for an earlier reviewed preview, so this diff cannot be shown. '
                         'Judge the earlier findings and, in the whole diff, only the lines their fixes changed.')]
     try:
         diff = git_output(work, 'diff', '--no-color', '--no-ext-diff', '--no-textconv', earlier['tree'], chosen['tree'])
@@ -545,15 +547,17 @@ def lifecycle_active(primary):
 
 
 @contextmanager
-def publishing(primary, mission, name):
-    """Hold the repository's lifecycle lock (as a short `review-publish` window) across the last check and the save, so
-    that no create, reconcile, integrate or remove runs between them; refuses at once, with no wait, when it is held."""
+def publishing(primary, mission, name, folder):
+    """Hold the repository's lifecycle lock (as a short `review-publish` window) and then the mission's records lock in its
+    review folder `folder` across the last check and the save, so that no create, reconcile, integrate or remove and no
+    preview or go of the mission writes between them; refuses at once, with no wait, when either is held."""
     from types import SimpleNamespace
+    from governance.tools.lifecycle import preview_record  # late, like the guard below
     from governance.tools.worktrees import worktree_support  # late: it imports the worktree guard
     common = Path(local_jobs.git(primary, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
     try:
         with worktree_support.lifecycle_lock(SimpleNamespace(common=common, root=Path(primary)), 'review-publish',
-                                             mission, name):
+                                             mission, name), preview_record.records_lock(folder):
             yield
     except ValueError as error:
         if isinstance(error, ReviewUnavailable):
@@ -610,12 +614,12 @@ def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, ma
     if reasons:
         raise ReviewRefused('; '.join(reasons) + '; it is not saved', raw, evidence)
     try:
-        with publishing(primary, chosen['mission'], name):
+        with publishing(primary, chosen['mission'], name, chosen['review_folder']):
             after = candidate(primary, name, lookup)
             require(same_candidate(chosen, after), 'the last preview changed during the run (now %s); the findings are for %s '
                     'and are not saved' % (after['preview_id'], chosen['preview_id']))
-            # The check above and this save are one step for every lifecycle operation. A preview takes no lock, so the
-            # mission's one owner makes no preview and saves no other findings while its own review runs (G025, G063).
+            # The check above and this save are one step for every lifecycle operation and for every preview or go of the
+            # mission, which write its records under the same records lock (G063 preview record lock extension).
             stamp = '%s%s %s; %s' % (SAVED_BY, kind, cli['version'], evidence_line(evidence, seconds))
             saved = publish(chosen['review_folder'], chosen['preview_id'], answer + '\n\n' + stamp, replace)
     except (ReviewUnavailable, ValueError, OSError) as error:

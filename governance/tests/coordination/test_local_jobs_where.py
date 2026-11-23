@@ -328,11 +328,12 @@ class LookupTest(MissionCase):
         self.assertNotIn('(missing)', text)
         self.assertIn('cannot be accessed', text)
         (self.review / ('history-%s.json' % ('d' * 32))).write_text('[' * 200000)
-        found = self.mission()
-        self.assertEqual(found['history']['found'], False)
-        self.assertIn('nested too deeply', found['history']['reason'])
+        found = self.mission()  # the file is refused alone and the round of the real preview is still listed
+        self.assertEqual(found['history']['found'], True)
+        self.assertEqual([e['preview_id'] for e in found['history']['entries']], [old])
+        self.assertEqual(found['history']['refused'], [{'name': 'history-%s.json' % ('d' * 32), 'status': 'refused, not trusted',
+                                                        'reason': 'nested too deeply to be parsed'}])
         self.assertEqual(found['preview']['found'], True)
-        self.assertTrue(any('nested too deeply' in line for line in self.where()['cannot_find']))
 
     def test_a_relative_gitdir_pointer_is_read_from_its_metadata_folder_and_an_unreadable_worktrees_folder_is_named(self):
         self.preview()

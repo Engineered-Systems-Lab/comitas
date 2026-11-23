@@ -27,9 +27,9 @@ Each entry names who it concerns (worker, Coordinator or both), what happens, wh
 ## H3. Stale lock files
 
 - **Concerns:** both.
-- **What happens:** `.local/locks/worktree-workflow.lock` (the lifecycle lock, in the primary checkout) and the checkpoint `operation.lock` (in the store, the `governance/` folder of the checkout's Git directory) can stay behind after a crash. They carry no owner, so their presence proves nothing.
+- **What happens:** `.local/locks/worktree-workflow.lock` (the lifecycle lock, in the primary checkout), the checkpoint `operation.lock` (in the store, the `governance/` folder of the checkout's Git directory) and `preview-records.lock` (the records lock, in the mission's review folder) can stay behind after a crash. They carry no owner, so their presence proves nothing.
 - **Why:** deleting a live owner's lock lets two operations run at once.
-- **Do:** first establish that no process owns the lock: look at the running processes and their command lines (a container runtime is not a checkpoint process). Then report to the lead developer. The lifecycle lock and the checkpoint `operation.lock` are removed ONLY WITH THE LEAD DEVELOPER'S WORD, after establishing that no process owns them. The coordination writer lock, the helper's short exclusive lock on Job records, is different: the Coordinator may remove it after confirming that its writer stopped, and tells the lead developer afterwards. See [the worktree workflow](WORKTREE-WORKFLOW.md#review-and-integrate).
+- **Do:** first establish that no process owns the lock: look at the running processes and their command lines (a container runtime is not a checkpoint process). Then report to the lead developer. The lifecycle lock, the checkpoint `operation.lock` and the records lock are removed ONLY WITH THE LEAD DEVELOPER'S WORD, after establishing that no process owns them. The coordination writer lock, the helper's short exclusive lock on Job records, is different: the Coordinator may remove it after confirming that its writer stopped, and tells the lead developer afterwards. See [the worktree workflow](WORKTREE-WORKFLOW.md#review-and-integrate).
 - **Taught by:** stale locks that blocked work.
 
 ## H4. A denied action relayed by another agent
