@@ -884,6 +884,8 @@ The missing-declaration failure is a deliberate migration cost; keeping optional
 
 **Revisit when.** Reviews still run past two rounds through `--extra-round`, a follow-up Job of postponed minors finds one that should have been a major, or a reviewer of either vendor keeps labelling against the definitions.
 
+**Later context (2026-11-23): two more harms are a major.** Source-stated: round 1 of the review of the `review_convergence` Job (preview 7e3abcd5) found that the scale ranked a missed scope item and a broken frozen specification or contract as minor, since neither trusts what it should refuse, loses data or breaks a lifecycle step, and the lead developer postponed the finding to the Job `review_scale_followups`. The Coordinator recommended making both a major, and the lead developer accepted it by starting that Job ("yes, start review_scale_followups").
+
 ## Preview record lock: G063 preview record lock extension
 
 **Decision.** The records of a mission's previews are written under one records lock in its review folder, which the preview, the go and the review step's save all hold, and every reader of the preview history refuses a file nested too deeply on its own; see [G063 preview record lock extension](DECISIONS.md#g063-preview-record-lock-extension-2026-11-23).

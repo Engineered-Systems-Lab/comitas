@@ -40,7 +40,7 @@ Why: <why it matters, naming the scope entry or owning document>
 
 Severity follows the consequence, not the size of the code:
 blocker: the change trusts what it should refuse, loses or corrupts data, or breaks a lifecycle step, on a normal path
-major: one of those consequences, but only in a rarer case
+major: one of those consequences, but only in a rarer case; a missed item of the Job's scope; or a broken frozen specification or contract
 minor: a false refusal, a less precise reason, a rare race in the safe direction, a small gap or unclear wording
 note: an observation that needs no change
 

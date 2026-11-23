@@ -736,7 +736,7 @@ class DocumentTest(unittest.TestCase):
                        '--reviewer claude', 'codex exec -s read-only', 'claude -p --permission-mode plan',
                        'COMITAS_CODEX', 'REVIEW NOT SAVED', 'A review never approves', '## When a review stops',
                        '--extra-round', 'postponed by default', 'CHANGED SINCE THE LAST ROUND', rs.SAVED_BY.strip(),
-                       'never saves a refused answer by hand'):
+                       'never saves a refused answer by hand', "a missed item of the Job's scope"):
             self.assertIn(needle, text)
         for command in (rs.CODEX_FLAGS, rs.CLAUDE_FLAGS):
             self.assertTrue(command)
@@ -746,7 +746,8 @@ class DocumentTest(unittest.TestCase):
         self.assertLessEqual(len(text.split()), 800)  # the severity definitions live in the format the reviewer copies
         self.assertIn('REVIEW-STEP.md', text)
         block = text.split('FINDINGS FORMAT\n', 1)[1].split('```', 1)[0]
-        for severity in ('blocker: the change trusts what it should refuse', 'minor: a false refusal'):
+        for severity in ('blocker: the change trusts what it should refuse', "a missed item of the Job's scope",
+                         'a broken frozen specification or contract', 'minor: a false refusal'):
             self.assertIn(severity, block)  # the definitions are in the format the reviewer copies
 
     def test_the_guard_registers_tools_as_read_and_run_as_gated(self):
