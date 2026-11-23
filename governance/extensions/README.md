@@ -46,12 +46,14 @@ It does these steps, which are the mechanical part of the list:
 
 Then edit by hand the document lines that name the extension (the script prints where they are). The decisions and the rationale keep their text as history.
 
-- `README.md`: the Mission Control bullet in the opening list, the layout rows and the sentence about Node.js, and the Mission Control port bullet in the adoption steps.
-- `governance/README.md`: the row of the extensions folder and the Mission Control section.
+- `README.md`: for Mission Control, its bullet in the opening list, the layout rows and the sentence about Node.js, and the Mission Control port bullet in the adoption steps; for the diff viewer, its bullet in the opening list and its mention in the layout row of `governance/extensions/`.
+- `governance/README.md`: the row of the extensions folder, the Mission Control section and the diff viewer section.
+- `governance/extensions/README.md`, when the extension layer stays: the sentence of the opening paragraph that names today's extensions.
 - `governance/AGENT-ORIENTATION.md`: the mention of the queue in "Where each kind of truth lives" and the Mission Control discovery section.
 - `governance/ROLE-COORDINATOR.md`: the sentence about reading the Mission Control JSON first for a status request, and the mentions of the queue view.
 - `governance/LOCAL-COORDINATION.md`: the two mentions of the queue view.
 - `governance/CHECKPOINT-TOOL-INTERNALS.md`: the Mission Control gate in the runner paragraph and the extension tests bullet of the test layout.
+- `governance/CHECKPOINT-TOOL-CONSENT.md`: the clause about the diff viewer reading the preview history to compare the rounds of a mission.
 - `governance/CHECKPOINT-WORKFLOW.md`: the sentence about the generator tests that an edit of the rationale or the decisions runs.
 - `governance/CONSTRAINTS.md`: the sentence about the datasets as an example of generated artifacts.
 - `governance/WORKER-HAZARDS.md`: H7, the server that loads its code once.

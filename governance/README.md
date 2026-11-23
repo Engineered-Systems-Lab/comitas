@@ -42,3 +42,7 @@ The [devlog](../devlog/README.md) is the historical, non-normative record of pro
 ## Mission Control
 
 Mission Control is an optional [extension](extensions/README.md): it can be removed without touching the core. [Mission Control v1 design](extensions/mission_control/MISSION-CONTROL-V1-DESIGN.md) records the read-only repository observation design under G030. The [generator](extensions/mission_control/README.md) produces five self-contained derived datasets, which are generated locally and never committed, and the implemented [read-only terminal](extensions/mission_control/ui/README.md) browses the local copy. Neither the datasets nor the UI supplies live transaction state or governing authority.
+
+## Diff viewer
+
+The diff viewer is an optional [extension](extensions/README.md): it can be removed without touching the core. Its [README](extensions/diff_viewer/README.md) says how a worker renders the exact candidate of a preview or a sealed review as one readable HTML page in the mission's review folder, where the link to it goes in the message that asks for the go or the Approve, and how the page compares the rounds of a mission that was previewed more than once. The page is deleted with the mission's review folder and grants no approval.
