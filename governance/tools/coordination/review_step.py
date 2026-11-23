@@ -26,15 +26,51 @@ import time
 from governance.tools.coordination import local_jobs
 
 DEFAULT_MAX_BYTES = 400000
+CODE_ROOT = Path(__file__).resolve().parents[3]  # the checkout that holds this code
 DEFAULT_TIMEOUT = 1500
 CODEX_ENVIRONMENT = 'COMITAS_CODEX'
 CLAUDE_ENVIRONMENT = 'COMITAS_CLAUDE'
 # What each CLI must still offer, checked against its own help on the installed version before a run.
 CODEX_FLAGS = ('--sandbox', '--output-last-message', '--cd', '--ephemeral', '--ignore-user-config', '--config')
 CLAUDE_FLAGS = ('--print', '--permission-mode', '--tools', '--strict-mcp-config', '--setting-sources',
-                '--no-session-persistence', '--output-format', '--add-dir')
+                '--no-session-persistence', '--output-format', '--verbose', '--effort', '--add-dir')
 CLAUDE_TOOLS = 'Read,Grep,Glob'
+# What a run needs that the isolation flags would otherwise drop: a reasoning effort (an ignored configuration leaves
+# Codex at none) and, on Windows, a Codex sandbox that can start a read command at all. `unelevated` needs no
+# administrator setup on any machine; `elevated` needs a one-time setup that not every machine has.
+REVIEW_EFFORT = 'high'
+CODEX_WINDOWS_SANDBOX = 'unelevated'
+COVERAGE = re.compile(r'Coverage: (complete|partial: \S.*)')
+# The role's one sentence form for a change with nothing to report ("ends with `Total: 0 findings`").
+EMPTY_TOTAL = re.compile(r'Total: 0 findings?')
+
+
+def format_block(root=None):
+    """The findings format of the reviewer role in `root` (the checkout of this code by default), the one definition
+    that the brief prints and the check reads."""
+    root = CODE_ROOT if root is None else root
+    return local_jobs.fenced_block(root, local_jobs.REVIEWER_DOCUMENT, local_jobs.FINDINGS_TITLE, 'FINDINGS FORMAT',
+                                   'reviewer role')
+
+
+def total_pattern(block):
+    """The Total line of a findings format turned into the pattern that checks it: each `<x>` is a number, a word written
+    `word(s)` takes `word`, `words` or `word(s)`, any other word also its plural, so a reviewer may copy the line exactly."""
+    lines = [line for line in block.split('\n') if line.startswith('Total: ')]
+    require(len(lines) == 1, 'the findings format has no single Total line')
+    parts = []
+    for token in re.split(r'(<[a-z]+>|[A-Za-z]+\(s\)|[A-Za-z]+)', lines[0]):
+        if re.fullmatch(r'<[a-z]+>', token):
+            parts.append(r'\d+')
+        elif re.fullmatch(r'[A-Za-z]+\(s\)', token):
+            parts.append(re.escape(token[:-3]) + r'(?:s|\(s\))?')
+        elif re.fullmatch(r'[A-Za-z]+', token) and token != 'Total':
+            parts.append(re.escape(token) + 's?')
+        else:
+            parts.append(re.escape(token))
+    return re.compile(''.join(parts))
 ID = re.compile(r'[0-9a-f]{32}')
+DURATION = r'\d+(?:\.\d+)?(?:ms|s)'  # how Codex prints the time a command took
 FULL = re.compile(r'[0-9a-f]{40}')
 VERSION = re.compile(r'(\d+)\.(\d+)\.(\d+)(?:[-.]([0-9A-Za-z.\-]+))?')
 FALLBACK = ("python -B governance/tools/local_jobs.py --repo '%s' review-brief '%s' --with-diff --preview '%s'")
@@ -42,6 +78,15 @@ FALLBACK = ("python -B governance/tools/local_jobs.py --repo '%s' review-brief '
 
 class ReviewUnavailable(ValueError):
     """The run path cannot go on; the paste path is the way on and nothing was saved."""
+
+
+class ReviewRefused(ReviewUnavailable):
+    """The reviewer answered but the answer is not saved; the answer and the run's evidence are kept to be printed."""
+
+    def __init__(self, message, answer, evidence):
+        super().__init__(message)
+        self.answer = answer
+        self.evidence = evidence
 
 
 def require(condition, message):
@@ -53,8 +98,8 @@ def execute(argv, stdin=None, timeout=60, cwd=None):
     """Run one command to the end: (exit code, stdout bytes, stderr bytes). The one place a process is started."""
     try:
         done = subprocess.run(argv, input=stdin, capture_output=True, timeout=timeout, cwd=cwd)
-    except subprocess.TimeoutExpired:
-        return None, b'', b'timed out after %d seconds' % timeout
+    except subprocess.TimeoutExpired as error:  # keep what the command printed so far: it may hold an answer
+        return None, error.stdout or b'', (error.stderr or b'') + b'\ntimed out after %d seconds' % timeout
     except OSError as error:
         return None, b'', str(error).encode('utf-8', 'replace')
     return done.returncode, done.stdout, done.stderr
@@ -206,7 +251,8 @@ def bundle_text(primary, name, max_bytes=None, chosen=None, expected=None):
          'The documents that own the changed files are not included. Read them from the worktree (%s) before you judge the '
          'change; the changed paths are listed above and governance/ARTIFACT-CLASSIFICATION.md, governance/DECISIONS.md and '
          'docs/ARCHITECTURE.md say what owns what. Files the diff does not touch are not included either. If you cannot read '
-         'them, say that this review is partial and which part is missing; a complete review is not supported without them.'
+         'them, write "Coverage: partial: <what you could not read>" and do not judge the candidate as clean; a complete '
+         'review is not supported without them.'
          % chosen['worktree'])]
     text = '\n\n'.join('### %s\n\n%s' % (title, body) for title, body in sections) + '\n'
     size = len(text.encode('utf-8'))
@@ -218,48 +264,192 @@ def bundle_text(primary, name, max_bytes=None, chosen=None, expected=None):
 
 # --- running a reviewer ------------------------------------------------------------------------------------------------
 
-def command(cli, chosen, answer_file):
+def command(cli, chosen, answer_file, windows=None):
     """The argument array of one read-only run; the prompt is the standard input, so nothing needs quoting."""
     work = chosen['worktree']
+    windows = os.name == 'nt' if windows is None else windows
     if cli['kind'] == 'codex':
-        return [cli['path'], 'exec', '-s', 'read-only', '--ephemeral', '--ignore-user-config', '-c', 'mcp_servers={}',
+        settings = ['-c', 'mcp_servers={}', '-c', 'model_reasoning_effort="%s"' % REVIEW_EFFORT]
+        if windows:
+            settings += ['-c', 'windows.sandbox="%s"' % CODEX_WINDOWS_SANDBOX]
+        return [cli['path'], 'exec', '-s', 'read-only', '--ephemeral', '--ignore-user-config', *settings,
                 '-C', work, '-o', str(answer_file), '-']
     return [cli['path'], '-p', '--permission-mode', 'plan', '--tools', CLAUDE_TOOLS, '--strict-mcp-config',
-            '--setting-sources', '', '--no-session-persistence', '--output-format', 'json',
-            '--add-dir', work, '--add-dir', chosen['review_folder']]
+            '--setting-sources', '', '--no-session-persistence', '--output-format', 'stream-json', '--verbose',
+            '--effort', REVIEW_EFFORT, '--add-dir', work, '--add-dir', chosen['review_folder']]
+
+
+def claude_events(out):
+    """The JSON events of a Claude Code stream-json run, one per line; a line that is not JSON is skipped."""
+    events = []
+    for line in text_of(out).split('\n'):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def raw_answer(cli, out, answer_file):
+    """The reviewer's final message exactly as the CLI gave it, or None: Codex's answer file, Claude Code's last result."""
+    if cli['kind'] == 'codex':
+        return answer_file.read_bytes().decode('utf-8', 'replace') if answer_file.is_file() else None
+    results = [event for event in claude_events(out) if event.get('type') == 'result']
+    return results[-1].get('result') if results and isinstance(results[-1].get('result'), str) else None
 
 
 def answer_of(cli, code, out, err, answer_file):
-    """The reviewer's final answer, or ReviewUnavailable with the reason; diagnostics never become the answer."""
+    """The reviewer's final answer (normalized) and its raw text; ReviewUnavailable with the reason when there is none.
+    Diagnostics never become the answer. A failed run that still left an answer is refused with that answer kept."""
+    raw = raw_answer(cli, out, answer_file)
     detail = text_of(err).strip().splitlines()[-8:]
-    require(code == 0, '%s run failed (exit %s): %s' % (cli['kind'], code, ' | '.join(detail) or 'no diagnostics'))
-    if cli['kind'] == 'codex':
-        require(answer_file.is_file(), 'codex wrote no answer file')
-        answer = text_of(answer_file.read_bytes())
-    else:
-        try:
-            body = json.loads(text_of(out))
-        except json.JSONDecodeError as error:
-            raise ReviewUnavailable('claude printed no readable JSON result: %s' % error)
-        require(isinstance(body, dict) and not body.get('is_error') and isinstance(body.get('result'), str),
-                'claude reported an error result: %s' % (str(body.get('result'))[:200] if isinstance(body, dict) else 'unreadable'))
-        answer = body['result']
-    answer = answer.strip('\n').strip()
+    failure = None
+    if code != 0:
+        failure = '%s run failed (exit %s): %s' % (cli['kind'], code, ' | '.join(detail) or 'no diagnostics')
+    elif cli['kind'] == 'claude':
+        results = [event for event in claude_events(out) if event.get('type') == 'result']
+        require(results, 'claude printed no result event')
+        if results[-1].get('is_error') or raw is None:
+            failure = 'claude reported an error result: %s' % str(results[-1].get('result'))[:200]
+    if failure:
+        if raw and raw.strip():
+            raise ReviewRefused(failure, raw, {})
+        raise ReviewUnavailable(failure)
+    require(raw is not None, 'codex wrote no answer file')
+    answer = raw.replace('\r\n', '\n').strip('\n').strip()
     if answer.startswith('```') and answer.endswith('```') and answer.count('```') == 2:
         answer = answer.split('\n', 1)[1].rsplit('\n', 1)[0].strip()
     require(answer, 'the reviewer returned an empty answer')
-    return answer
+    return answer, raw
 
 
-def check_answer(answer, name, chosen):
-    """The answer must be in the findings format and name exactly the captured candidate."""
+def codex_evidence(err, prompt='', roots=()):
+    """What the Codex log (its standard error) shows about the run: the header, the commands and the tokens. The log
+    echoes the prompt, so the prompt is taken out first: its text (a Job record quoting an earlier log) is not evidence.
+    A read is a command that succeeded with its folder inside `roots`, since Codex reads through commands."""
+    log = text_of(err)
+    echo = prompt.replace('\r\n', '\n').strip('\n')
+    if echo:
+        log = log.replace(echo, '')
+    top = log.split('\nuser\n', 1)[0]
+
+    def header(key):
+        found = re.search(r'^%s: (.+)$' % re.escape(key), top, re.MULTILINE)
+        return found[1].strip() if found else None
+    tokens = re.findall(r'^tokens used\s*\n\s*([\d,]+)', log, re.MULTILINE)
+    refused = re.findall(r'^\S*\s*ERROR [^\n]*blocked by policy[^\n]*', log, re.MULTILINE)
+    return {'model': header('model'), 'sandbox': header('sandbox'), 'effort': header('reasoning effort'),
+            'reads': sum(1 for line in re.findall(r'([^\n]*)\n\s*succeeded in %s:' % DURATION, log)
+                         if worktree_folder(line, roots)),
+            'failed': len(re.findall(r'^\s*exited -?\d+ in %s:' % DURATION, log, re.MULTILINE)),
+            'refused': len(refused), 'refused_example': refused[0].strip()[:300] if refused else None,
+            'tokens': int(tokens[-1].replace(',', '')) if tokens else None}
+
+
+def worktree_folder(line, roots):
+    """True when a Codex command line ends with ` in <absolute folder>` inside `roots`. Every ` in ` is tried, since the
+    command and the folder itself may hold the word; only an absolute folder counts."""
+    parts = line.split(' in ')
+    return any(Path(folder).is_absolute() and inside(folder, roots)
+               for folder in (' in '.join(parts[i:]).strip() for i in range(1, len(parts))))
+
+
+def inside(path, roots):
+    try:
+        resolved = Path(path).resolve()
+    except (OSError, ValueError, TypeError):
+        return False
+    return any(resolved.is_relative_to(Path(root).resolve()) for root in roots if root)
+
+
+def claude_evidence(out, roots=()):
+    """What the Claude Code event stream shows about the run: the model, the reads and their results, the refusals, the
+    tokens and the thinking tokens. A read counts only when a Read of a file inside `roots` returned without error. The
+    stream does not echo the effort, so the one passed is reported with the thinking tokens that show it was used."""
+    events = claude_events(out)
+    init = next((e for e in events if e.get('type') == 'system' and e.get('subtype') == 'init'), {})
+    result = next((e for e in reversed(events) if e.get('type') == 'result'), {})
+    asked, reads, failed = {}, 0, 0
+    for event in events:
+        content = (event.get('message') or {}).get('content') if isinstance(event.get('message'), dict) else None
+        for part in content if isinstance(content, list) else []:
+            if not isinstance(part, dict):
+                continue
+            if part.get('type') == 'tool_use':
+                asked[part.get('id')] = part
+            elif part.get('type') == 'tool_result':
+                use = asked.get(part.get('tool_use_id')) or {}
+                if part.get('is_error'):
+                    failed += 1
+                elif use.get('name') == 'Read' and inside((use.get('input') or {}).get('file_path'), roots):
+                    reads += 1
+    usage = result.get('usage') if isinstance(result.get('usage'), dict) else None
+    counts = [usage.get(key) for key in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens',
+                                         'output_tokens')] if usage else []
+    tokens = sum(count for count in counts if isinstance(count, int)) if counts and isinstance(counts[-1], int) else None
+    details = (usage or {}).get('output_tokens_details')
+    thinking = details.get('thinking_tokens') if isinstance(details, dict) else None
+    thinking = thinking if isinstance(thinking, int) else None
+    denials = result.get('permission_denials')
+    return {'model': init.get('model'),
+            'sandbox': ('permission mode %s, tools %s' % (init['permissionMode'], ','.join(init.get('tools') or []))
+                        if init.get('permissionMode') else None),
+            'effort': ('%s (passed), %d thinking tokens' % (REVIEW_EFFORT, thinking) if isinstance(thinking, int)
+                       else '%s (passed)' % REVIEW_EFFORT),
+            'thinking': thinking, 'reads': reads, 'failed': failed,
+            'refused': len(denials) if isinstance(denials, list) else None,
+            'refused_example': json.dumps(denials[0])[:300] if isinstance(denials, list) and denials else None,
+            'tokens': tokens}
+
+
+def evidence_of(cli, out, err, prompt='', roots=()):
+    return codex_evidence(err, prompt, roots) if cli['kind'] == 'codex' else claude_evidence(out, roots)
+
+
+def evidence_problems(evidence):
+    """Why the run's own log says it was no review: no reasoning, a refused command, no file read, or a fact the log no
+    longer states (a CLI whose output changed is refused, never trusted)."""
+    problems = ['the log could not be read (%s)' % evidence['unreadable']] if evidence.get('unreadable') else []
+    if (not evidence.get('effort') or evidence['effort'].split()[0] in ('none', 'minimal')
+            or ('thinking' in evidence and not evidence['thinking'])):
+        problems.append('the log shows reasoning effort %s' % (evidence.get('effort') or 'not stated'))
+    if evidence.get('refused') is None:
+        problems.append('the log does not state whether any command was refused')
+    elif evidence['refused']:
+        problems.append('the log shows %d command(s) refused by the sandbox or the permissions, for example %s'
+                        % (evidence['refused'], evidence.get('refused_example')))
+    if not evidence.get('reads'):
+        problems.append('the log shows no file of the worktree read successfully')
+    for key, noun in (('sandbox', 'the sandbox'), ('tokens', 'the tokens used')):
+        if evidence.get(key) is None:
+            problems.append('the log does not state %s' % noun)
+    return problems
+
+
+def evidence_line(evidence, seconds):
+    return ('Run: model %s, sandbox %s, reasoning effort %s, %d read(s) succeeded, %d failed, %d refused, %s tokens, %d '
+            'seconds' % (evidence.get('model') or 'not stated', evidence.get('sandbox') or 'not stated',
+                         evidence.get('effort') or 'not stated', evidence.get('reads') or 0, evidence.get('failed') or 0,
+                         evidence.get('refused') or 0, evidence.get('tokens') if evidence.get('tokens') is not None
+                         else 'unknown', seconds))
+
+
+def check_answer(answer, name, chosen, block=None):
+    """The answer must be in the findings format, name exactly the captured candidate and say it is complete."""
+    total = total_pattern(format_block() if block is None else block)
     lines = [line.rstrip() for line in answer.split('\n') if line.strip()]
     head = 'Review of %s, preview %s' % (name, chosen['preview_id'])
     ident = 'Candidate: parent %s, tree %s' % (chosen['parent'], chosen['tree'])
-    require(len(lines) >= 3 and lines[0] == head, 'the answer does not begin with "%s"; it is not saved' % head)
-    require(lines[1] == ident, 'the answer does not name the captured candidate ("%s" on its second line); it is not saved' % ident)
-    require(re.fullmatch(r'Total: \d+ findings?, \d+ blocker, \d+ major, \d+ minor, \d+ note', lines[-1]) or lines[-1] == 'Total: 0 findings',
-            'the answer does not end with a Total line of the findings format; it is not saved')
+    require(len(lines) >= 3 and lines[0] == head, 'the answer does not begin with "%s"' % head)
+    require(lines[1] == ident, 'the answer does not name the captured candidate ("%s" on its second line)' % ident)
+    require(total.fullmatch(lines[-1]) or EMPTY_TOTAL.fullmatch(lines[-1]), 'the answer does not end with a Total line of the findings format')
+    coverage = [line for line in lines if line.startswith('Coverage:')]
+    require(len(coverage) == 1 and COVERAGE.fullmatch(coverage[0]),
+            'the answer has no single Coverage line of the findings format ("Coverage: complete" or "Coverage: partial: '
+            '<what was not read>")')
+    require(coverage[0] == 'Coverage: complete', 'the reviewer says the review is partial (%s)' % coverage[0])
 
 
 def publish(folder, preview_id, answer, replace):
@@ -325,22 +515,49 @@ def run(primary, name, kind, preview, replace=False, timeout=DEFAULT_TIMEOUT, ma
     require(replace or not target.exists(), '%s already exists; it is kept (use --replace to write another round of the same '
             'preview)' % target.name)
     cli = find_cli(kind, environ)
-    prompt = local_jobs.review_brief(primary, name, bundle_text(primary, name, max_bytes, chosen))
+    # The findings format is read once, from the checkout of this code, and the prompt must hold exactly that block: the
+    # reviewer is given the format that check_answer then reads.
+    block = format_block()
+    prompt = local_jobs.review_brief(primary, name, bundle_text(primary, name, max_bytes, chosen), CODE_ROOT)
+    require(block in prompt, 'the findings format changed while the brief was built; nothing was started')
     with tempfile.TemporaryDirectory(prefix='review-step-') as scratch:
         answer_file = Path(scratch) / 'answer.txt'
         started = time.time()
         code, out, err = execute(command(cli, chosen, answer_file), prompt.encode('utf-8'), timeout, chosen['worktree'])
-        answer = answer_of(cli, code, out, err, answer_file)
-    check_answer(answer, name, chosen)
-    with publishing(primary, chosen['mission'], name):
-        after = candidate(primary, name, lookup)
-        require(same_candidate(chosen, after), 'the last preview changed during the run (now %s); the findings are for %s and '
-                'are not saved' % (after['preview_id'], chosen['preview_id']))
-        # The check above and this save are one step for every lifecycle operation. A preview takes no lock, so the
-        # mission's one owner makes no preview and saves no other findings while its own review runs (G025, G063).
-        saved = publish(chosen['review_folder'], chosen['preview_id'], answer, replace)
+        seconds = round(time.time() - started)
+        evidence = dict(seconds=seconds, executable=cli['path'], version=cli['version'])
+        try:  # a log the tool cannot read is no evidence, and never costs the answer
+            evidence.update(evidence_of(cli, out, err, prompt, (chosen['worktree'],)))
+        except (ValueError, TypeError, AttributeError, KeyError) as error:
+            evidence['unreadable'] = '%s: %s' % (type(error).__name__, error)
+        try:
+            answer, raw = answer_of(cli, code, out, err, answer_file)
+        except ReviewRefused as error:
+            raise ReviewRefused(str(error), error.answer, evidence)
+    # From here on an answer exists: whatever refuses it, the answer is kept whole for the worker to print, with the
+    # reason, and nothing is saved.
+    reasons = evidence_problems(evidence)
+    try:
+        check_answer(answer, name, chosen, block)
+    except ReviewUnavailable as error:
+        reasons.insert(0, str(error))
+    if reasons:
+        raise ReviewRefused('; '.join(reasons) + '; it is not saved', raw, evidence)
+    try:
+        with publishing(primary, chosen['mission'], name):
+            after = candidate(primary, name, lookup)
+            require(same_candidate(chosen, after), 'the last preview changed during the run (now %s); the findings are for %s '
+                    'and are not saved' % (after['preview_id'], chosen['preview_id']))
+            # The check above and this save are one step for every lifecycle operation. A preview takes no lock, so the
+            # mission's one owner makes no preview and saves no other findings while its own review runs (G025, G063).
+            saved = publish(chosen['review_folder'], chosen['preview_id'], answer, replace)
+    except (ReviewUnavailable, ValueError, OSError) as error:
+        if isinstance(error, ReviewRefused):
+            raise
+        raise ReviewRefused('%s; it is not saved' % error, raw, evidence)
     return {'saved': str(saved), 'executable': cli['path'], 'version': cli['version'], 'found_by': cli['source'],
-            'reviewer': kind, 'preview_id': chosen['preview_id'], 'seconds': round(time.time() - started), 'answer': answer}
+            'reviewer': kind, 'preview_id': chosen['preview_id'], 'seconds': seconds, 'evidence': evidence,
+            'answer': answer}
 
 
 def main(argv=None):
@@ -371,10 +588,19 @@ def main(argv=None):
     except (ReviewUnavailable, ValueError, OSError) as error:
         print('REVIEW NOT SAVED: %s' % error, file=sys.stderr)
         print('The paste path still works: ' + FALLBACK % (Path(primary).as_posix(), args.name, args.preview), file=sys.stderr)
+        if isinstance(error, ReviewRefused):
+            if error.evidence.get('executable'):
+                print('Reviewer: %s %s (%s)' % (args.reviewer, error.evidence['version'], error.evidence['executable']))
+            print(evidence_line(error.evidence, error.evidence.get('seconds') or 0))
+            print('--- the reviewer\'s answer, verbatim (NOT SAVED: %s) ---' % error)
+            sys.stdout.flush()  # the text above first, then the answer's exact bytes
+            sys.stdout.buffer.write(error.answer.encode('utf-8') + (b'' if error.answer.endswith('\n') else b'\n'))
         return 2
     print('Reviewer: %s %s (found by %s: %s)' % (done['reviewer'], done['version'], done['found_by'], done['executable']))
+    print(evidence_line(done['evidence'], done['seconds']))
     print('Saved: %s (%d seconds)' % (done['saved'], done['seconds']))
     print('--- findings, verbatim ---')
+    sys.stdout.flush()
     sys.stdout.buffer.write((done['answer'] + '\n').encode('utf-8'))
     return 0
 

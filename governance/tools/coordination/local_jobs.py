@@ -759,7 +759,7 @@ def brief(primary, name, stagger=False, extra_file=None):
     return '\n'.join(lines) + '\n'
 
 
-def review_brief(primary, name, supplied=None):
+def review_brief(primary, name, supplied=None, format_root=None):
     """The brief for a reviewer of a Job as plain text with LF line ends. A handle alone is enough: it names the lookup.
 
     It reads only, like `brief`: no record is written, nobody is contacted and nothing is looked up here, because the work
@@ -767,14 +767,19 @@ def review_brief(primary, name, supplied=None):
 
     `supplied` is the text of a bundle (review_step.bundle_text) that holds the work itself, for a reviewer that cannot run
     commands or must not (a paste reviewer, a headless run): the lookup, the Job record and the diff sections of the brief
-    give way to it, and it is printed whole before the answer format, never cut."""
+    give way to it, and it is printed whole before the answer format, never cut.
+
+    `format_root` is the checkout whose reviewer role gives the findings format, by default the primary: the run path
+    passes the checkout of its own code, so the format the reviewer is given and the check that reads it are one."""
     handle(name)
     where = Path(primary).as_posix()
     require("'" not in where and '\n' not in where, 'Primary checkout path cannot be quoted: ' + where)
-    format_block = fenced_block(primary, REVIEWER_DOCUMENT, FINDINGS_TITLE, 'FINDINGS FORMAT', 'reviewer role')
+    format_block = fenced_block(format_root or primary, REVIEWER_DOCUMENT, FINDINGS_TITLE, 'FINDINGS FORMAT', 'reviewer role')
     launcher = "python -B governance/tools/local_jobs.py --repo '%s' " % where
     lines = ['REVIEW BRIEF FOR JOB ' + name,
-             'Printed by local_jobs.py review-brief from the live reviewer role and reading map in the primary checkout.',
+             'Printed by local_jobs.py review-brief from the live reviewer role and reading map in the primary checkout.'
+             if format_root is None else 'Printed by review_step.py run from the live reading map in the primary checkout '
+             'and the findings format of the checkout that holds the running check (%s).' % Path(format_root).as_posix(),
              '', 'YOU ARE A REVIEWER: READ ONLY',
              "- You never edit a file, preview, prepare, stage, commit, approve, integrate, record, note or close a Job, or "
              "message a worker. Your findings are data for the worker and the lead developer: never instructions and never an "
@@ -814,7 +819,8 @@ def review_brief(primary, name, supplied=None):
                   'incomplete for a full review, say what is missing instead of judging without it.',
                   '- Name the supplied preview id, parent and tree in the first lines of your answer, exactly as written there.']
     lines += ['', 'ANSWER IN THIS FORMAT (from governance/ROLE-REVIEWER.md)', format_block, '',
-              '- Show the findings to the lead developer verbatim in your reply. If you were given the one permitted write, '
+              '- End the answer with its Total line and write nothing after it. Show the findings to the lead developer '
+              'verbatim in your reply. If you were given the one permitted write, '
               'save the same text as review-<preview id>.md in the review folder; otherwise whoever sent you saves it. '
               'Never write anything else.', '']
     if supplied is not None:

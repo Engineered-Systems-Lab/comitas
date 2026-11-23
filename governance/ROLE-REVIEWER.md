@@ -29,6 +29,7 @@ FINDINGS FORMAT
 Review of <handle>, preview <32-character preview id>
 Candidate: parent <full id>, tree <full id>
 Round: <n>
+Coverage: complete | partial: <what you could not read>
 
 Earlier findings (leave out in the first round):
 <preview id>:F<n> handled as the worker said | not handled as said: <why>
@@ -37,10 +38,10 @@ F1 [blocker|major|minor|note] <path>:<line>
 What: <what is wrong or missing, in one or two sentences>
 Why: <why it matters, naming the scope entry or owning document>
 
-Total: <n> finding(s), <b> blocker, <m> major, <i> minor, <o> note
+Total: <n> finding(s), <b> blocker(s), <m> major, <i> minor, <o> note(s)
 ```
 
-Blocker: breaks the Job's scope, a frozen contract or a rule. Major: wrong behavior or a required part missing. Minor: clarity, naming or a small gap. Note: an observation that needs no change. A change with none to report ends with `Total: 0 findings`. Use `<path>:-` for a finding that belongs to no line.
+Blocker: breaks the Job's scope, a frozen contract or a rule. Major: wrong behavior or a required part missing. Minor: clarity, naming or a small gap. Note: an observation that needs no change. A change with none to report ends with `Total: 0 findings`. `Coverage: complete` means you read all you needed; the run path saves no partial review. Use `<path>:-` for a finding that belongs to no line.
 
 ## Where the files live
 
