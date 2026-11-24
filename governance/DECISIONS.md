@@ -513,6 +513,10 @@ This is an exception to the earlier absent-project-files statement, not a change
 [Commit history](PROJECT-GOVERNANCE.md#commit-history) owns the file contract, ancestry and exclusivity rules,
 failure/skip outcomes and initialization procedures.
 
+### G059 declared exceptions extension (2026-11-23)
+
+A project MAY declare, in `exceptions` of its `commit-history.json`, single historical commits of `convention_after..HEAD` that the history test reads with named metadata rules relaxed (`class`, `subclass`, `trailer-keys`), each with a reason. Nothing else is waivable: the trailer block's place and shape, the required Class and Worker trailers and Status placement always hold. An exception that is malformed, duplicated, without a reason, outside the range, not an ancestor of HEAD, stale or broader than its commit needs fails the test, and every passing run reports each exception. Rewriting history and advancing a boundary to hide a failed commit stay forbidden; an exception is the honest way to keep a commit that cannot be fixed in place. The file stays at version 1 and `high` in approval sensitivity. [Declared exceptions](PROJECT-GOVERNANCE.md#declared-exceptions) owns the contract.
+
 
 ## G060 - Appends to declared lists merge without a conflict (2026-10-30, Accepted)
 

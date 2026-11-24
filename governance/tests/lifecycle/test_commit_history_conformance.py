@@ -39,14 +39,41 @@ def history_settings(root):
     except (OSError, ValueError, UnicodeError) as error:
         raise ValueError(ac.COMMIT_HISTORY + ': unreadable or invalid JSON: ' + str(error)) from error
     required = {'version', 'convention_after'}
-    allowed = required | {'trailer_allowlist_after'}
+    allowed = required | {'trailer_allowlist_after', 'exceptions'}
     if (not isinstance(data, dict) or not required <= data.keys() <= allowed
             or type(data['version']) is not int or data['version'] != 1):
-        raise ValueError(ac.COMMIT_HISTORY + ': expected version 1, convention_after and optional trailer_allowlist_after')
-    for key in allowed - {'version'}:
+        raise ValueError(ac.COMMIT_HISTORY + ': expected version 1, convention_after and optional'
+                         ' trailer_allowlist_after and exceptions')
+    for key in ('convention_after', 'trailer_allowlist_after'):
         if key in data and (not isinstance(data[key], str) or not re.fullmatch(r'[0-9a-f]{40}', data[key])):
             raise ValueError(ac.COMMIT_HISTORY + ': ' + key + ' must be a full lowercase 40-hex commit ID')
-    return data['convention_after'], data.get('trailer_allowlist_after', data['convention_after'])
+    return (data['convention_after'], data.get('trailer_allowlist_after', data['convention_after']),
+            history_exceptions(data.get('exceptions', [])))
+
+
+def history_exceptions(value):
+    """The declared exceptions as {commit: (waived rules, reason)}; any fault refuses the whole file."""
+    if not isinstance(value, list):
+        raise ValueError(ac.COMMIT_HISTORY + ': exceptions must be a list')
+    exceptions = {}
+    for index, entry in enumerate(value):
+        where = ac.COMMIT_HISTORY + ': exception ' + str(index + 1)
+        if not isinstance(entry, dict) or set(entry) != {'commit', 'rules', 'reason'}:
+            raise ValueError(where + ': expected exactly commit, rules and reason')
+        commit, rules, reason = entry['commit'], entry['rules'], entry['reason']
+        if not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit):
+            raise ValueError(where + ': commit must be a full lowercase 40-hex commit ID')
+        if commit in exceptions:
+            raise ValueError(where + ': duplicate exception for ' + commit)
+        if (not isinstance(rules, list) or not rules
+                or not all(isinstance(rule, str) and rule in m.WAIVABLE_RULES for rule in rules)
+                or len(rules) != len(set(rules))):
+            raise ValueError(where + ': rules must be a nonempty list of distinct rules from '
+                             + ', '.join(m.WAIVABLE_RULES))
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(where + ': reason must be nonempty text')
+        exceptions[commit] = (frozenset(rules), reason)
+    return exceptions
 
 
 def git(root, *args, accepted=(0,)):
@@ -89,7 +116,7 @@ def history_range(root):
     head = head_result.stdout.decode('ascii').strip()
     if settings is None:
         raise ValueError(ac.COMMIT_HISTORY + ': missing; initialize reviewed repository boundaries after the first commit')
-    boundary, trailer = settings
+    boundary, trailer, exceptions = settings
     for label, commit in (('convention_after', boundary), ('trailer_allowlist_after', trailer)):
         kind = git(root, 'cat-file', '-t', commit).stdout.strip()
         if kind != b'commit':
@@ -100,21 +127,57 @@ def history_range(root):
         raise ValueError('convention_after must be an ancestor of or equal to trailer_allowlist_after')
     ids = git(root, 'rev-list', '--reverse', boundary + '..' + head).stdout.decode('ascii').split()
     old = set(git(root, 'rev-list', boundary + '..' + trailer).stdout.decode('ascii').split())
-    return head, ids, old
+    checked = set(ids)
+    for commit in exceptions:
+        where = 'exception for ' + commit
+        if git(root, 'cat-file', '-t', commit, accepted=(0, 128)).stdout.strip() != b'commit':
+            raise ValueError(where + ': object is not a commit')
+        if git(root, 'merge-base', '--is-ancestor', commit, head, accepted=(0, 1)).returncode:
+            raise ValueError(where + ': commit is not an ancestor of captured HEAD')
+        if commit not in checked:
+            raise ValueError(where + ': convention_after already exempts it')
+    return head, ids, old, exceptions
+
+
+def commit_problem(message, profiles, other_trailers, waived=frozenset()):
+    """Why a message breaks the convention, or None; Status placement is never waived."""
+    try:
+        m.parse_metadata(message.rstrip('\n'), profiles, required=True, other_trailers=other_trailers, waived=waived)
+    except ValueError as error:
+        return str(error)
+    problems = status_problems(message)
+    return '; '.join(problems) if problems else None
 
 
 def check_history(root, profiles):
-    head, ids, old = history_range(root)
+    """Check every commit of the range and report every failure; return HEAD, the count and the exceptions used."""
+    head, ids, old, exceptions = history_range(root)
+    failures, excepted = [], []
     for commit in ids:
         message = git(root, 'show', '-s', '--format=%B', commit).stdout.decode('utf-8')
-        try:
-            m.parse_metadata(message.rstrip('\n'), profiles, required=True, other_trailers=commit in old)
-            problems = status_problems(message)
-            if problems:
-                raise ValueError('; '.join(problems))
-        except ValueError as error:
-            raise ValueError(commit + ': ' + str(error)) from error
-    return head, len(ids)
+        problem = commit_problem(message, profiles, commit in old)
+        if commit not in exceptions:
+            if problem:
+                failures.append(commit + ': ' + problem)
+            continue
+        rules, reason = exceptions[commit]
+        named = ', '.join(r for r in m.WAIVABLE_RULES if r in rules)
+        if problem is None:
+            failures.append(commit + ': stale exception: the commit passes every rule without it')
+            continue
+        remaining = commit_problem(message, profiles, commit in old, rules)
+        if remaining:
+            failures.append(commit + ': not covered by its exception (' + named + '): ' + remaining)
+            continue
+        unneeded = [r for r in m.WAIVABLE_RULES if r in rules
+                    and commit_problem(message, profiles, commit in old, rules - {r}) is None]
+        if unneeded:
+            failures.append(commit + ': exception waives ' + ', '.join(unneeded) + ', which the commit does not need')
+            continue
+        excepted.append((commit, named, reason))
+    if failures:
+        raise ValueError('%d commit(s) break the convention:\n' % len(failures) + '\n'.join(failures))
+    return head, len(ids), excepted
 
 
 def status_problems(message):
@@ -140,14 +203,18 @@ class CommitHistoryConformanceTest(unittest.TestCase):
     def test_every_commit_after_the_boundary_follows_the_convention(self):
         profiles = json.loads((rp.ROOT / rp.PROFILES).read_text(encoding='utf-8'))
         try:
-            head, count = check_history(rp.ROOT, profiles)
+            head, count, excepted = check_history(rp.ROOT, profiles)
         except HistoryUnavailable as reason:
             self.skipTest('no usable Git history to check: ' + str(reason))
-        print('Commit history: checked %d commit(s) in the declared exclusive range ending at HEAD %s%s' % (
-            count, head[:12], '; zero commits in the declared range' if count == 0 else ''))
+        print('Commit history: checked %d commit(s) in the declared exclusive range ending at HEAD %s%s; '
+              '%d declared exception(s)' % (count, head[:12],
+                                            '; zero commits in the declared range' if count == 0 else '',
+                                            len(excepted)))
+        for commit, rules, reason in excepted:
+            print('  excepted %s (%s): %s' % (commit[:12], rules, reason))
 
 
-class HistoryFixtureTest(unittest.TestCase):
+class HistoryFixture(unittest.TestCase):
     """All histories and declarations are generic, disposable and independent of this checkout's IDs."""
     VALID = 'Fixture change\n\nClass: tooling\nWorker: Human\n'
     EXTRA = VALID.rstrip('\n') + '\nSigned-off-by: Fixture\n'
@@ -180,6 +247,8 @@ class HistoryFixtureTest(unittest.TestCase):
     def check(self):
         return check_history(self.root, self.profiles)
 
+
+class HistoryFixtureTest(HistoryFixture):
     def test_omitted_and_explicit_equal_trailer_boundary_pass(self):
         self.commit(self.VALID)
         for trailer in (None, self.root_commit):
@@ -351,7 +420,7 @@ class HistoryFixtureTest(unittest.TestCase):
     def test_head_is_captured_once_and_no_range_reads_head_again(self):
         self.commit(self.VALID)
         with patch(__name__ + '.git', wraps=git) as calls:
-            head, count = self.check()
+            head, count, _ = self.check()
         args = [call.args[1:] for call in calls.call_args_list]
         self.assertEqual(sum('HEAD' in a for a in args), 1)
         self.assertIn(('rev-list', '--reverse', self.root_commit + '..' + head), args)
@@ -379,7 +448,7 @@ class HistoryFixtureTest(unittest.TestCase):
                          'commit', '--allow-empty', '--no-gpg-sign', '-m', 'New invalid commit outside captured range')
             return original(root, *args, **kwargs)
         with patch(__name__ + '.git', side_effect=move):
-            self.assertEqual(self.check(), (captured, 1))
+            self.assertEqual(self.check()[:2], (captured, 1))
         self.assertNotEqual(self.run_git('rev-parse', 'HEAD'), captured)
 
     def test_unexpected_git_exit_codes_are_failures(self):
@@ -415,6 +484,145 @@ class HistoryFixtureTest(unittest.TestCase):
         self.commit(self.VALID)
         self.assertEqual(self.check()[1], 2)
         self.assertEqual(self.path.read_bytes(), before)
+
+
+class HistoryExceptionTest(HistoryFixture):
+    """Declared exceptions waive named metadata rules for listed historical commits only, and are reported."""
+    BAD = 'Hand-made upgrade\n\nClass: tooling\nSubclass: continuity, checkpoint\nWorker: Human\n'
+    REASON = 'pushed before the history check ran; a rewrite would break cited ids'
+
+    def declare(self, *entries, boundary=None):
+        self.path.write_text(json.dumps({'version': 1, 'convention_after': boundary or self.root_commit,
+                                         'exceptions': list(entries)}), encoding='utf-8')
+
+    def entry(self, commit, rules=('subclass',), reason=None):
+        return {'commit': commit, 'rules': list(rules), 'reason': self.REASON if reason is None else reason}
+
+    def test_bad_commit_without_exception_fails_as_today(self):
+        bad = self.commit(self.BAD)
+        self.commit(self.VALID)
+        with self.assertRaisesRegex(ValueError, bad + ': Subclass invalid under selected Class'):
+            self.check()
+
+    def test_declared_exception_passes_and_is_reported(self):
+        bad = self.commit(self.BAD)
+        self.commit(self.VALID)
+        self.declare(self.entry(bad))
+        head, count, excepted = self.check()
+        self.assertEqual((count, excepted), (2, [(bad, 'subclass', self.REASON)]))
+        profiles = self.root / rp.PROFILES; profiles.parent.mkdir(parents=True)
+        profiles.write_text(json.dumps(self.profiles), encoding='utf-8')
+        output = StringIO()
+        with patch.object(rp, 'ROOT', self.root), redirect_stdout(output):
+            CommitHistoryConformanceTest().test_every_commit_after_the_boundary_follows_the_convention()
+        self.assertIn('1 declared exception(s)', output.getvalue())
+        self.assertIn('excepted ' + bad[:12] + ' (subclass): ' + self.REASON, output.getvalue())
+
+    def test_an_unlisted_second_bad_commit_still_fails_and_every_failure_is_listed(self):
+        first = self.commit(self.BAD)
+        second = self.commit(self.BAD.replace('Hand-made', 'Another'))
+        third = self.commit('No trailers at all')
+        with self.assertRaises(ValueError) as caught:
+            self.check()
+        self.assertIn('3 commit(s) break the convention', str(caught.exception))
+        for commit in (first, second, third):
+            self.assertIn(commit, str(caught.exception))
+        self.declare(self.entry(first))
+        with self.assertRaises(ValueError) as caught:
+            self.check()
+        self.assertIn('2 commit(s) break the convention', str(caught.exception))
+        self.assertNotIn(first, str(caught.exception))
+        self.assertIn(second + ': Subclass invalid', str(caught.exception))
+
+    def test_each_waivable_rule_covers_its_own_fault(self):
+        for rules, message in ((['class'], 'Change\n\nClass: frobnicate\nWorker: Human\n'),
+                               (['trailer-keys'], self.VALID.rstrip('\n') + '\nSigned-off-by: Fixture\n'),
+                               (['class', 'subclass'], 'Change\n\nClass: mixed\nSubclass: continuity\nWorker: Human\n')):
+            with self.subTest(rules=rules):
+                before = self.run_git('rev-parse', 'HEAD')
+                bad = self.commit(message)
+                self.declare(self.entry(bad, rules), boundary=before)
+                self.assertEqual(self.check()[2], [(bad, ', '.join(rules), self.REASON)])
+
+    def test_a_fault_outside_the_named_rules_still_fails(self):
+        for rules, message, error in (
+                (['class'], self.BAD, 'Subclass invalid'),
+                (['subclass'], self.BAD.replace('\n\nClass', '\n\n- Detail.\nStatus: done\n\nClass'), 'Status line must'),
+                (['class', 'subclass', 'trailer-keys'], 'Change\n\nClass: tooling\n', 'Worker trailer required'),
+                (['class', 'subclass', 'trailer-keys'], 'Change\nClass: tooling\nWorker: Human\n', 'blank line')):
+            with self.subTest(rules=rules, error=error):
+                before = self.run_git('rev-parse', 'HEAD')
+                bad = self.commit(message)
+                self.declare(self.entry(bad, rules), boundary=before)
+                with self.assertRaisesRegex(ValueError, '1 commit.*\n' + bad + ': not covered by its exception .*' + error):
+                    self.check()
+
+    def test_stale_and_overbroad_exceptions_fail(self):
+        good = self.commit(self.VALID)
+        self.declare(self.entry(good))
+        with self.assertRaisesRegex(ValueError, good + ': stale exception'):
+            self.check()
+        bad = self.commit(self.BAD)
+        self.declare(self.entry(bad, ['subclass', 'trailer-keys']))
+        with self.assertRaisesRegex(ValueError, bad + ': exception waives trailer-keys, which the commit does not need'):
+            self.check()
+
+    def test_unknown_nonancestor_exempt_and_tree_ids_are_refused(self):
+        bad = self.commit(self.BAD)
+        tree = self.run_git('rev-parse', 'HEAD^{tree}')
+        self.run_git('checkout', '-b', 'side')
+        side = self.commit(self.BAD)
+        self.run_git('checkout', 'main')
+        for commit, error in (('0' * 40, 'object is not a commit'), (tree, 'object is not a commit'),
+                              (side, 'commit is not an ancestor of captured HEAD'),
+                              (self.root_commit, 'convention_after already exempts it')):
+            with self.subTest(commit=commit):
+                self.declare(self.entry(bad), self.entry(commit))
+                with self.assertRaisesRegex(ValueError, 'exception for ' + commit + ': ' + error):
+                    self.check()
+        self.declare(self.entry(bad), boundary=bad)
+        with self.assertRaisesRegex(ValueError, 'convention_after already exempts it'):
+            self.check()
+
+    def test_malformed_duplicate_and_reasonless_exceptions_are_refused(self):
+        bad = self.commit(self.BAD)
+        good = dict(self.entry(bad))
+        cases = [(self.entry(bad), self.entry(bad), 'duplicate exception'),
+                 (dict(good, reason=''), 'reason must be nonempty'),
+                 (dict(good, reason='   '), 'reason must be nonempty'),
+                 (dict(good, reason=None), 'reason must be nonempty'),
+                 ({'commit': bad, 'rules': ['subclass']}, 'expected exactly commit, rules and reason'),
+                 (dict(good, extra=1), 'expected exactly commit, rules and reason'),
+                 (dict(good, rules=[]), 'rules must be'),
+                 (dict(good, rules='subclass'), 'rules must be'),
+                 (dict(good, rules=['status']), 'rules must be'),
+                 (dict(good, rules=['subclass', 'subclass']), 'rules must be'),
+                 (dict(good, rules=[['subclass']]), 'rules must be'),
+                 ('not an object', 'expected exactly commit, rules and reason')]
+        cases += [(dict(good, commit=wrong), 'full lowercase 40-hex') for wrong in (None, 1, bad.upper(), bad[:7], 'HEAD')]
+        for case in cases:
+            *entries, error = case
+            with self.subTest(entries=entries):
+                self.declare(*entries)
+                with self.assertRaisesRegex(ValueError, error):
+                    self.check()
+        for value in ({}, 'x', None):
+            self.path.write_text(json.dumps({'version': 1, 'convention_after': self.root_commit, 'exceptions': value}))
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'exceptions must be a list'):
+                self.check()
+
+    def test_an_empty_list_equals_no_exceptions(self):
+        bad = self.commit(self.BAD)
+        self.declare()
+        with self.assertRaisesRegex(ValueError, bad):
+            self.check()
+        self.settings(bad)
+        self.declare(boundary=bad)
+        self.assertEqual(self.check()[1:], (0, []))
+
+    def test_the_parser_refuses_an_unknown_waived_rule(self):
+        with self.assertRaisesRegex(ValueError, 'Unknown waived rule'):
+            m.parse_metadata(self.VALID, self.profiles, waived={'status'})
 
 
 class StatusPlacementTest(unittest.TestCase):

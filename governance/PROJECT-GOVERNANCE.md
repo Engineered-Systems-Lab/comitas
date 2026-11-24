@@ -65,15 +65,53 @@ commits for two forward-only convention epochs ([G059](DECISIONS.md#g059---repos
 {"version": 1, "convention_after": "<full lowercase 40-hex commit ID>"}
 ```
 
-`version` is exactly the integer `1`; `convention_after` is required. The only optional field is
-`trailer_allowlist_after`; omission means equal to `convention_after`. A present value is another full lowercase
+`version` is exactly the integer `1`; `convention_after` is required. The optional fields are
+`trailer_allowlist_after` and `exceptions` ([Declared exceptions](#declared-exceptions)). Omitting
+`trailer_allowlist_after` means equal to `convention_after`. A present value is another full lowercase
 40-hex commit ID. Null, abbreviated IDs, `HEAD`, branch/tag names, unknown keys and other defaults are refused.
 Both IDs must name commit objects ancestral to a single captured HEAD, and `convention_after` must be ancestral to
 or equal to `trailer_allowlist_after`. A boundary excludes itself and its ancestors. Every reachable commit in
 `convention_after..HEAD`, including merged side branches, receives strict metadata and Status-placement checks.
 Only commits in `convention_after..trailer_allowlist_after` may retain historical extra trailer keys; the rest may
 hold only Class, Subclass and Worker. Equal boundaries enable both rules together. A boundary equal to HEAD is valid:
-the check reports an explicit zero count rather than inventing coverage.
+the check reports an explicit zero count rather than inventing coverage. The check reports every commit that fails,
+not only the first, so one run finds them all.
+
+### Declared exceptions
+
+A project may list single historical commits that the history test does not hold to some of the metadata rules:
+
+```json
+{"version": 1, "convention_after": "<40-hex>",
+ "exceptions": [{"commit": "<40-hex>", "rules": ["subclass"], "reason": "<why the commit stays as it is>"}]}
+```
+
+`exceptions` is a list; an empty list means none. Each entry has exactly `commit`, `rules` and `reason`. `commit` is
+a full lowercase 40-hex ID of a commit object that is an ancestor of the captured HEAD and lies in
+`convention_after..HEAD`; a commit the boundary already exempts is refused. `rules` is a nonempty list of distinct
+names from `class` (the value of the Class trailer), `subclass` (the value of the Subclass trailer) and
+`trailer-keys` (keys other than Class, Subclass and Worker). `reason` is nonempty text. A duplicate commit, any other
+key or value, and any fault in an entry refuse the whole file. Nothing else can be waived: the place and shape of the
+trailer block, the required Class and Worker trailers and Status placement always hold.
+
+The check reads an excepted commit with every rule first, then again with only its named rules relaxed, and it must
+pass the second reading. A commit that still fails is reported with the fault its exception does not cover. An
+exception whose commit passes without it, or that names a rule the commit does not need, is stale and fails. Each
+passing run prints the number of exceptions and one line per exception with the short ID, the rules and the reason.
+
+The commit never changes, but the rules it is read against can: the Class and Subclass vocabulary is the framework's
+registry, and an upgrade may add a value that an excepted commit uses. The exception then turns stale or overbroad
+and fails the upgrade's own history test. Remove the exception, or drop the rule it no longer needs, in that upgrade
+transaction; its reason stays in the file's history.
+
+Choose an exception only for a commit that is already in history and cannot be fixed in place, name the fewest rules
+that cover its fault, and write a reason that says what is wrong and why the commit stays. An exception never replaces
+fixing how commits are made. Because the transaction that adds an exception runs the history test with HEAD at its
+parent, only a commit that already exists can be excepted, and the file's `high` approval sensitivity takes the
+sealed Approve for every change to it. A helper older than the field refuses a file that has it, so a project
+adds its first exception in the transaction that replaces `governance/` or in a later one.
+
+### Unavailable history and initialization
 
 Present configuration is checked before history availability. Unreadable, malformed, nonregular or indirect files
 fail even in an archive or shallow clone. Non-Git exports, unborn repositories and shallow clones skip history with
@@ -83,7 +121,8 @@ reversed epochs and unexpected Git failures fail, never becoming a skip or chang
 explicit unavailable-tooling failure. Obtain complete history before resolving unavailable shallow ancestry.
 
 For an existing project, choose boundaries from its contemporary adoption and rule-start evidence. Do not choose its
-root or current HEAD automatically, rewrite history or advance boundaries to hide a failed commit. Comitas exempts
+root or current HEAD automatically, rewrite history or advance boundaries to hide a failed commit; a failed commit
+that cannot be fixed in place takes a [declared exception](#declared-exceptions). Comitas exempts
 its initial import, with both epochs starting afterwards; that declaration is specific to Comitas.
 
 A fresh export or GitHub template copy inherits Comitas's IDs and **fails the history test until those IDs are

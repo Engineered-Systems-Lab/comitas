@@ -34,12 +34,20 @@ def registry(profiles):
 # The only keys a new checkpoint's final trailer block may hold; Worker already names the agent.
 TRAILER_KEYS = ('Class', 'Subclass', 'Worker')
 
+# The rules a project's declared history exception may waive for one historical commit, and nothing else.
+WAIVABLE_RULES = ('class', 'subclass', 'trailer-keys')
 
-def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, other_trailers=False):
+
+def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, other_trailers=False,
+                   waived=frozenset()):
     """Read a final, blank-line-separated trailer paragraph; never rewrite prose.
 
     A required block holds only TRAILER_KEYS; `other_trailers` tolerates other keys, as commits made before the
-    allowlist did, and is for reading history only."""
+    allowlist did, and is for reading history only. `waived` names WAIVABLE_RULES a declared history exception
+    relaxes for one historical commit: `class` and `subclass` skip the checks of that trailer's value and
+    `trailer-keys` tolerates other keys; the block's place and shape and the required Class and Worker stay."""
+    require(set(waived) <= set(WAIVABLE_RULES), 'Unknown waived rule')
+    other_trailers = other_trailers or 'trailer-keys' in waived
     reg = registry(profiles)
     lines = message.splitlines()
     require(lines and lines[0].strip(), 'Commit subject must be nonempty')
@@ -76,21 +84,23 @@ def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, 
     classes = []
     legacy = not required and legacy_aggregate and fields.get('Class') == 'mixed'
     for key in ('Class', 'Subclass'):
-        if key in fields:
+        if key in fields and key.lower() not in waived:
             require(re.fullmatch(r'[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:, [a-z][a-z0-9]*(?:-[a-z0-9]+)*)*', fields[key]),
                     key + ' requires kebab-case tokens separated by comma+single-space')
     if 'Class' in fields and not legacy:
         declared = fields['Class'].split(', ')
-        require(len(declared) == len(set(declared)), 'Duplicate class')
-        require(set(declared) <= set(reg['classes']), 'Unknown Class')
+        if 'class' not in waived:
+            require(len(declared) == len(set(declared)), 'Duplicate class')
+            require(set(declared) <= set(reg['classes']), 'Unknown Class')
         classes = [token for token in reg['classes'] if token in declared]
     subclasses = []
     if 'Subclass' in fields:
         subclasses = fields['Subclass'].split(', ')
-        require(len(subclasses) == len(set(subclasses)), 'Duplicate subclass')
         allowed = [e['value'] for e in reg['subclasses']
                    if legacy or set(classes).intersection(e['classes'])]
-        require(set(subclasses) <= set(allowed), 'Subclass invalid under selected Class')
+        if 'subclass' not in waived:
+            require(len(subclasses) == len(set(subclasses)), 'Duplicate subclass')
+            require(set(subclasses) <= set(allowed), 'Subclass invalid under selected Class')
         subclasses = [token for token in allowed if token in subclasses]
     worker = fields.get('Worker')
     if worker is not None:
