@@ -111,23 +111,28 @@ def remove_review(folder, files):
 
 # Isolated stdlib loader: never import candidate checkpoint/worktree/policy commands.
 CANDIDATE_CONTINUITY = '''
-import importlib.util, pathlib, subprocess, sys, types
+import pathlib, subprocess, sys, types
 path, root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-# The checker imports its parser by package name. Provide only the parser, loaded from the verified file beside it,
-# under empty stand-in packages, so no package file of the candidate runs here.
-parser_path = path.parent / 'artifact_classification.py'
-if parser_path.is_file():
-    for name in ('governance', 'governance.tools', 'governance.tools.continuity'):
-        sys.modules[name] = types.ModuleType(name)
-        sys.modules[name].__path__ = []
-    parser_spec = importlib.util.spec_from_file_location('governance.tools.continuity.artifact_classification', parser_path)
-    parser = importlib.util.module_from_spec(parser_spec)
-    sys.modules[parser_spec.name] = parser
-    parser_spec.loader.exec_module(parser)
-    sys.modules['governance.tools.continuity'].artifact_classification = parser
-spec = importlib.util.spec_from_file_location('candidate_continuity', path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+# Each module runs from the source bytes of its verified file, compiled here, never from a cached .pyc beside it
+# (-B stops writing the cache, not reading it).
+def load(name, file):
+    loaded = types.ModuleType(name)
+    loaded.__file__ = str(file)
+    sys.modules[name] = loaded
+    exec(compile(file.read_bytes(), str(file), 'exec'), loaded.__dict__)
+    return loaded
+# The checker imports its parser and its process helper by package name. Provide only those two, each from its verified
+# file, under empty stand-in packages, so no package file of the candidate runs here.
+for folder, file in (('continuity', path.parent / 'artifact_classification.py'),
+                     ('support', path.parent.parent / 'support' / 'processes.py')):
+    if file.is_file():
+        for name in ('governance', 'governance.tools', 'governance.tools.' + folder):
+            if name not in sys.modules:
+                sys.modules[name] = types.ModuleType(name)
+                sys.modules[name].__path__ = []
+        setattr(sys.modules['governance.tools.' + folder], file.stem,
+                load('governance.tools.' + folder + '.' + file.stem, file))
+module = load('candidate_continuity', path)
 _, facts = module.verify_repository(root)
 def git(*args):
     return subprocess.check_output(['git', '-C', str(root), *args])
@@ -676,13 +681,15 @@ class Worktrees(Carry):
         # Clean checkout alone permits ignored substitutions; require the committed blob too.
         require(data.replace(b'\r\n', b'\n') == source.git('show', 'HEAD:' + artifact_classification.CONTINUITY_CHECKER),
                 'Candidate validator differs from its committed bytes')
-        # The validator reads the classification table through the parser that sits beside it.
-        parser = source.root / artifact_classification.CLASSIFICATION_PARSER
-        if parser.exists():
-            require(parser.is_file() and not parser.is_symlink() and
-                    parser.read_bytes().replace(b'\r\n', b'\n') ==
-                    source.git('show', 'HEAD:' + artifact_classification.CLASSIFICATION_PARSER),
-                    'Candidate classification parser differs from its committed bytes')
+        # The validator reads the classification table through the parser that sits beside it and runs Git through the
+        # process helper; the loader provides both from these files.
+        for name, what in ((artifact_classification.CLASSIFICATION_PARSER, 'classification parser'),
+                           (artifact_classification.PROCESS_HELPER, 'process helper')):
+            module = source.root / name
+            if module.exists():
+                require(module.is_file() and not module.is_symlink() and
+                        module.read_bytes().replace(b'\r\n', b'\n') == source.git('show', 'HEAD:' + name),
+                        'Candidate ' + what + ' differs from its committed bytes')
         result = source.runner([sys.executable, '-I', '-B', '-c', CANDIDATE_CONTINUITY,
                                 str(path), str(target.root)], target.root)
         require(result['exit_code'] == 0, 'Candidate continuity failed: ' + result['stderr'])
@@ -696,7 +703,8 @@ class Worktrees(Carry):
     def tooling_authority(self, source):
         """The reviewed committed guard owns promotion, never a candidate re-exec."""
         driver, driver_hash = checkpoint_driver()
-        paths = [*guard_paths(), *driver,
+        # The process helper runs the driver's checks and captures their results, so it is reviewed tooling too.
+        paths = [*guard_paths(), *driver, Path(sys.modules['governance.tools.support.processes'].__file__).resolve(),
                  Path(sys.modules['governance.tools.lifecycle.commit_metadata'].__file__).resolve(), Path(claims.__file__).resolve()]
         roots = {tools_root(p) for p in paths}
         require(len(roots) == 1, 'Mixed integration/checkpoint tooling roots')
@@ -709,7 +717,7 @@ class Worktrees(Carry):
                     tool.git('show', 'HEAD:' + name), 'Integration guard differs from reviewed committed tooling')
         return {'root': str(root), 'revision': tool.head(),
                 'guard_sha256': guard_digest(),
-                'checkpoint_sha256': driver_hash,
+                'checkpoint_sha256': driver_hash, 'processes_sha256': digest(paths[-3].read_bytes()),
                 'metadata_sha256': digest(paths[-2].read_bytes()), 'claims_sha256': digest(paths[-1].read_bytes())}
 
     def exact(self, tool, expected):

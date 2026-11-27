@@ -47,10 +47,12 @@ FRAMEWORK_DECISIONS = 'governance/DECISIONS.md'
 # read as LF>}}. The continuity check compares the frozen files with it, never with a commit. Freezing a file adds its entry
 # from its current content (`validate_continuity.py --freeze`); only `--refreeze <path>` changes or removes one.
 FROZEN_MANIFEST = PROJECT_CONFIG + '/frozen-manifest.json'
-# Tool files that other tools name: the continuity checker and the classification parser the guard verifies, and
+# Tool files that other tools name: the continuity checker, and the classification parser and process helper the guard
+# verifies beside it, and
 # the files of the checkpoint driver, whose bytes every approval binds.
 CONTINUITY_CHECKER = TOOLS + '/continuity/validate_continuity.py'
 CLASSIFICATION_PARSER = TOOLS + '/continuity/artifact_classification.py'
+PROCESS_HELPER = TOOLS + '/support/processes.py'
 CHECKPOINT_DRIVER = tuple(TOOLS + '/' + name + '.py' for name in (
     'checkpoint', 'lifecycle/checkpoint_state', 'lifecycle/checkpoint_selection', 'lifecycle/checkpoint_evidence',
     'lifecycle/checkpoint_lifecycle'))

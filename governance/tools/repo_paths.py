@@ -8,7 +8,7 @@ folder is named here.
 
 The checkpoint driver files and the worktree guard files do not import this module: they are hashed together, marked high
 and pinned, and keep their own references. Neither does `validate_continuity.py`, which the integration guard loads isolated
-and byte-verified with the parser alone, nor `runtime_guard.py`, which runs before any repository module is trusted.
+and byte-verified with the parser and the process helper alone, nor `runtime_guard.py`, which runs before any repository module is trusted.
 Importing this module needs `governance/tools` on `sys.path`, as for every other tool.
 """
 from pathlib import Path

@@ -878,7 +878,7 @@ def read(root, name):
     def test_guard_authority_binds_committed_pair_and_rejects_mixed_or_changed_drivers(self):
         guard = self.root / 'governance' / 'tools' / 'worktrees' / 'guard.py'
         tools = Path(c.__file__).parent
-        for name in (*w.GUARD_MODULES, *c.DRIVER_MODULES, 'lifecycle/commit_metadata', 'worktrees/claims'):
+        for name in (*w.GUARD_MODULES, *c.DRIVER_MODULES, 'support/processes', 'lifecycle/commit_metadata', 'worktrees/claims'):
             (self.root / 'governance' / 'tools' / (name + '.py')).parent.mkdir(parents=True, exist_ok=True)
             (self.root / 'governance' / 'tools' / (name + '.py')).write_bytes((tools / (name + '.py')).read_bytes())
         self.f.git('add', rp.WORKTREE, rp.CLAIMS, rp.TOOLS)
@@ -889,12 +889,21 @@ def read(root, name):
         metadata = sys.modules['governance.tools.lifecycle.commit_metadata']
         metadata_path = self.root / 'governance/tools/lifecycle/commit_metadata.py'
         claims_path = self.root / rp.CLAIMS
+        helper = sys.modules['governance.tools.support.processes']
+        helper_path = self.root / ac.PROCESS_HELPER
         with patch.object(w, '__file__', str(guard)), patch.object(c, '__file__', str(driver)), \
-                patch.object(metadata, '__file__', str(metadata_path)), patch.object(claims, '__file__', str(claims_path)):
+                patch.object(metadata, '__file__', str(metadata_path)), patch.object(claims, '__file__', str(claims_path)), \
+                patch.object(helper, '__file__', str(helper_path)):
             authority = self.flow.tooling_authority(t)
             self.assertEqual(authority['revision'], self.base)
             self.assertEqual(authority['metadata_sha256'], c.digest(metadata_path.read_bytes()))
             self.assertEqual(authority['claims_sha256'], c.digest(claims_path.read_bytes()))
+            self.assertEqual(authority['processes_sha256'], c.digest(helper_path.read_bytes()))
+            original_helper = helper_path.read_bytes()
+            helper_path.write_bytes(original_helper + b'\n# unreviewed helper\n')
+            with self.assertRaisesRegex(ValueError, 'reviewed committed tooling'):
+                self.flow.tooling_authority(t)
+            helper_path.write_bytes(original_helper)
             original_claims = claims_path.read_bytes()
             claims_path.write_bytes(original_claims + b'\n# unreviewed store\n')
             with self.assertRaisesRegex(ValueError, 'reviewed committed tooling'):
@@ -969,12 +978,25 @@ def read(root, name):
         self.assertEqual(self.flow.main.head(), self.base)
         self.assertFalse(self.path.exists())
 
+    def install_real_checker(self):
+        """Stage the real checker and the two modules the guard provides beside it: the parser and the process helper."""
+        for name in (rp.VALIDATE_CONTINUITY, ac.CLASSIFICATION_PARSER, ac.PROCESS_HELPER):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_bytes((rp.ROOT / name).read_bytes())
+        self.f.git('add', '--', rp.TOOLS)
+
+    def test_an_uncommitted_process_helper_is_refused_before_the_checker_runs(self):
+        self.install_real_checker()
+        self.f.git('commit', '-m', 'Install real checker and its process helper')
+        helper = self.root / ac.PROCESS_HELPER
+        helper.write_bytes(helper.read_bytes() + b'\n# unreviewed helper\n')
+        with patch.object(self.flow.main, 'runner', side_effect=AssertionError('the checker ran')):
+            with self.assertRaisesRegex(ValueError, 'Candidate process helper differs from its committed bytes'):
+                self.real_continuity(self.flow.main)
+
     def test_required_contract_missing_or_malformed_blocks_real_checker(self):
         # Exercise the isolated committed checker, not the synthetic policy PASS.
-        for name in ('validate_continuity.py', 'artifact_classification.py'):
-            (self.root / 'governance' / 'tools' / 'continuity' / name).parent.mkdir(parents=True, exist_ok=True)
-            (self.root / 'governance' / 'tools' / 'continuity' / name).write_bytes((Path(c.__file__).parent / 'continuity' / name).read_bytes())
-        self.f.git('add', '--', rp.TOOLS)
+        self.install_real_checker()
         self.f.git('commit', '-m', 'Install real checker for missing evidence regression')
         from governance.tools.continuity import validate_continuity as continuity
         contract = self.root / continuity.CONTRACT

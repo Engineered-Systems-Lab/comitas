@@ -24,6 +24,7 @@ import tempfile
 import time
 
 from governance.tools.coordination import local_jobs
+from governance.tools.support import processes
 
 DEFAULT_MAX_BYTES = 400000
 CODE_ROOT = Path(__file__).resolve().parents[3]  # the checkout that holds this code
@@ -102,7 +103,7 @@ def require(condition, message):
 def execute(argv, stdin=None, timeout=60, cwd=None):
     """Run one command to the end: (exit code, stdout bytes, stderr bytes). The one place a process is started."""
     try:
-        done = subprocess.run(argv, input=stdin, capture_output=True, timeout=timeout, cwd=cwd)
+        done = processes.run(argv, input=stdin, capture_output=True, timeout=timeout, cwd=cwd)
     except subprocess.TimeoutExpired as error:  # keep what the command printed so far: it may hold an answer
         return None, error.stdout or b'', (error.stderr or b'') + b'\ntimed out after %d seconds' % timeout
     except OSError as error:

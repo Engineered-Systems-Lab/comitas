@@ -13,13 +13,25 @@ from urllib.parse import unquote, urlsplit
 # The classification parser is the single reader of the table. It sits beside this checker; the repository root is the import root (this file is also loaded alone, isolated, by the guard).
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from governance.tools.continuity import artifact_classification  # noqa: E402
+# The process helper stops Git's tree and bounds every wait (the integration guard verifies and provides it too).
+try:
+    from governance.tools.support import processes  # noqa: E402
+except ImportError:  # an older integration guard provides only the parser: run the helper from its source file
+    import types
+    _helper = Path(__file__).resolve().parents[1] / 'support' / 'processes.py'
+    processes = types.ModuleType('governance.tools.support.processes')
+    processes.__file__ = str(_helper)
+    sys.modules[processes.__name__] = processes
+    exec(compile(_helper.read_bytes(), str(_helper), 'exec'), processes.__dict__)  # the source, never a cached .pyc
 
 # Its own root, on purpose: the integration guard loads this file isolated and byte-verified, together with the parser
-# only, so it must not import another repository module (repo_paths included).
+# and the process helper only, so it must not import another repository module (repo_paths included).
 ROOT = Path(__file__).resolve().parents[3]
 CONTRACT = artifact_classification.CONTRACT
 FROZEN_FACT = 'frozen_contracts_and_fixtures_unchanged'
 FROZEN_MANIFEST = artifact_classification.FROZEN_MANIFEST
+# The Git command the log is read from: the bare name, whichever `git` PATH finds first (a test puts a launcher here).
+GIT = ('git',)
 
 
 def reconstruction_contract(root):
@@ -84,18 +96,18 @@ def latest_runtime_commit(root, revision='HEAD', table=None):
     prefixes = table.boundary_prefixes('runtime')
     if not prefixes:
         return ''
-    process = subprocess.Popen(['git', '-C', str(root), 'log', '--format=%x01%H', '--name-only', '-z', '--no-renames',
-                                '--cc', '--full-history', revision, '--', *[':(literal)' + p for p in prefixes]],
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stream = processes.Stream([*GIT, '-C', str(root), 'log', '--format=%x01%H', '--name-only', '-z', '--no-renames',
+                               '--cc', '--full-history', revision, '--', *[':(literal)' + p for p in prefixes]])
     # The stream is: 0x01 and the id, NUL, a line feed and the first path, NUL, each next path and NUL, the next commit.
-    found, commit, names, pending = '', None, [], b''
+    found, commit, names, pending, ended = '', None, [], b'', False
     try:
         while True:
-            chunk = os.read(process.stdout.fileno(), 65536)
+            chunk = os.read(stream.fileno(), 65536)
             pending += chunk
             tokens = pending.split(b'\0')
             pending = b'' if not chunk else tokens.pop()
             if not chunk:
+                ended = True
                 tokens.append(b'\x01')  # a sentinel that ends the last commit
             for token in tokens:
                 if token.startswith(b'\x01'):  # the next commit begins: judge the one that ended
@@ -108,13 +120,10 @@ def latest_runtime_commit(root, revision='HEAD', table=None):
             if found or not chunk:
                 break
     finally:
-        if found and process.poll() is None:
-            process.kill()
-        stderr = process.stderr.read().decode('utf-8', 'replace')
-        process.stdout.close()
-        process.stderr.close()
-        process.wait()
-    require(found or process.returncode == 0, 'Git evidence unavailable: log ' + revision + ': ' + stderr.strip())
+        # Stopped early (or failed) while Git may still write: end its process tree, then wait with a bound, never on a
+        # pipe that a child of a launcher (Git for Windows' cmd\git.exe) still holds open.
+        code, stderr = stream.finish(stop=not ended)
+    require(found or code == 0, 'Git evidence unavailable: log ' + revision + ': ' + stderr.decode('utf-8', 'replace').strip())
     return found
 
 

@@ -486,15 +486,15 @@ class RunTest(ReviewFixture):
         self.assertEqual(caught.exception.answer, self.answer())
         rs.publish = saved
 
-        real = subprocess.run
+        real = rs.processes.run
 
         def slow(argv, **kwargs):  # the CLI printed its result, then the run timed out; Git runs as usual
             if argv[0] != '/x/claude':
                 return real(argv, **kwargs)
             raise subprocess.TimeoutExpired(argv, 1, output=claude_stream(self.answer(), where=self.root))
-        self.addCleanup(setattr, subprocess, 'run', real)
-        subprocess.run = slow
-        rs.execute = self.saved[0]  # the real execute, over the fake subprocess.run
+        self.addCleanup(setattr, rs.processes, 'run', real)
+        rs.processes.run = slow
+        rs.execute = self.saved[0]  # the real execute, over the fake processes.run
         with self.assertRaises(rs.ReviewRefused) as caught:
             rs.run(self.root, NAME, 'claude', self.preview, lookup=self.lookup)
         self.assertIn('timed out', str(caught.exception))

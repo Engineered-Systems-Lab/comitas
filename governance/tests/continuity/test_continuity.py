@@ -1,17 +1,22 @@
 """Representative reconstruction and negative recovery-chain tests of the continuity checker, on disposable fixtures; no repo mutations."""
 from datetime import datetime
+import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
 from governance.tools.continuity import artifact_classification as ac
 from governance.tools.continuity import validate_continuity as v
+from governance.tools.support import processes
 from governance.tests.fake_git import FakeGit
 from governance.tools.worktrees import guard
 import repo_paths as rp
@@ -680,6 +685,8 @@ class IsolatedOptOutTest(unittest.TestCase):
         checker.mkdir(parents=True)
         for name in ('validate_continuity.py', 'artifact_classification.py'):
             shutil.copyfile(rp.ROOT / rp.TOOLS / 'continuity' / name, checker / name)
+        (checker.parent / 'support').mkdir()
+        shutil.copyfile(rp.ROOT / ac.PROCESS_HELPER, checker.parent / 'support' / 'processes.py')  # the checker runs Git through it
         return root, built
 
     def isolated(self, root):
@@ -708,6 +715,20 @@ class IsolatedOptOutTest(unittest.TestCase):
         result = self.isolated(root)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('exactly one indexed log', result.stderr)
+
+    def test_the_isolated_checker_runs_the_verified_sources_and_never_a_cached_pyc(self):
+        """-B stops Python writing the cache, not reading it: a valid .pyc beside a verified file must not run."""
+        root, _ = self.build(keep_log=False)
+        planted = compile('raise SystemExit("the planted pyc ran")\n', 'planted', 'exec')
+        for name in (rp.VALIDATE_CONTINUITY, ac.CLASSIFICATION_PARSER, ac.PROCESS_HELPER):
+            source = root / name
+            stat = source.stat()
+            cache = Path(importlib.util.cache_from_source(str(source)))
+            cache.parent.mkdir(exist_ok=True)
+            cache.write_bytes(importlib._bootstrap_external._code_to_timestamp_pyc(planted, int(stat.st_mtime), stat.st_size))
+        result = self.isolated(root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('planted', result.stdout + result.stderr)
 
 
 class LatestRuntimeCommitTest(unittest.TestCase):
@@ -806,7 +827,8 @@ class LatestRuntimeCommitTest(unittest.TestCase):
         self.assertEqual(self.latest(), runtime)
         with patch.object(v.subprocess, 'Popen', wraps=v.subprocess.Popen) as popen:
             self.assertEqual(self.latest(), runtime)
-        self.assertEqual(popen.call_count, 1)  # one log, filtered to the runtime rows; documents never enter the stream
+        logs = [call for call in popen.call_args_list if call.args[0][0] == 'git']  # on Windows the early stop runs taskkill too
+        self.assertEqual(len(logs), 1)  # one log, filtered to the runtime rows; documents never enter the stream
 
     def test_the_validator_and_the_table_agree_on_the_checkpoint(self):
         """verify_repository compares the progress checkpoint with this same function, so a filter-only runtime commit is
@@ -818,6 +840,115 @@ class LatestRuntimeCommitTest(unittest.TestCase):
         self.assertTrue(v.is_runtime_path(self.table, 'fed/z/a.py'))
         self.assertFalse(v.is_runtime_path(self.table, 'fed/tests/a.py'))
         self.assertFalse(v.is_runtime_path(self.table, 'svc/docs/a.py'))
+
+
+# The tests of the process helper (governance/tools/support/processes.py) live here, beside its main user: a change to the
+# helper selects this folder's tests and no file of governance/tests/support/.
+LAUNCHER = 'import subprocess, sys\nsys.exit(subprocess.call([sys.executable, "-I", "-B", sys.argv[1]]))\n'
+CHILD_START = 'import os, pathlib, sys, time\npathlib.Path(%r).write_text(str(os.getpid()))\n'
+ONE_RUNTIME_COMMIT_THEN_MORE = '''
+out = sys.stdout.buffer
+try:
+    out.write(b'\\x01' + b'a' * 40 + b'\\0\\napp.py\\0')
+    filler = (b'\\x01' + b'b' * 40 + b'\\0\\nnotes.md\\0') * 2000
+    while True:  # a long log that fills the pipe, as git does when it is stopped before its end
+        out.write(filler)
+        out.flush()
+except BaseException:
+    os._exit(0)
+'''
+HOLD_THE_PIPES = 'time.sleep(60)\n'
+
+
+def fake_launcher(folder, child):
+    """The command of a stand-in for a Windows launcher such as Git for Windows' cmd\\git.exe: it starts `child` (Python
+    source) as its own child, which inherits the standard output and error, and waits for it. Killing the launcher alone
+    leaves the child running with the pipes open. The child writes its pid to `pid` in the folder first."""
+    folder = Path(folder)
+    (folder / 'launcher.py').write_text(LAUNCHER, encoding='utf-8')
+    (folder / 'child.py').write_text(CHILD_START % str(folder / 'pid') + child, encoding='utf-8')
+    return (sys.executable, '-I', '-B', str(folder / 'launcher.py'), str(folder / 'child.py'))
+
+
+class LauncherTest(unittest.TestCase):
+    """A stop, a timeout or a stall never becomes a hang when the command is a launcher whose child holds the pipes."""
+    BOUND = 30  # seconds a call may take before the test fails instead of hanging
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='launcher-')
+        self.addCleanup(self.temp.cleanup)
+        self.folder = Path(self.temp.name)
+        self.addCleanup(self.end_child)
+
+    def end_child(self):
+        try:
+            os.kill(int((self.folder / 'pid').read_text()), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+
+    def bounded(self, call):
+        """The call's result, or the error it raised; the test fails if it has not returned within BOUND seconds."""
+        outcome = {}
+
+        def target():
+            try:
+                outcome['result'] = call()
+            except BaseException as error:  # handed to the test thread
+                outcome['error'] = error
+        thread = threading.Thread(target=target, daemon=True)
+        started = time.monotonic()
+        thread.start()
+        thread.join(self.BOUND)
+        self.assertFalse(thread.is_alive(), 'still waiting after %d s: the call hangs' % self.BOUND)
+        return outcome, time.monotonic() - started
+
+    def test_the_latest_runtime_commit_is_found_through_a_launcher_that_keeps_writing(self):
+        """The adopter's case: git from PowerShell is cmd\\git.exe, and the early stop killed only the launcher."""
+        table = ac.Table.parse('\n'.join([ac.HEADER, ac.SEPARATOR, '| `app.py` | runtime | p | runtime | - | - | - | - | - |'])
+                               + '\n', LatestRuntimeCommitTest.VOCAB)
+        with patch.object(v, 'GIT', fake_launcher(self.folder, ONE_RUNTIME_COMMIT_THEN_MORE)):
+            outcome, _ = self.bounded(lambda: v.latest_runtime_commit(self.folder, 'HEAD', table))
+        self.assertNotIn('error', outcome)
+        self.assertEqual(outcome['result'], 'a' * 40)
+
+    def test_a_timeout_raises_instead_of_waiting_for_a_held_pipe(self):
+        with patch.object(processes, 'STOP_SECONDS', 3):
+            outcome, took = self.bounded(lambda: processes.run(fake_launcher(self.folder, HOLD_THE_PIPES),
+                                                               capture_output=True, timeout=1))
+        self.assertIsInstance(outcome.get('error'), subprocess.TimeoutExpired)
+        self.assertLess(took, 15)
+
+    def test_an_input_the_child_never_reads_does_not_hold_the_timeout(self):
+        """The input is written on its own thread: a reviewer CLI that never reads its brief still times out."""
+        with patch.object(processes, 'STOP_SECONDS', 3):
+            outcome, took = self.bounded(lambda: processes.run(fake_launcher(self.folder, HOLD_THE_PIPES),
+                                                               input=b'x' * 4_000_000, capture_output=True, timeout=1))
+        self.assertIsInstance(outcome.get('error'), subprocess.TimeoutExpired)
+        self.assertLess(took, 15)
+
+    @unittest.skipIf(processes.WINDOWS, 'on Windows the tree is ended, so the second wait does not time out')
+    def test_output_printed_before_a_held_pipe_is_kept_on_the_timeout(self):
+        """A reviewer that printed its answer and left a child holding the pipe: the answer reaches the caller."""
+        child = 'sys.stdout.write("the answer\\n")\nsys.stdout.flush()\n' + HOLD_THE_PIPES
+        with patch.object(processes, 'STOP_SECONDS', 1):
+            outcome, _ = self.bounded(lambda: processes.run(fake_launcher(self.folder, child), capture_output=True,
+                                                            timeout=2))
+        self.assertIsInstance(outcome.get('error'), subprocess.TimeoutExpired)
+        self.assertIn(b'the answer', outcome['error'].stdout or b'')
+
+    def test_a_child_that_outlives_the_stop_fails_naming_the_command_and_its_pid(self):
+        """As if the tree could not be ended: only the launcher is killed and the child keeps the pipes."""
+        stream = processes.Stream(fake_launcher(self.folder, HOLD_THE_PIPES))
+        deadline = time.monotonic() + self.BOUND
+        while not (self.folder / 'pid').is_file() and time.monotonic() < deadline:  # the child holds the pipes now
+            time.sleep(0.05)
+        with patch.object(processes, 'end_tree', lambda process: process.kill()):
+            outcome, _ = self.bounded(lambda: stream.finish(stop=True, bound=1))
+        error = outcome.get('error')
+        self.assertIsInstance(error, processes.StallError)
+        self.assertIn('(pid %d) did not exit' % stream.process.pid, str(error))
+        self.assertIn('after the early stop', str(error))
+        self.assertIn(Path(sys.executable).name, str(error))
 
 
 if __name__ == '__main__':

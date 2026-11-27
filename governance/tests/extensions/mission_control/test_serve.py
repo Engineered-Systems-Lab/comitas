@@ -311,7 +311,7 @@ class QueuePayloadTest(unittest.TestCase):
             self.assertEqual(serve.queue_payload()['state'], 'error')
 
     def test_the_helper_is_the_validated_queue_command_through_its_thin_launcher(self):
-        with mock.patch.object(serve.subprocess, 'run', return_value=completed('{}')) as run:
+        with mock.patch.object(serve.processes, 'run', return_value=completed('{}')) as run:
             serve.helper('queue')
         argv = run.call_args.args[0]
         self.assertEqual(argv[2:5], ['governance/tools/local_jobs.py', '--repo', str(serve.REPO)])
@@ -351,7 +351,7 @@ class ExecutionPayloadTest(unittest.TestCase):
         serve.light_poll_seconds = 0
 
     def test_only_allow_listed_fields_leave_the_server(self):
-        with mock.patch.object(serve.subprocess, 'run', return_value=completed(json.dumps(STATUS))) as run:
+        with mock.patch.object(serve.processes, 'run', return_value=completed(json.dumps(STATUS))) as run:
             payload = serve.execution_payload()
         wire = json.dumps(payload)
         for secret in ('C:/secret/place', 'packet state preparing', '4242', 'private', '"worktree"', '"evidence"', '"derived"'):
@@ -369,17 +369,17 @@ class ExecutionPayloadTest(unittest.TestCase):
                       claims=[{'owner': 'm1', 'job_handle': 'worker_claims', 'level': 'OVERLAP', 'subclasses': ['checkpoint'],
                                'files': 3, 'since': '2026-10-13T10:00:00Z', 'flags': ['age'], 'worktree': 'C:/secret/place', 'id': 7}],
                       overlaps=[{'owners': ['m1', 'm2'], 'kind': 'same_file', 'text': 'same file(s): a.py', 'files': ['a.py'], 'subclasses': ['x']}])
-        with mock.patch.object(serve.subprocess, 'run', return_value=completed(json.dumps(status))):
+        with mock.patch.object(serve.processes, 'run', return_value=completed(json.dumps(status))):
             payload = serve.execution_payload()
         self.assertEqual(payload['claims'], [{'owner': 'm1', 'job_handle': 'worker_claims', 'level': 'OVERLAP',
                                               'subclasses': ['checkpoint'], 'files': 3, 'since': '2026-10-13T10:00:00Z', 'flags': ['age']}])
         self.assertEqual(payload['overlaps'], [{'owners': ['m1', 'm2'], 'kind': 'same_file', 'text': 'same file(s): a.py'}])
         self.assertEqual((payload['schema'], payload['stale_claims']), ('1.1', 2))
         self.assertNotIn('C:/secret/place', json.dumps(payload))
-        with mock.patch.object(serve.subprocess, 'run', return_value=completed(json.dumps(STATUS))):
+        with mock.patch.object(serve.processes, 'run', return_value=completed(json.dumps(STATUS))):
             old = serve.execution_payload()
         self.assertEqual((old['claims'], old['overlaps'], old['stale_claims']), ([], [], 0))
-        with mock.patch.object(serve.subprocess, 'run', return_value=completed(json.dumps(dict(STATUS, stale_claims='many')))):
+        with mock.patch.object(serve.processes, 'run', return_value=completed(json.dumps(dict(STATUS, stale_claims='many')))):
             self.assertEqual(serve.execution_payload()['stale_claims'], 0)
 
     def test_the_command_is_fixed_read_only_and_goes_through_its_thin_launcher(self):
@@ -390,14 +390,14 @@ class ExecutionPayloadTest(unittest.TestCase):
         for outcome in ({'return_value': completed('not json')}, {'return_value': completed('{"level": "CLEAR"}')},
                         {'return_value': completed(json.dumps(dict(STATUS, level='GREEN')))},
                         {'side_effect': OSError('no launcher')}, {'return_value': completed('', 'FAIL: x', 1)}):
-            with self.subTest(outcome=outcome), mock.patch.object(serve.subprocess, 'run', **outcome):
+            with self.subTest(outcome=outcome), mock.patch.object(serve.processes, 'run', **outcome):
                 payload = serve.execution_payload()
             self.assertEqual((payload['level'], payload['windows']), ('UNKNOWN', []))
             self.assertTrue(payload['line'].startswith('STATUS UNKNOWN'))
 
     def test_the_poll_interval_is_off_by_default_clamped_and_forgiving(self):
         self.assertEqual([serve.poll_seconds(v) for v in (0, -5, 'x', None, 1, 9, 10, 30, '45')], [0, 0, 0, 0, 10, 10, 10, 30, 45])
-        with mock.patch.object(serve.subprocess, 'run', return_value=completed(json.dumps(STATUS))):
+        with mock.patch.object(serve.processes, 'run', return_value=completed(json.dumps(STATUS))):
             self.assertEqual(serve.execution_payload()['poll_seconds'], 0)
             serve.light_poll_seconds = 3
             self.assertEqual(serve.execution_payload()['poll_seconds'], 10)

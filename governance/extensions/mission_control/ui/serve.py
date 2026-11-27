@@ -22,6 +22,7 @@ import data_launcher
 import declared_inputs
 import repo_paths as rp
 from governance.tools.coordination import local_jobs
+from governance.tools.support import processes
 
 REPO = rp.ROOT
 
@@ -120,7 +121,7 @@ def execution_payload():
                'claims': [], 'overlaps': [], 'stale_claims': 0,
                'database_state': 'unknown', 'declared_without_evidence': 0, 'poll_seconds': poll_seconds(light_poll_seconds)}
     try:
-        result = subprocess.run(EXECUTION, cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=60)
+        result = processes.run(EXECUTION, cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=60)
         data = json.loads(result.stdout)
         if data['level'] not in LEVELS:
             raise ValueError('unknown level')
@@ -144,7 +145,7 @@ def now():
 
 
 def helper(*args):
-    return subprocess.run([*HELPER, *args], cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=60)
+    return processes.run([*HELPER, *args], cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=60)
 
 
 def failure(result):
@@ -228,7 +229,7 @@ class Preview(SimpleHTTPRequestHandler):
     @staticmethod
     def head():
         try:
-            return subprocess.run(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], capture_output=True, text=True,
+            return processes.run(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], capture_output=True, text=True,
                                   timeout=30).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return ''
@@ -328,7 +329,7 @@ class Preview(SimpleHTTPRequestHandler):
             return
         started = time.monotonic()
         try:
-            result = subprocess.run(self.refresh_command, cwd=REPO, capture_output=True, text=True,
+            result = processes.run(self.refresh_command, cwd=REPO, capture_output=True, text=True,
                                     encoding='utf-8', timeout=600)
             lines = [line for line in (result.stdout + result.stderr).splitlines()
                      if line.strip() and not line.startswith('scrubbed')]

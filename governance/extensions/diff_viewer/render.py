@@ -64,8 +64,9 @@ def require(condition, message):
 
 
 def git(repo, *args, env=None):
+    from governance.tools.support import processes  # late, like the other core imports of this page
     try:
-        result = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, timeout=300, env=env)
+        result = processes.run(['git', '-C', str(repo), *args], capture_output=True, timeout=300, env=env)
     except (OSError, subprocess.SubprocessError) as error:
         raise ViewerError('cannot run Git: ' + str(error)) from error
     require(result.returncode == 0, 'Git failed (%s): %s' % (' '.join(args[:2]), result.stderr.decode('utf-8', 'replace').strip()))
@@ -109,7 +110,8 @@ def load_preview(repo, path):
 
 def load_sealed(repo):
     """The sealed packet as the checkpoint tool presents it, read through its own present command."""
-    result = subprocess.run([sys.executable, '-B', str(ROOT / 'governance' / 'tools' / 'checkpoint.py'), '--repo', str(repo), 'present'],
+    from governance.tools.support import processes
+    result = processes.run([sys.executable, '-B', str(ROOT / 'governance' / 'tools' / 'checkpoint.py'), '--repo', str(repo), 'present'],
                             capture_output=True, timeout=600)
     lines = (result.stdout + result.stderr).decode('utf-8', 'replace').strip().splitlines()
     require(result.returncode == 0, 'The sealed review cannot be read: ' + (lines[-1] if lines else 'no output'))

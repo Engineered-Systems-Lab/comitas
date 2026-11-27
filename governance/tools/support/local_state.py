@@ -21,10 +21,12 @@ worktrees, locked, gitdir, commondir and the operation markers the checkpoint to
 
 The claims database keeps its own folder beside these. The runtime guard runs before any repository module is trusted and
 under a possibly older Python 3, so it keeps a small copy of the lifecycle lock's location; a test asserts that the copy
-agrees with this module. Standard library only.
+agrees with this module. Standard library only, and the process helper beside it.
 """
 from pathlib import Path
 import subprocess
+
+from governance.tools.support import processes
 
 LOCAL = '.local'
 TIMINGS = 'timings'
@@ -42,7 +44,7 @@ class LocalStateError(ValueError):
 def common_directory(repo):
     """Git's common directory for `repo` (a checkout, a worktree or the directory of a repository), absolute and resolved."""
     try:
-        result = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+        result = processes.run(['git', '-C', str(repo), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
                                 capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as error:
         raise LocalStateError('cannot run Git: ' + str(error)) from error
@@ -117,7 +119,7 @@ def require_ignored(common, *parts):
     primary = primary_root(common)
     probe = '/'.join((LOCAL,) + parts + ('probe',))
     try:
-        result = subprocess.run(['git', '-C', str(primary), 'check-ignore', '--', probe], capture_output=True, timeout=20)
+        result = processes.run(['git', '-C', str(primary), 'check-ignore', '--', probe], capture_output=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as error:
         raise LocalStateError('cannot run Git: ' + str(error)) from error
     if result.returncode != 0:

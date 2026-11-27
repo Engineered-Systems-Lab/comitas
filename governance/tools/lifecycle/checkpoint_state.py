@@ -5,7 +5,7 @@ One of the four components of the checkpoint tool; governance/tools/checkpoint.p
 from governance.tools import runtime_guard
 from governance.tools.continuity import artifact_classification
 from governance.tools.lifecycle import early_approval
-from governance.tools.support import local_state
+from governance.tools.support import local_state, processes
 from contextlib import contextmanager
 import hashlib
 import hmac
@@ -165,7 +165,7 @@ def exclusive_evidence(path, data):
 def run(argv, root):
     started = time.monotonic()
     try:
-        result = subprocess.run(argv, cwd=root, capture_output=True, timeout=1800)
+        result = processes.run(argv, cwd=root, capture_output=True, timeout=1800)
     except (OSError, subprocess.TimeoutExpired) as error:
         return {'argv': argv, 'exit_code': -1, 'stdout': '', 'stderr': str(error),
                 'duration_seconds': round(time.monotonic() - started, 6)}
