@@ -159,6 +159,8 @@ class PreviewTest(Fixture):
         self.assertEqual((status, result['state'], result['message']), (200, 'ok', 'refreshed ok'))
         self.assertIsInstance(result['seconds'], float)
         self.assertTrue(result['finished_at'].endswith('Z'))
+        # Only a failure names the copy kept: after a success the page reloads the new one.
+        self.assertNotIn('copy', result)
 
     def test_the_production_command_is_fixed_and_writes_only_the_local_refresh(self):
         self.assertEqual(Preview.refresh_command[2:], ['governance/extensions/mission_control/data_launcher.py', 'refresh-local'])
@@ -172,8 +174,22 @@ class RefreshFailureTest(Fixture):
     def test_failure_is_a_plain_error_message(self):
         status, body, _ = self.post()
         self.assertEqual((status, json.loads(body)['state'], json.loads(body)['message']), (500, 'error', 'generator broke'))
+        # Without a local copy the reply says there is none to keep showing.
+        self.assertIsNone(json.loads(body)['copy'])
         # The lock is released, so a second press is not stuck busy.
         self.assertEqual(self.post()[0], 500)
+
+
+class RefreshFailureWithCopyTest(Fixture):
+    overrides = {'refresh_command': [sys.executable, '-c', 'import sys; print("FAIL: " + "x" * 600, file=sys.stderr); sys.exit(1)'],
+                 'local_snapshot': staticmethod(lambda: {'folder': Path('unused'), 'revision': 'a' * 40,
+                                                         'generated_at': '2026-10-10T12:00:00Z', 'generator': 'b' * 12})}
+
+    def test_failure_names_the_copy_kept_and_keeps_the_whole_line(self):
+        status, body, _ = self.post()
+        reply = json.loads(body)
+        self.assertEqual((status, reply['state'], reply['message']), (500, 'error', 'x' * 600))
+        self.assertEqual(reply['copy'], {'revision': 'a' * 40, 'generated_at': '2026-10-10T12:00:00Z'})
 
 
 class RefreshBusyTest(Fixture):

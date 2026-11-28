@@ -211,10 +211,10 @@ test('commit metadata omits absent Subclass, keeps unknowns and marks only infer
     const html = core.commitMetadataHtml(commit);
     assert.ok(!/mixed/i.test(html) && !html.includes('·  ·') && !html.endsWith('· '));
     assert.equal(html.includes('Subclass: '),commit.subclasses.length > 0);
-    assert.equal(html.includes('class="inferred"'),commit.inferredFields.some(f=>f==='worker' ? commit.worker : commit[f].length));
+    assert.equal(html.includes('class="inferred"'),(commit.inferredFields ?? []).some(f=>f==='worker' ? commit.worker : commit[f].length));
     if (!commit.worker) assert.ok(html.includes('Worker: unknown') && !html.includes(`Worker: unknown${mark}`));
   }
-  const explicit = items.find(i=>i.type==='commits' && i.worker && !i.inferredFields.length && i.subclasses.length);
+  const explicit = items.find(i=>i.type==='commits' && i.worker && !(i.inferredFields ?? []).length && i.subclasses.length);
   assert.equal(core.commitMetadataHtml(explicit),`Class: ${explicit.classes.join(', ')} · Subclass: ${explicit.subclasses.join(', ')} · Worker: ${core.escape(explicit.worker)}`);
 });
 
@@ -695,6 +695,38 @@ test('the footer names which copy of the datasets is on screen', () => {
   assert.equal(core.dataSourceLabel(header('current')), 'LOCAL COPY GENERATED 2026-10-10 12:00:00 UTC FROM ' + 'a'.repeat(12) + ' · CURRENT WITH HEAD · GENERATOR ' + 'b'.repeat(12));
   assert.match(core.dataSourceLabel(header('older')), /OLDER THAN HEAD, PRESS REFRESH/);
   for (const bad of ['', null, undefined, 'local; revision=abc; refreshed=now', header('maybe'), 'other']) assert.equal(core.dataSourceLabel(bad), 'SOURCE UNKNOWN');
+});
+
+test('a failed refresh opens a dialog naming the copy still shown and the cause verbatim', async () => {
+  const cause = 'generator full failed at 78aa493: Subclass invalid under selected Class. The local copy from b46b751, generated 2026-11-09 15:31 UTC, stays in use.';
+  const copy = {revision:'a'.repeat(40), generated_at:'2026-11-09T15:31:00Z'};
+  assert.deepEqual(core.refreshFailure({state:'error', message:cause, copy}, 'unused'),
+    {title:'Refresh failed', kept:'The page still shows the local copy generated 2026-11-09 15:31:00 UTC from ' + 'a'.repeat(12) + '.', cause});
+  assert.equal(core.refreshFailure({state:'error', message:cause, copy:null}).kept, 'There is no local copy yet, so the page has no data to show.');
+  // No reply, or a copy that is not well formed, names no copy; the cause falls back to the error the page saw.
+  for (const reply of [null, {}, {copy:{revision:'abc', generated_at:'now'}}])
+    assert.deepEqual(core.refreshFailure(reply, 'HTTP 502'),
+      {title:'Refresh failed', kept:'The page still shows the data it showed before the refresh.', cause:'HTTP 502'});
+  assert.equal(core.refreshFailure(null).cause, 'No reason was given.');
+  // The dialog is native, closes through its form and carries no inline script; the cause sits in a <pre>.
+  const html = await readFile(new URL('../../../extensions/mission_control/ui/index.html', import.meta.url), 'utf8');
+  const dialog = /<dialog id="refresh-failure"[^>]*>.*?<\/dialog>/s.exec(html)?.[0] ?? '';
+  for (const part of ['<h2 id="refresh-failure-title">Refresh failed</h2>', '<p id="refresh-failure-kept"></p>',
+                      '<pre id="refresh-failure-cause"></pre>', '<form method="dialog"><button type="submit">Close</button></form>'])
+    assert.ok(dialog.includes(part), part);
+  assert.ok(!/<script|\son[a-z]+=/i.test(dialog));
+  const app = await readFile(new URL('../../../extensions/mission_control/ui/app.mjs', import.meta.url), 'utf8');
+  assert.ok(app.includes("$('#refresh-failure-cause').textContent = failure.cause;") && app.includes('dialog.showModal()'));
+});
+
+test('an excepted commit names its exception and its rules; other commits carry none and no empty fields', () => {
+  assert.equal(core.historyExceptionText({historyException:{rules:['class','subclass'], reason:'Recorded before the vocabulary.'}}),
+    'History exception (class, subclass): Recorded before the vocabulary.');
+  for (const commit of [{}, {historyException:null}, {historyException:{rules:[], reason:'x'}}]) assert.equal(core.historyExceptionText(commit), '');
+  for (const commit of items.filter(i=>i.type==='commits')) {
+    assert.ok(!('inferredFields' in commit) || commit.inferredFields.length > 0, commit.id);
+    assert.ok(['classes','subclasses','worker'].every(key => key in commit), commit.id);
+  }
 });
 
 test('the footer link opens the Mission Control README record and the title carries the short tooltip', async () => {

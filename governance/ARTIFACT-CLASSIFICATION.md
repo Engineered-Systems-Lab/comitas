@@ -207,6 +207,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `governance/tools/lifecycle/checkpoint_lifecycle.py` | tooling | tooling | - | - | symbol-map | checkpoint | - | high |
 | `governance/tools/lifecycle/checkpoint_selection.py` | tooling | tooling | - | - | symbol-map | checkpoint | - | high |
 | `governance/tools/lifecycle/checkpoint_state.py` | tooling | tooling | - | - | symbol-map | checkpoint | - | high |
+| `governance/tools/lifecycle/commit_history.py` | tooling | tooling | - | - | mission-control-generator, selector | checkpoint | - | medium |
 | `governance/tools/lifecycle/commit_metadata.py` | tooling | tooling | - | - | selector | checkpoint | - | medium |
 | `governance/tools/lifecycle/early_approval.py` | tooling | tooling | - | - | early-approval | checkpoint | - | high |
 | `governance/tools/lifecycle/preview_record.py` | tooling | tooling | - | - | early-approval, jobs | checkpoint | - | medium |
@@ -244,7 +245,7 @@ Editing a row is a governance change. It validates with continuity, the classifi
 | `project-governance/config/checkpoint-policy.json` | tooling | tooling | - | - | selector | checkpoint | - | high |
 | `project-governance/config/checkpoint-profiles.json` | tooling | tooling | - | - | selector | checkpoint | - | high |
 | `project-governance/config/citations.json` | tooling | tooling | - | - | continuity, mission-control-generator | - | - | high |
-| `project-governance/config/commit-history.json` | tooling | tooling | - | - | selector | checkpoint | - | high |
+| `project-governance/config/commit-history.json` | tooling | tooling | - | - | mission-control-generator, selector | checkpoint | - | high |
 | `project-governance/config/devlog.json` | tooling | tooling | - | - | continuity, mission-control-generator, worktrees | - | - | high |
 | `project-governance/config/frozen-manifest.json` | tooling | tooling | - | - | continuity | - | - | high |
 | `project-governance/config/mission-control-inputs.json` | tooling | tooling | - | - | mission-control-generator | mission-control | - | - |

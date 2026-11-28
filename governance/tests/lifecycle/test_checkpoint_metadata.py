@@ -177,6 +177,36 @@ class MetadataTest(unittest.TestCase):
             m.reconstruct(self.message('Class: mixed, record\nWorker: Human'),
                           [rp.PROGRESS], self.policy, self.profiles, table)
 
+    def test_a_waived_trailer_keeps_its_tokens_as_written_and_reconstruct_applies_the_waiver(self):
+        # A reader of an excepted commit shows what the commit says, in trailer order, and drops no unknown token.
+        subclass = self.message('Class: tooling\nSubclass: continuity, not-registered, checkpoint\nWorker: Human')
+        with self.assertRaisesRegex(ValueError, 'Subclass invalid under selected Class'):
+            m.parse_metadata(subclass, self.profiles)
+        self.assertEqual(m.parse_metadata(subclass, self.profiles, waived={'subclass'})['subclasses'],
+                         ['continuity', 'not-registered', 'checkpoint'])
+        klass = self.message('Class: tooling, legacy-kind\nWorker: Human')
+        self.assertEqual(m.parse_metadata(klass, self.profiles, waived={'class'})['classes'], ['tooling', 'legacy-kind'])
+        # Without a waiver the output is unchanged: registry order, as the checkpoint seals it.
+        self.assertEqual(self.parse('Class: tooling, governance\nWorker: Human')['classes'], ['governance', 'tooling'])
+        table = shipped_tool().table(self.policy, self.profiles)
+        with self.assertRaisesRegex(ValueError, 'Subclass invalid under selected Class'):
+            m.reconstruct(subclass, [rp.AGENTS], self.policy, self.profiles, table)
+        value = m.reconstruct(subclass, [rp.AGENTS], self.policy, self.profiles, table, waived=frozenset({'subclass'}))
+        self.assertEqual((value['classes'], value['subclasses'], value['inferredFields']),
+                         (['tooling'], ['continuity', 'not-registered', 'checkpoint'], []))
+        # A waived subclass under classes inferred from the paths is kept as written too.
+        aggregate = self.message('Class: mixed\nSubclass: not-registered\nWorker: Human')
+        with self.assertRaisesRegex(ValueError, 'Subclass invalid under selected Class'):
+            m.reconstruct(aggregate, [rp.AGENTS], self.policy, self.profiles, table)
+        value = m.reconstruct(aggregate, [rp.AGENTS], self.policy, self.profiles, table, waived=frozenset({'subclass'}))
+        self.assertEqual((value['classes'], value['subclasses'], value['inferredFields']),
+                         (['governance'], ['not-registered'], ['classes']))
+        # When the paths give no class either, the waived Subclass is still kept as written; unwaived, it is dropped.
+        value = m.reconstruct(aggregate, ['unknown.txt'], self.policy, self.profiles, table, waived=frozenset({'subclass'}))
+        self.assertEqual((value['classes'], value['subclasses'], value['inferredFields']), ([], ['not-registered'], []))
+        plain = self.message('Class: mixed\nSubclass: checkpoint\nWorker: Human')
+        self.assertEqual(m.reconstruct(plain, ['unknown.txt'], self.policy, self.profiles, table)['subclasses'], [])
+
     def test_reconstruction_uses_historical_paths_for_deleted_files(self):
         historical = (chr(10) + '## Historical paths table' + chr(10) + chr(10) + '| Path | Class | Subclass |' + chr(10) +
                       '| --- | --- | --- |' + chr(10) + '| `docs/WORKTREE-WORKFLOW.md` | governance | - |' + chr(10))

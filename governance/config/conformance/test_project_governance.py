@@ -88,7 +88,7 @@ class DocumentedDefaultsTest(unittest.TestCase):
 
 
     def test_absent_optional_overlays_do_not_supply_required_history_boundaries(self):
-        from governance.tests.lifecycle import test_commit_history_conformance as history
+        from governance.tools.lifecycle import commit_history as history
         text = DOCUMENT.read_text(encoding='utf-8')
         self.assertIn('its absence fails that test', text)
         self.assertNotIn('With every project file absent, the tools behave exactly as with the framework alone.', text)

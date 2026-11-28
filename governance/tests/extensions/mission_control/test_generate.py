@@ -57,7 +57,8 @@ class GeneratorTest(unittest.TestCase):
         self.write('devlog/2026-10-02T0843Z-event.md', '# Operational log\n\nStatus: Historical / non-normative\nDate: 2026-10-02T08:43Z\n\nContemporary uncertainty preserved.\n')
         self.write('devlog/2026-10-03T0001Z-thought.md', '# Second entry\n\nStatus: Historical / non-normative\nDate: 2026-10-03T00:01Z\n\nAn entry in the other date format.\n')
         repository = rp.ROOT
-        for name in g.COMMIT_INPUTS:
+        # This checkout's declared history names its own commits, which the fixture's history does not hold.
+        for name in set(g.COMMIT_INPUTS) - {g.artifact_classification.COMMIT_HISTORY}:
             if (repository / name).is_file():  # the project's files are optional
                 self.write(name, (repository / name).read_text(encoding='utf-8'))
         self.run_git('init', '-b', 'fixture')
@@ -147,22 +148,22 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(item['classes'], ['tooling'])
         self.assertEqual(item['subclasses'], ['checkpoint', 'mission-control'])
         self.assertEqual(item['worker'], 'OpenAI Codex [Visible config]')
-        self.assertEqual(item['inferredFields'], [])
+        self.assertNotIn('inferredFields', item)
         self.assertEqual(item['topics'], [])
         item = self.metadata_commit(rp.CHECKPOINT,
                                    'One subclass\n\nClass: tooling\nSubclass: checkpoint\nWorker: Human')
         self.assertEqual(item['subclasses'], ['checkpoint'])
-        self.assertEqual(item['inferredFields'], [])
+        self.assertNotIn('inferredFields', item)
         item = self.metadata_commit(rp.CHECKPOINT, 'No subclass\n\nClass: tooling\nWorker: Human')
         self.assertEqual(item['subclasses'], [])
-        self.assertEqual(item['inferredFields'], [])
+        self.assertNotIn('inferredFields', item)
 
     def test_multiclass_metadata_json_and_retired_aggregate(self):
         item = self.metadata_commit(rp.CHECKPOINT,
                                    'Plural\n\nClass: tooling, governance\nSubclass: checkpoint\nWorker: Human')
         self.assertEqual(item['classes'], ['governance', 'tooling'])
         self.assertNotIn('class', item)
-        self.assertEqual(item['inferredFields'], [])
+        self.assertNotIn('inferredFields', item)
         item = self.metadata_commit('AGENTS.md', 'Historical\n\nClass: mixed\nWorker: OpenAI Codex')
         self.assertEqual(item['classes'], ['governance'])
         self.assertEqual(item['inferredFields'], ['classes', 'subclasses'])
@@ -210,7 +211,7 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(item['classes'], [])
         self.assertEqual(item['subclasses'], [])
         self.assertIsNone(item['worker'])
-        self.assertEqual(item['inferredFields'], [])
+        self.assertNotIn('inferredFields', item)
 
     def test_partial_historical_worker_is_preserved_without_model_invention(self):
         item = self.metadata_commit(rp.CHECKPOINT, 'Partial metadata\n\nWorker: OpenAI ChatGPT')
@@ -236,6 +237,110 @@ class GeneratorTest(unittest.TestCase):
     def proposal(self, name, text):
         self.write(name, text)
         return {name: g.digest((self.root / name).read_bytes())}
+
+    def history(self, exceptions):
+        boundary = self.run_git('rev-list', '--max-parents=0', 'HEAD').split()[0]
+        return json.dumps({'version': 1, 'convention_after': boundary, 'exceptions': exceptions})
+
+    def test_a_declared_history_exception_is_applied_in_full_and_normal_mode(self):
+        name = g.artifact_classification.COMMIT_HISTORY
+        message = 'Historical\n\nClass: tooling\nSubclass: not-registered, checkpoint\nWorker: Human'
+        # Without its exception the commit stops the whole generation, as it did before.
+        with self.assertRaisesRegex(ValueError, 'Subclass invalid under selected Class'):
+            self.metadata_commit(rp.CHECKPOINT, message)
+        excepted = self.revision
+        entry = {'commit': excepted, 'rules': ['subclass'], 'reason': 'Recorded before the vocabulary existed.'}
+        self.write(name, self.history([entry]))
+        self.commit()
+        self.revision = self.run_git('rev-parse', 'HEAD').strip()
+        self.generate()
+        commits = {item['sha']: item for item in self.items('commits')}
+        # The waived field keeps the commit's tokens as written, in trailer order; the others are read as usual.
+        self.assertEqual(commits[excepted]['subclasses'], ['not-registered', 'checkpoint'])
+        self.assertEqual(commits[excepted]['classes'], ['tooling'])
+        self.assertEqual(commits[excepted]['historyException'],
+                         {'rules': ['subclass'], 'reason': 'Recorded before the vocabulary existed.'})
+        self.assertEqual([sha for sha, item in commits.items() if 'historyException' in item], [excepted])
+        # After one more commit the incremental update keeps applying the exception and equals a full rebuild.
+        self.write('docs/target.md', '# Target\n\nChanged target content.\n')
+        self.commit()
+        self.revision = self.run_git('rev-parse', 'HEAD').strip()
+        self.assertIn('commits', self.generate('normal', changed=['docs/target.md'])['updated'])
+        self.assertEqual(next(i for i in self.items('commits') if i['sha'] == excepted)['historyException'],
+                         {'rules': ['subclass'], 'reason': 'Recorded before the vocabulary existed.'})
+        later = Path(self.temp.name) / 'history-later-full'
+        self.generate(output=later)
+        self.assertEqual(self.bytes(), self.bytes(later))
+        # A change to the declared history alone rebuilds the commits, and the incremental result equals a full one.
+        proposal = self.proposal(name, self.history([{**entry, 'reason': 'A reworded reason.'}]))
+        self.assertEqual(self.generate('normal', changed=[name], proposal=proposal)['updated'], ['commits'])
+        self.assertEqual(next(i for i in self.items('commits') if i['sha'] == excepted)['historyException']['reason'],
+                         'A reworded reason.')
+        full = Path(self.temp.name) / 'history-full'
+        self.generate(output=full, proposal=proposal)
+        self.assertEqual(self.bytes(), self.bytes(full))
+
+    def test_a_faulty_history_declaration_is_refused_with_the_history_tests_message(self):
+        name = g.artifact_classification.COMMIT_HISTORY
+        entry = {'commit': self.revision, 'rules': ['everything'], 'reason': 'x'}
+        proposal = self.proposal(name, self.history([entry]))
+        with self.assertRaises(ValueError) as caught:
+            self.generate(proposal=proposal)
+        with self.assertRaises(ValueError) as expected:
+            g.commit_history.history_exceptions([entry])
+        self.assertEqual(str(caught.exception), str(expected.exception))
+        self.assertIn(name + ': exception 1: rules must be a nonempty list', str(caught.exception))
+        with self.assertRaisesRegex(ValueError, name + ': unreadable or invalid JSON'):
+            self.generate(proposal=self.proposal(name, '{'))
+
+    def test_a_declaration_is_checked_against_the_history_of_the_shown_revision(self):
+        # The same Git checks and messages as the history test, with the shown revision as its captured HEAD.
+        name = g.artifact_classification.COMMIT_HISTORY
+        root = self.run_git('rev-list', '--max-parents=0', 'HEAD').split()[0]
+        side = self.run_git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit-tree',
+                            self.run_git('rev-parse', 'HEAD^{tree}').strip(), '-m', 'Side').strip()
+        reason = {'rules': ['subclass'], 'reason': 'x'}
+        for commit, message in ((root, 'exception for ' + root + ': convention_after already exempts it'),
+                                ('f' * 40, 'exception for ' + 'f' * 40 + ': object is not a commit'),
+                                (side, 'exception for ' + side + ': commit is not an ancestor of captured HEAD')):
+            with self.subTest(commit=commit):
+                with self.assertRaises(ValueError) as caught:
+                    self.generate(proposal=self.proposal(name, self.history([{'commit': commit, **reason}])))
+                self.assertEqual(str(caught.exception), message)
+        boundary = json.dumps({'version': 1, 'convention_after': side})
+        with self.assertRaises(ValueError) as caught:
+            self.generate(proposal=self.proposal(name, boundary))
+        self.assertEqual(str(caught.exception), 'convention_after: boundary is not an ancestor of captured HEAD')
+        # The checks read the history through the generator's own isolated Git, never the reader's plain one.
+        valid = self.proposal(name, self.history([]))
+        with patch.object(g, 'history_git', wraps=g.history_git) as isolated, \
+                patch.object(g.commit_history, 'git', side_effect=AssertionError('plain Git')):
+            self.generate(proposal=valid)
+        self.assertIn(('cat-file', '-t', root), [call.args[1:] for call in isolated.call_args_list])
+
+    def test_the_declarations_git_checks_ignore_replace_refs(self):
+        # A replace ref could make a side commit look like an ancestor; the isolated reads see the declared history.
+        name = g.artifact_classification.COMMIT_HISTORY
+        identity = ('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test')
+        tree = self.run_git('rev-parse', 'HEAD^{tree}').strip()
+        side = self.run_git(*identity, 'commit-tree', tree, '-m', 'Side').strip()
+        head = self.run_git('rev-parse', 'HEAD').strip()
+        parents = [p for p in self.run_git('rev-list', '--parents', '-n', '1', head).split()[1:]]
+        graft = self.run_git(*identity, 'commit-tree', tree, *[a for p in parents + [side] for a in ('-p', p)],
+                             '-m', 'Declared fixture').strip()
+        declaration = self.history([{'commit': side, 'rules': ['subclass'], 'reason': 'x'}])  # before the replace ref
+        self.run_git('replace', head, graft)
+        self.assertEqual(subprocess.run(['git', '-C', str(self.root), 'merge-base', '--is-ancestor', side, head]).returncode, 0)
+        with self.assertRaises(ValueError) as caught:
+            self.generate(proposal=self.proposal(name, declaration))
+        self.assertEqual(str(caught.exception), 'exception for ' + side + ': commit is not an ancestor of captured HEAD')
+
+    def test_an_absent_history_declaration_declares_no_exception(self):
+        name = g.artifact_classification.COMMIT_HISTORY
+        self.assertFalse((self.root / name).exists())
+        self.generate()
+        self.assertTrue(self.items('commits'))
+        self.assertFalse([item for item in self.items('commits') if 'historyException' in item])
 
     def test_independent_full_equal_inputs_byte_identical_across_checkouts(self):
         self.generate()
@@ -1024,6 +1129,7 @@ class DataLauncherTest(unittest.TestCase):
         self.write('governance/tools/__init__.py', '')
         for name in (MC_DATA, 'governance/tools/runtime_guard.py',
                      'governance/tools/commit_metadata.py', 'governance/tools/lifecycle/commit_metadata.py',
+                     'governance/tools/lifecycle/commit_history.py',
                      'governance/tools/continuity/artifact_classification.py',
                      'governance/extensions/mission_control/generate.py', 'governance/extensions/mission_control/data_launcher.py',
                      'governance/extensions/mission_control/declared_inputs.py',
@@ -1090,7 +1196,7 @@ class DataLauncherTest(unittest.TestCase):
         result = self.launch('refresh-local')
         self.assertEqual(result.returncode, 1)
         self.assertIn('Unsupported inline', result.stderr)
-        self.assertIn('live data untouched', result.stderr)
+        self.assertFailureLine(result, second)
         self.assertEqual(launcher.local_snapshot(self.root), second)
         self.assertEqual({p.name: p.read_bytes() for p in (self.local_base() / 'data').iterdir()}, before)
         self.assertEqual(sorted(p.name for p in self.local_base().iterdir()), ['data', 'meta.json'])
@@ -1259,10 +1365,28 @@ class DataLauncherTest(unittest.TestCase):
         self.commit()
         result = self.launch('refresh-local')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('live data untouched', result.stderr)
+        self.assertFailureLine(result, previous)
         self.assertEqual(launcher.local_snapshot(self.root), previous)
         self.assertEqual({p.name: p.read_bytes() for p in (self.local_base() / 'data').iterdir()}, before)
         self.assertScratchClean()
+
+    def test_a_failure_without_a_copy_says_there_is_none(self):
+        self.write('docs/guide.md', '# Guide\n\n[Broken](target (bad).md)\n')
+        self.commit()
+        result = self.launch('refresh-local')
+        self.assertEqual(result.returncode, 1)
+        self.assertFailureLine(result, None)
+        self.assertIsNone(launcher.local_snapshot(self.root))
+
+    def assertFailureLine(self, result, copy):
+        # The last line is all the page shows: the mode, the revision, the generator's own cause and the copy kept.
+        last = result.stderr.splitlines()[-1]
+        kept = ('There is no local copy yet.' if copy is None else
+                'The local copy from %s, generated %s %s UTC, stays in use.'
+                % (copy['revision'][:7], copy['generated_at'][:10], copy['generated_at'][11:16]))
+        self.assertRegex(last, r'^FAIL: generator full failed at %s: \S.*\S\. ' % self.head()[:7])
+        self.assertIn('Unsupported inline', last)
+        self.assertTrue(last.endswith(kept), last)
 
     def test_refresh_local_full_rebuilds_and_verifies_without_trying_the_incremental_update(self):
         self.assertEqual(self.launch('refresh-local').returncode, 0)

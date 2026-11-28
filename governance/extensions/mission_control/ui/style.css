@@ -35,6 +35,8 @@
 
 /* Refresh action in the masthead. */
 .actions{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}#refresh-status{flex:1 1 auto}
+/* The dialog of a failed refresh: the copy still shown, the cause verbatim, one Close button. */
+#refresh-failure{max-width:min(46rem,92vw);color:var(--text);background:var(--panel);border:1px solid var(--sky);border-radius:7px;padding:1.2rem 1.4rem}#refresh-failure::backdrop{background:rgba(4,10,18,.7)}#refresh-failure p{color:var(--muted);line-height:1.6}#refresh-failure pre{white-space:pre-wrap;overflow-wrap:anywhere;font:.8rem/1.6 var(--mono);padding:1rem;background:var(--bg);border:1px solid var(--edge)}#refresh-failure form{display:flex;justify-content:flex-end;margin-top:1rem}
 
 /* Main bar: two cells of buttons with a vertical divider between them. */
 .bar-cell{display:flex;gap:.5rem;flex-wrap:wrap}.bar-cell+.bar-cell{border-left:1px solid var(--edge);padding-left:1.4rem}

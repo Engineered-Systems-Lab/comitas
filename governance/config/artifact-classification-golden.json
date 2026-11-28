@@ -923,6 +923,7 @@
       "boundary": [],
       "bound": false,
       "invariants": [
+        "mission-control-generator",
         "selector"
       ],
       "subclass": [
@@ -930,7 +931,7 @@
       ],
       "reachable": false,
       "approval_sensitivity": "high",
-      "why": "repository history coverage uses the existing metadata check through selector validation"
+      "why": "repository history coverage uses the existing metadata check through selector validation; Mission Control applies its exceptions, so its generator checks run too"
     },
     "project-governance/config/devlog.json": {
       "class": "tooling",

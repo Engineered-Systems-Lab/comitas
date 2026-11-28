@@ -1,4 +1,4 @@
-import {TYPES, LABELS, content, escape as e, validateDataset, filter, facets, facetRecords, applicableFilters, matchesStatus, values, CONTEXTUAL, sorted, recordedTime, resolveTarget, appendVisit, sameDestination, briefing, groupImplementations, slug, hashText, commitMetadataHtml, recordTimestamp, formatTimestamp, browserTimeZone, provenanceHtml, logTitle, INFERRED_MARK, DERIVED_MARK, queueModel, lightModel, stripModel, dataSourceLabel} from './core.mjs';
+import {TYPES, LABELS, content, escape as e, validateDataset, filter, facets, facetRecords, applicableFilters, matchesStatus, values, CONTEXTUAL, sorted, recordedTime, resolveTarget, appendVisit, sameDestination, briefing, groupImplementations, slug, hashText, commitMetadataHtml, recordTimestamp, formatTimestamp, browserTimeZone, provenanceHtml, logTitle, INFERRED_MARK, DERIVED_MARK, queueModel, lightModel, stripModel, dataSourceLabel, historyExceptionText, refreshFailure} from './core.mjs';
 
 const $ = selector => document.querySelector(selector);
 let items = [], trail = [], cursor = 0, devlogOff = false, declaredGroups = [], groupsProblem = '';
@@ -181,7 +181,7 @@ function markdown(text) {
 function detail() {
   const visit = current(), i = items.find(i => i.id === visit.id);
   if (!i) return `<div class="error"><h2>Record unavailable</h2><p>This identity is not in the loaded snapshot.</p><code>${e(visit.id)}</code></div>`;
-  return `<p class="eyebrow">${e(LABELS[i.type])} / RECORD DETAIL</p><h2>${e(displayTitle(i))}</h2>${badges(i)}${i.type === 'commits' ? commitIdentity(i) : `${sourcePreview(i)}<p class="source-small">${hashText(i.id,items,false)}</p>`}<div class="detail-layout"><article class="panel ${i.type === 'decisions' ? 'decision-content' : ''}"><div class="prose">${i.contentFormat === 'markdown' ? markdown(content(i)) : `<pre>${hashText(content(i),items)}</pre>`}</div>${i.type === 'commits' ? '' : `<details><summary>${i.contentFormat === 'markdown' ? 'Original Markdown from JSON' : 'Original text from JSON'}</summary><pre class="raw">${e(content(i))}</pre></details>`}</article><aside class="panel trace"><h3>Source traceability</h3><p class="summary">Identity as declared in JSON. Proposal source content is not labeled committed; displayed claims do not establish current authority.</p>${sourceFacts(i.source)}${i.sha ? `<h3>Commit metadata</h3>${sourceFacts({sha:i.sha,parents:i.parents.join(', '),author:i.author.name,committer:i.committer.name,recordedCommitterTime:formatTimestamp(recordTimestamp(i),zone)})}` : ''}<h3>Explicit outgoing links / ${i.links.length}</h3><p class="summary">Only source-backed directed links. Source-only targets retain their identities. No reverse relationships are inferred.</p>${i.links.map((link,index) => `<div class="link-row">${linkControl(link,index)}<p class="micro">${e(link.relation)}</p><details><summary>Target identity & supporting evidence</summary><h4>Target</h4>${sourceFacts(link.target)}<h4>Evidence</h4>${sourceFacts(link.evidence)}</details></div>`).join('') || '<p class="summary">No explicit outgoing links.</p>'}</aside></div>`;
+  return `<p class="eyebrow">${e(LABELS[i.type])} / RECORD DETAIL</p><h2>${e(displayTitle(i))}</h2>${badges(i)}${i.type === 'commits' ? commitIdentity(i) + (historyExceptionText(i) ? `<p class="source-small">${e(historyExceptionText(i))}</p>` : '') : `${sourcePreview(i)}<p class="source-small">${hashText(i.id,items,false)}</p>`}<div class="detail-layout"><article class="panel ${i.type === 'decisions' ? 'decision-content' : ''}"><div class="prose">${i.contentFormat === 'markdown' ? markdown(content(i)) : `<pre>${hashText(content(i),items)}</pre>`}</div>${i.type === 'commits' ? '' : `<details><summary>${i.contentFormat === 'markdown' ? 'Original Markdown from JSON' : 'Original text from JSON'}</summary><pre class="raw">${e(content(i))}</pre></details>`}</article><aside class="panel trace"><h3>Source traceability</h3><p class="summary">Identity as declared in JSON. Proposal source content is not labeled committed; displayed claims do not establish current authority.</p>${sourceFacts(i.source)}${i.sha ? `<h3>Commit metadata</h3>${sourceFacts({sha:i.sha,parents:i.parents.join(', '),author:i.author.name,committer:i.committer.name,recordedCommitterTime:formatTimestamp(recordTimestamp(i),zone)})}` : ''}<h3>Explicit outgoing links / ${i.links.length}</h3><p class="summary">Only source-backed directed links. Source-only targets retain their identities. No reverse relationships are inferred.</p>${i.links.map((link,index) => `<div class="link-row">${linkControl(link,index)}<p class="micro">${e(link.relation)}</p><details><summary>Target identity & supporting evidence</summary><h4>Target</h4>${sourceFacts(link.target)}<h4>Evidence</h4>${sourceFacts(link.evidence)}</details></div>`).join('') || '<p class="summary">No explicit outgoing links.</p>'}</aside></div>`;
 }
 // ---- Local queue tab and the one local action ---------------------------------------------------
 // Every payload value reaches the page through textContent or setAttribute, never as markup.
@@ -337,10 +337,11 @@ $('#refresh').addEventListener('click', async () => {
   const button = $('#refresh'), status = $('#refresh-status');
   button.disabled = true;
   status.textContent = 'Updating the local datasets from what changed since the last refresh…';
+  let reply = null;
   try {
     const response = await fetch('../refresh', {method: 'POST', cache: 'no-store'});
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || result.state !== 'ok') throw new Error(result.message ?? `HTTP ${response.status}`);
+    if (!response.ok || result.state !== 'ok') {reply = result; throw new Error(result.message ?? `HTTP ${response.status}`);}
     // The message names the kind that ran (incremental, full rebuild or already current) and its time; the reload
     // would erase it, so the next load shows it once.
     status.textContent = `${result.message} (${result.seconds}s in all)`;
@@ -348,6 +349,12 @@ $('#refresh').addEventListener('click', async () => {
     setTimeout(() => location.reload(), 900);
   } catch (error) {
     status.textContent = `Refresh failed: ${error.message}`;
+    // A failure is easy to miss in the footer, so a dialog names the cause and the copy still shown.
+    const failure = refreshFailure(reply, error.message), dialog = $('#refresh-failure');
+    $('#refresh-failure-title').textContent = failure.title;
+    $('#refresh-failure-kept').textContent = failure.kept;
+    $('#refresh-failure-cause').textContent = failure.cause;
+    if (!dialog.open) dialog.showModal();
     refreshing = false; button.disabled = false;
   }
 });

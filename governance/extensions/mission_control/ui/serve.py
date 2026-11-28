@@ -333,15 +333,19 @@ class Preview(SimpleHTTPRequestHandler):
                                     encoding='utf-8', timeout=600)
             lines = [line for line in (result.stdout + result.stderr).splitlines()
                      if line.strip() and not line.startswith('scrubbed')]
-            message = (lines[-1] if lines else 'No output')[:300].removeprefix('FAIL: ')
+            # The launcher's failure line names its cause and the copy kept, so it is kept whole up to a bound.
+            message = (lines[-1] if lines else 'No output').removeprefix('FAIL: ')[:1000]
             state = 'ok' if result.returncode == 0 else 'error'
         except (OSError, subprocess.SubprocessError) as error:
-            state, message = 'error', str(error)[:300]
+            state, message = 'error', str(error)[:1000]
         finally:
             self.refresh_lock.release()
-        self.send_json(200 if state == 'ok' else 500,
-                       {'state': state, 'message': message, 'finished_at': now(),
-                        'seconds': round(time.monotonic() - started, 1)})
+        reply = {'state': state, 'message': message, 'finished_at': now(), 'seconds': round(time.monotonic() - started, 1)}
+        if state == 'error':
+            # A failed refresh publishes nothing: the page keeps showing this copy, or none.
+            snapshot = self.local_snapshot()
+            reply['copy'] = snapshot and {'revision': snapshot['revision'], 'generated_at': snapshot['generated_at']}
+        self.send_json(200 if state == 'ok' else 500, reply)
 
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')

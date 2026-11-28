@@ -155,6 +155,12 @@ export const INFERRED_MARK = '†', DERIVED_MARK = '*';
 export function commitMetadataHtml(i) {
   return commitMetadata(i).map(f => `${f.label}: ${escape(f.value)}${f.inferred ? `<span class="inferred" title="Inferred from historical evidence">${INFERRED_MARK}</span>` : ''}`).join(' · ');
 }
+// A commit the project's declared history excepts says so, with the rules waived and the declared reason; the
+// waived fields above show the commit's tokens as written.
+export function historyExceptionText(i) {
+  const x = i.historyException;
+  return x && Array.isArray(x.rules) && x.rules.length ? `History exception (${x.rules.join(', ')}): ${x.reason ?? ''}` : '';
+}
 
 // Timestamps carry exactly the precision of their source (date, minute or second; never sub-second).
 // Explicit source times win; otherwise a committed record falls back to its source revision's committer
@@ -287,6 +293,17 @@ export function epicRow(entry) {
 export function dataSourceLabel(header) {
   const match = /^local; revision=([0-9a-f]{40}); generated=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z); generator=([0-9a-f]{12}); head=(current|older)$/.exec(header ?? '');
   return match ? `LOCAL COPY GENERATED ${match[2].replace('T', ' ').replace('Z', ' UTC')} FROM ${match[1].slice(0, 12)} · ${match[4] === 'current' ? 'CURRENT WITH HEAD' : 'OLDER THAN HEAD, PRESS REFRESH'} · GENERATOR ${match[3]}` : 'SOURCE UNKNOWN';
+}
+// The dialog of a failed refresh: which copy the page still shows, and the cause exactly as the server gave it.
+// `result` is the server's reply, or null when none was read; nothing of it is kept after the dialog closes.
+export function refreshFailure(result, fallback) {
+  const copy = result?.copy;
+  const valid = copy && /^[0-9a-f]{40}$/.test(text(copy.revision)) &&
+    /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(text(copy.generated_at));
+  const kept = valid ? `The page still shows the local copy generated ${copy.generated_at.replace('T', ' ').replace('Z', ' UTC')} from ${copy.revision.slice(0, 12)}.`
+    : copy === null ? 'There is no local copy yet, so the page has no data to show.'
+    : 'The page still shows the data it showed before the refresh.';
+  return {title: 'Refresh failed', kept, cause: text(result?.message) || text(fallback) || 'No reason was given.'};
 }
 // The status light. The execution payload is versioned MAJOR.MINOR: any minor of major 1 is read, anything else is unknown.
 const LIGHT_TONES = {CLEAR: 'clear', OVERLAP: 'overlap', FROZEN: 'frozen', UNKNOWN: 'unknown'};

@@ -111,6 +111,10 @@ parent, only a commit that already exists can be excepted, and the file's `high`
 sealed Approve for every change to it. A helper older than the field refuses a file that has it, so a project
 adds its first exception in the transaction that replaces `governance/` or in a later one.
 
+Mission Control reads the same file at the revision it shows, through the same reader, and applies the same
+exceptions to its commit records; a faulty file fails its refresh with the history test's message, while only the
+history test judges an exception stale or overbroad.
+
 ### Unavailable history and initialization
 
 Present configuration is checked before history availability. Unreadable, malformed, nonregular or indirect files
@@ -126,7 +130,7 @@ that cannot be fixed in place takes a [declared exception](#declared-exceptions)
 its initial import, with both epochs starting afterwards; that declaration is specific to Comitas.
 
 A fresh export or GitHub template copy inherits Comitas's IDs and **fails the history test until those IDs are
-replaced**. After the first commit exists, read its ID with `git rev-parse HEAD`, replace `convention_after` with that
+replaced**; where Mission Control is installed, its refresh fails too, with Git's message for the unknown boundary. After the first commit exists, read its ID with `git rev-parse HEAD`, replace `convention_after` with that
 ID and omit `trailer_allowlist_after` to start both epochs together. Commit this project configuration during the
 subsequent setup transaction. The first commit cannot contain its own hash; the later setup commit records it.
 `adopt.py` reminds an export adopter of this step but still runs only before the first commit and never initializes

@@ -16,13 +16,15 @@ for entry in (ROOT / 'governance' / 'tools', ROOT):  # absolute and resolved, in
         sys.path.insert(0, str(entry))
 from governance.tools.lifecycle.commit_metadata import reconstruct
 from governance.tools.continuity import artifact_classification
+from governance.tools.lifecycle import commit_history
 from governance.tools.lifecycle import commit_metadata
 
 TYPES = ('devlog', 'commits', 'decisions', 'documents', 'rationale')
-# The commit dataset reconstructs class and subclass from these; changing any of them rebuilds it. The last three are the
-# project's optional counterparts, read together with the framework's like every other tool does.
+# The commit dataset reconstructs class and subclass from these; changing any of them rebuilds it. The project's optional
+# counterparts are read together with the framework's like every other tool does, and its declared commit history supplies
+# the exceptions the history test grants.
 COMMIT_INPUTS = (artifact_classification.POLICY, artifact_classification.PROFILES, artifact_classification.TABLE,
-                 *artifact_classification.OVERLAY_FILES)
+                 *artifact_classification.OVERLAY_FILES, artifact_classification.COMMIT_HISTORY)
 # The project's homes for its decisions and their rationale: declared by its inputs part, and an absent one means none.
 OPTIONAL_HOMES = (artifact_classification.PROJECT_DECISIONS, artifact_classification.PROJECT_RATIONALE)
 SHA = re.compile(r'[0-9a-f]{40}\Z')
@@ -71,16 +73,33 @@ def path_name(value):
     return value
 
 
-def git(root, *args):
+def isolated_git(root, *args, **extra):
+    """Run Git on the declared history only: no replace objects, no system or global configuration."""
     environment = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
     environment.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
-                       GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1')
-    result = subprocess.run(['git', '--no-pager', '--no-replace-objects',
-                             '-c', 'safe.directory=' + str(Path(root).resolve()),
-                             '-c', 'log.showSignature=false', '-C', str(root), *args],
-                            capture_output=True, env=environment)
+                       GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1', **extra)
+    return subprocess.run(['git', '--no-pager', '--no-replace-objects',
+                           '-c', 'safe.directory=' + str(Path(root).resolve()),
+                           '-c', 'log.showSignature=false', '-C', str(root), *args],
+                          capture_output=True, env=environment)
+
+
+def git(root, *args):
+    result = isolated_git(root, *args)
     require(result.returncode == 0, 'Git input unavailable: ' + ' '.join(args))
     return result.stdout
+
+
+def history_git(root, *args, accepted=(0,)):
+    """The history reader's Git calls, isolated like the generator's own, with the reader's exit codes and messages."""
+    try:
+        result = isolated_git(root, *args, LC_ALL='C')  # as the reader's own calls, so its messages read the same
+    except OSError as error:
+        raise ValueError('Git executable unavailable: ' + str(error)) from error
+    if result.returncode not in accepted:
+        raise ValueError('git ' + ' '.join(args) + ' failed (' + str(result.returncode) + '): '
+                         + result.stderr.decode('utf-8', 'replace').strip())
+    return result
 
 
 def prose(text):
@@ -517,6 +536,15 @@ class Generator:
         table = None
         if policy['version'] >= 4:
             table = artifact_classification.table_from(read, profiles)
+        # The history test's declared exceptions, refused with its messages when faulty, in shape or against the
+        # history of the shown revision; an absent file declares none. Whether an exception is stale or broader than
+        # its commit needs stays that test's question.
+        history = read(artifact_classification.COMMIT_HISTORY)
+        exceptions = {}
+        if history is not None:
+            # The checks read the history through the generator's own isolated Git, so they see what the dataset lists.
+            exceptions = commit_history.declared_range(self.selection.root, commit_history.parse_settings(history),
+                                                       self.selection.revision, run=history_git)[2]
         for sha in sorted(git(self.selection.root, 'rev-list', self.selection.revision).decode().splitlines()):
             raw = git(self.selection.root, 'cat-file', 'commit', sha)
             headers, message = raw.split(b'\n\n', 1)
@@ -532,13 +560,19 @@ class Generator:
             paths = git(self.selection.root, 'diff-tree', '--root', '--no-commit-id',
                         '--name-only', '-r', '-z', sha).decode('utf-8').split('\0')
             paths = [path for path in paths if path] if len(parents) <= 1 else []
-            commit_metadata = reconstruct(content, paths, policy, profiles, table)
+            rules, reason = exceptions.get(sha, (frozenset(), None))
+            fields = reconstruct(content, paths, policy, profiles, table, waived=rules)
+            if not fields['inferredFields']:
+                del fields['inferredFields']
+            if reason is not None:
+                fields['historyException'] = {'rules': [r for r in commit_metadata.WAIVABLE_RULES if r in rules],
+                                              'reason': reason}
             result.append({'id': 'commit:' + sha, 'type': 'commits', 'sha': sha,
                            'title': content.splitlines()[0] if content else sha,
                            'summary': content.splitlines()[0] if content else sha,
                            'categories': [], 'topics': [], 'keywords': [], 'contentText': content,
                            'contentFormat': 'text', 'source': {'commit': sha}, 'links': [],
-                           'parents': parents, **metadata, **commit_metadata})
+                           'parents': parents, **metadata, **fields})
         return result
 
     def build(self, kind):
@@ -564,6 +598,7 @@ def behavior_digest():
     """Digest of the code that decides the output; dependency state is valid only for the digest that built it."""
     return digest(Path(__file__).read_bytes().replace(b'\r\n', b'\n') +
                   Path(commit_metadata.__file__).read_bytes().replace(b'\r\n', b'\n') +
+                  Path(commit_history.__file__).read_bytes().replace(b'\r\n', b'\n') +
                   Path(artifact_classification.__file__).read_bytes().replace(b'\r\n', b'\n'))
 
 
@@ -642,18 +677,30 @@ def generate(root, revision, inventory, output, mode='full', changed=(), proposa
                 'Duplicate/unordered identities')
         for item in records:
             if kind == 'commits':
+                # A declared history exception relaxes only the field it waives, whose tokens are kept as written.
+                excepted = item.get('historyException')
+                require(excepted is None or (isinstance(excepted, dict) and set(excepted) == {'rules', 'reason'} and
+                                             isinstance(excepted['rules'], list) and excepted['rules'] and
+                                             excepted['rules'] == [r for r in commit_metadata.WAIVABLE_RULES
+                                                                   if r in excepted['rules']] and
+                                             isinstance(excepted['reason'], str) and excepted['reason'].strip()),
+                        'Invalid commit history exception')
+                waived = set(excepted['rules']) if excepted else set()
                 require('class' not in item and isinstance(item['classes'], list) and
                         all(isinstance(v, str) for v in item['classes']) and
-                        set(item['classes']) <= set(base_classes) and
-                        item['classes'] == [v for v in base_classes if v in item['classes']],
+                        ('class' in waived or set(item['classes']) <= set(base_classes) and
+                         item['classes'] == [v for v in base_classes if v in item['classes']]),
                         'Invalid commit classes')
                 require(isinstance(item['subclasses'], list) and
                         all(isinstance(v, str) for v in item['subclasses']) and
-                        len(item['subclasses']) == len(set(item['subclasses'])), 'Invalid commit subclasses')
+                        ('subclass' in waived or len(item['subclasses']) == len(set(item['subclasses']))),
+                        'Invalid commit subclasses')
                 require(item['worker'] is None or isinstance(item['worker'], str), 'Invalid commit worker')
-                require(isinstance(item['inferredFields'], list) and
-                        len(item['inferredFields']) == len(set(item['inferredFields'])) and
-                        set(item['inferredFields']) <= {'classes', 'subclasses', 'worker'}, 'Invalid inferred fields')
+                inferred = item.get('inferredFields')
+                require(inferred is None or (isinstance(inferred, list) and inferred and
+                                             len(inferred) == len(set(inferred)) and
+                                             set(inferred) <= {'classes', 'subclasses', 'worker'}),
+                        'Invalid inferred fields')
             source = item['source']
             if 'path' in source:
                 current = selection.source(source['path'], source.get('fragment'))

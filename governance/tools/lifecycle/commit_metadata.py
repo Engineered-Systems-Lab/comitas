@@ -45,7 +45,8 @@ def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, 
     A required block holds only TRAILER_KEYS; `other_trailers` tolerates other keys, as commits made before the
     allowlist did, and is for reading history only. `waived` names WAIVABLE_RULES a declared history exception
     relaxes for one historical commit: `class` and `subclass` skip the checks of that trailer's value and
-    `trailer-keys` tolerates other keys; the block's place and shape and the required Class and Worker stay."""
+    `trailer-keys` tolerates other keys; the block's place and shape and the required Class and Worker stay. A
+    waived trailer's tokens are returned as written, in trailer order, so a reader shows what the commit says."""
     require(set(waived) <= set(WAIVABLE_RULES), 'Unknown waived rule')
     other_trailers = other_trailers or 'trailer-keys' in waived
     reg = registry(profiles)
@@ -92,7 +93,7 @@ def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, 
         if 'class' not in waived:
             require(len(declared) == len(set(declared)), 'Duplicate class')
             require(set(declared) <= set(reg['classes']), 'Unknown Class')
-        classes = [token for token in reg['classes'] if token in declared]
+        classes = declared if 'class' in waived else [token for token in reg['classes'] if token in declared]
     subclasses = []
     if 'Subclass' in fields:
         subclasses = fields['Subclass'].split(', ')
@@ -101,7 +102,8 @@ def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, 
         if 'subclass' not in waived:
             require(len(subclasses) == len(set(subclasses)), 'Duplicate subclass')
             require(set(subclasses) <= set(allowed), 'Subclass invalid under selected Class')
-        subclasses = [token for token in allowed if token in subclasses]
+        if 'subclass' not in waived:
+            subclasses = [token for token in allowed if token in subclasses]
     worker = fields.get('Worker')
     if worker is not None:
         require(re.fullmatch(r'[^\[\]\s][^\[\]\r\n]*?(?: \[[^\[\]\r\n]+\])?', worker)
@@ -252,9 +254,10 @@ def classify_paths(paths, policy, profiles, table=None):
     return [token for token in registry(profiles)['classes'] if token in categories]
 
 
-def reconstruct(message, paths, policy, profiles, table=None):
-    # Historical aggregate trailers are evidence of the old model, never new metadata.
-    result = parse_metadata(message, profiles, required=False, legacy_aggregate=True)
+def reconstruct(message, paths, policy, profiles, table=None, waived=frozenset()):
+    # Historical aggregate trailers are evidence of the old model, never new metadata. `waived` is the declared
+    # history exception of this commit, if any; parse_metadata says what it relaxes.
+    result = parse_metadata(message, profiles, required=False, legacy_aggregate=True, waived=waived)
     if not result['classes']:
         result['classes'] = classify_paths(paths, policy, profiles, table)
         if result['classes']:
@@ -262,14 +265,14 @@ def reconstruct(message, paths, policy, profiles, table=None):
             allowed = [e for e in registry(profiles)['subclasses']
                        if set(result['classes']).intersection(e['classes'])]
             if result['subclasses']:
-                require(set(result['subclasses']) <= {e['value'] for e in allowed},
+                require('subclass' in waived or set(result['subclasses']) <= {e['value'] for e in allowed},
                         'Subclass invalid under reconstructed classes')
             else:
                 labelled = {token for path in paths for token in table.classify(path)[1]}
                 result['subclasses'] = [e['value'] for e in allowed if e['value'] in labelled]
                 if result['subclasses']:
                     result['inferredFields'].append('subclasses')
-        else:
+        elif 'subclass' not in waived:
             result['subclasses'] = []
     # Git author/committer and style cannot establish the execution environment.
     return result

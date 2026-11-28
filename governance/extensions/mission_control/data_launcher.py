@@ -56,8 +56,20 @@ def generate(root, scratch, selection, mode, changed=(), quiet=False):
         if quiet:
             raise Fallback(lines[-1] if lines else 'no output')
         sys.stderr.write(text)
-        raise ValueError(f'generator {mode} failed; live data untouched')
+        # Only the last line reaches the page, so it names the cause and the copy that stays in use.
+        revision = json.loads(selection.read_bytes())['revision']
+        cause = (lines[-1] if lines else 'no output').removeprefix('FAIL: ')
+        raise ValueError(f'generator {mode} failed at {revision[:7]}: {cause.rstrip(".")}. {kept_copy(root)}')
     return json.loads(result.stdout.decode('utf-8').splitlines()[-1])
+
+
+def kept_copy(root):
+    """The sentence that says which local copy the page keeps showing after a failed run; nothing was published."""
+    snapshot = local_snapshot(root)
+    if snapshot is None:
+        return 'There is no local copy yet.'
+    generated = snapshot['generated_at'].replace('T', ' ')[:16] + ' UTC'
+    return f"The local copy from {snapshot['revision'][:7]}, generated {generated}, stays in use."
 
 
 def mission_module(name):
