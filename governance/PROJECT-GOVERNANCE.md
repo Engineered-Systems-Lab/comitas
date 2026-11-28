@@ -25,6 +25,7 @@ History that is genuinely unavailable is handled as described under [Commit hist
 | `config/checkpoint-profiles.json` | overlay of the framework's profiles | the framework's profiles alone |
 | `config/checkpoint-features.toml` | override of code defaults | every feature off |
 | `config/commit-history.json` | repository history declaration | fails the history test in a full repository; no framework boundary default |
+| `config/commit-workers.json` | declared workers of historical commits | no attributions ([Worker attributions](#worker-attributions)) |
 | `config/citations.json` | override of code defaults | no label (the adoption helper writes the label `template` into a new project's file) |
 | `config/devlog.json` | override of code defaults | the defaults below |
 | `config/frozen-manifest.json` | the checksums of the frozen files | no frozen file may exist: every file under a `frozen` row needs an entry ([the manifest](#the-frozen-manifest)) |
@@ -114,6 +115,49 @@ adds its first exception in the transaction that replaces `governance/` or in a 
 Mission Control reads the same file at the revision it shows, through the same reader, and applies the same
 exceptions to its commit records; a faulty file fails its refresh with the history test's message, while only the
 history test judges an exception stale or overbroad.
+
+### Worker attributions
+
+A commit's Worker trailer never changes, and some name only the product, because the environment that made the
+commit did not report the model. When the project has since established which model did the work, it may record
+that in its own optional file, `config/commit-workers.json`, without rewriting history
+([G059 worker attributions extension](DECISIONS.md#g059-worker-attributions-extension-2026-11-28)):
+
+```json
+{"version": 1, "attributions": [{"commit": "<40-hex>", "worker": "OpenAI Codex [<model> <configuration>]",
+  "source": "<who established it, when and from what>", "recorded": "2026-11-28T02:06Z"}]}
+```
+
+`version` is exactly the integer `1` and `attributions` is a list; an empty list and a missing file both mean none.
+Each entry has exactly `commit`, `worker`, `source` and `recorded`. `commit` is a full lowercase 40-hex ID of a
+commit object that is an ancestor of the captured HEAD, at most once in the file; unlike an exception it may lie
+before `convention_after`, where a commit may have no Worker trailer at all. `worker` is in the trailer's own form:
+the product, then optionally a space and `[model/configuration]`. `source` is nonempty text. `recorded` is the
+moment the attribution was written down, in UTC to the minute with the `Z` that says so, as `YYYY-MM-DDTHH:MMZ`; a
+bare date, an offset or seconds are refused, so the same moment is always written the same way.
+
+An attribution only completes what the commit says. The trailer is read as Mission Control reads it, with the
+commit's [declared exception](#declared-exceptions) applied. A commit with no Worker trailer takes any worker in the
+trailer's form. A trailer that names only a product takes exactly that product followed by a nonempty
+`[model/configuration]`; another product contradicts it. A trailer that already has its brackets takes no
+attribution: the same value is stale and another one contradicts it. A commit whose trailers cannot be read is
+refused with that reading's message. The commit is read without replace objects, so a replace ref cannot change
+what it says. Any fault refuses the whole file, a member repeated within an object and text that cannot be
+written as UTF-8 included.
+
+The history test checks every attribution against HEAD with these rules and prints the number of attributions and
+one line each with the short ID, the attributed worker and what the trailer says. Because the trailer cannot change,
+an attribution that passes once passes for good, so Mission Control applies exactly the same checks through the same
+reader, at the revision it shows, and a faulty file fails its refresh with the history test's message. Its commit
+record then carries the attributed worker in `worker`, lists `worker` in `inferredFields` and keeps the trailer's own
+value, the source and the time in `workerAttribution`
+([the commit records](extensions/mission_control/README.md#structured-commit-metadata)).
+
+The file is the project's statement, and nothing checks that it is true: write in `source` who established the
+model, when and from what evidence, such as the session that made the commit. An attribution never replaces a
+complete Worker trailer on new commits. The file's `high` approval sensitivity takes the sealed Approve for every
+change to it, and the transaction that adds an attribution runs the history test with HEAD at its parent, so only a
+commit that already exists can be attributed. A helper older than the file never reads it.
 
 ### Unavailable history and initialization
 
@@ -295,6 +339,7 @@ The bootstrap prompt and the required sections are the framework's alone. A proj
 | a G-prefixed decision in the project's registry, or a D-prefixed one in the framework's | `DECISIONS.md` | refused with one message |
 | an unknown key or a bad value in the devlog settings | `config/devlog.json` | the tools stop |
 | an unknown key or a bad value in the citation settings | `config/citations.json` | the tools stop |
+| an attribution that is malformed, duplicated, outside the history or contradicts or repeats its commit's trailer | `config/commit-workers.json` | the history test fails and Mission Control refuses the refresh |
 | a frozen file with no entry, an entry with no frozen file, a changed byte, or an index that differs from the manifest | `config/frozen-manifest.json` | continuity fails |
 | a manifest that does not parse, or holds more than `version` (1) and `files`, or an entry that is not a path with a SHA-256 | `config/frozen-manifest.json` | continuity fails |
 | a declared label followed by a backticked token that is not 7 to 40 lowercase hexadecimal characters | continuity | continuity fails |

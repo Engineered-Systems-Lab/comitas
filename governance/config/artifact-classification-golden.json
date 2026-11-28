@@ -933,6 +933,22 @@
       "approval_sensitivity": "high",
       "why": "repository history coverage uses the existing metadata check through selector validation; Mission Control applies its exceptions, so its generator checks run too"
     },
+    "project-governance/config/commit-workers.json": {
+      "class": "tooling",
+      "profile": "tooling",
+      "boundary": [],
+      "bound": false,
+      "invariants": [
+        "mission-control-generator",
+        "selector"
+      ],
+      "subclass": [
+        "checkpoint"
+      ],
+      "reachable": false,
+      "approval_sensitivity": "high",
+      "why": "declared workers of historical commits are checked by the history test through selector validation and shown by Mission Control, so its generator checks run too; high because they change what the records say about AI use"
+    },
     "project-governance/config/devlog.json": {
       "class": "tooling",
       "profile": "tooling",

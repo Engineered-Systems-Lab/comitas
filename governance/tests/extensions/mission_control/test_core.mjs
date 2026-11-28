@@ -211,7 +211,8 @@ test('commit metadata omits absent Subclass, keeps unknowns and marks only infer
     const html = core.commitMetadataHtml(commit);
     assert.ok(!/mixed/i.test(html) && !html.includes('·  ·') && !html.endsWith('· '));
     assert.equal(html.includes('Subclass: '),commit.subclasses.length > 0);
-    assert.equal(html.includes('class="inferred"'),(commit.inferredFields ?? []).some(f=>f==='worker' ? commit.worker : commit[f].length));
+    assert.equal(html.includes('class="inferred"'),(commit.inferredFields ?? []).some(f=>f==='worker' ? commit.worker && !commit.workerAttribution : commit[f].length));
+    assert.equal(html.includes('class="attributed"'),Boolean(commit.worker && commit.workerAttribution));
     if (!commit.worker) assert.ok(html.includes('Worker: unknown') && !html.includes(`Worker: unknown${mark}`));
   }
   const explicit = items.find(i=>i.type==='commits' && i.worker && !(i.inferredFields ?? []).length && i.subclasses.length);
@@ -717,6 +718,23 @@ test('a failed refresh opens a dialog naming the copy still shown and the cause 
   assert.ok(!/<script|\son[a-z]+=/i.test(dialog));
   const app = await readFile(new URL('../../../extensions/mission_control/ui/app.mjs', import.meta.url), 'utf8');
   assert.ok(app.includes("$('#refresh-failure-cause').textContent = failure.cause;") && app.includes('dialog.showModal()'));
+});
+
+test('an attributed worker is marked as attributed, not inferred, and names the trailer, the time and the source', () => {
+  const attribution = {trailer:'OpenAI Codex', source:'the lead developer, from the session', recorded:'2026-11-28T02:06Z'};
+  const commit = {classes:['tooling'], subclasses:[], worker:'OpenAI Codex [GPT Fixture <Medium>]', inferredFields:['worker'], workerAttribution:attribution};
+  assert.equal(core.commitMetadataHtml(commit),
+    'Class: tooling · Worker: OpenAI Codex [GPT Fixture &lt;Medium&gt;]<span class="attributed" title="Attributed by the project; the trailer says: OpenAI Codex">‡</span>');
+  assert.ok(!core.commitMetadataHtml(commit).includes('class="inferred"'));
+  assert.notEqual(core.ATTRIBUTED_MARK, core.INFERRED_MARK);
+  assert.notEqual(core.ATTRIBUTED_MARK, core.DERIVED_MARK);
+  assert.equal(core.workerAttributionText(commit),
+    'Worker attribution: OpenAI Codex [GPT Fixture <Medium>]; the trailer says: OpenAI Codex; recorded 2026-11-28T02:06Z; source: the lead developer, from the session');
+  const filled = {...commit, worker:'Human', workerAttribution:{...attribution, trailer:null}};
+  assert.ok(core.commitMetadataHtml(filled).endsWith('<span class="attributed" title="Attributed by the project; the commit has no Worker trailer">‡</span>'));
+  assert.equal(core.workerAttributionText(filled),
+    'Worker attribution: Human; the commit has no Worker trailer; recorded 2026-11-28T02:06Z; source: the lead developer, from the session');
+  for (const plain of [{}, {worker:'Human'}, {worker:'Human', workerAttribution:null}]) assert.equal(core.workerAttributionText(plain), '');
 });
 
 test('an excepted commit names its exception and its rules; other commits carry none and no empty fields', () => {

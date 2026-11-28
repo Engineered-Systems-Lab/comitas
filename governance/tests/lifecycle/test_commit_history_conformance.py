@@ -57,6 +57,17 @@ def check_history(root, profiles):
     return head, len(ids), excepted
 
 
+def check_workers(root, profiles):
+    """Check the declared workers against HEAD; return HEAD and (commit, trailer, worker) per attribution, in file
+    order. A present file is checked before history availability, as the history declaration is."""
+    attributions = h.workers_settings(root)
+    head, _ids, _old, exceptions = history_range(root)
+    if attributions is None:
+        return head, []
+    checked = h.declared_workers(root, attributions, head, profiles, exceptions)
+    return head, [(commit, trailer, worker) for commit, (worker, _s, _r, trailer) in checked.items()]
+
+
 def status_problems(message):
     """Why a `Status:` line is misplaced in the message; an empty list when every one is a single-line paragraph
     that is neither the subject nor the final trailer block."""
@@ -89,6 +100,17 @@ class CommitHistoryConformanceTest(unittest.TestCase):
                                             len(excepted)))
         for commit, rules, reason in excepted:
             print('  excepted %s (%s): %s' % (commit[:12], rules, reason))
+
+    def test_every_declared_worker_attribution_holds(self):
+        profiles = json.loads((rp.ROOT / rp.PROFILES).read_text(encoding='utf-8'))
+        try:
+            head, attributed = check_workers(rp.ROOT, profiles)
+        except HistoryUnavailable as reason:
+            self.skipTest('no usable Git history to check: ' + str(reason))
+        print('Commit workers: %d declared attribution(s) checked against HEAD %s' % (len(attributed), head[:12]))
+        for commit, trailer, worker in attributed:
+            print('  attributed %s: %s (the trailer says %s)' % (commit[:12], worker,
+                                                                 'nothing' if trailer is None else trailer))
 
 
 class HistoryFixture(unittest.TestCase):
@@ -500,6 +522,189 @@ class HistoryExceptionTest(HistoryFixture):
     def test_the_parser_refuses_an_unknown_waived_rule(self):
         with self.assertRaisesRegex(ValueError, 'Unknown waived rule'):
             m.parse_metadata(self.VALID, self.profiles, waived={'status'})
+
+
+class WorkerAttributionTest(HistoryFixture):
+    """Declared workers fill an absent Worker or add the model to the trailer's product, and nothing else."""
+    PRODUCT = 'Fixture change\n\nClass: tooling\nWorker: OpenAI Codex\n'
+    FULL = 'Fixture change\n\nClass: tooling\nWorker: OpenAI Codex [GPT Fixture]\n'
+    WORKER = 'OpenAI Codex [GPT Fixture Medium]'
+    TIME = '2026-11-28T02:06Z'
+
+    def setUp(self):
+        super().setUp()
+        self.workers = self.root / ac.COMMIT_WORKERS
+
+    def declare(self, *entries):
+        self.workers.write_text(json.dumps({'version': 1, 'attributions': list(entries)}), encoding='utf-8')
+
+    def entry(self, commit, worker=None, **fields):
+        return {'commit': commit, 'worker': worker or self.WORKER, 'source': 'the lead developer, from the session',
+                'recorded': self.TIME, **fields}
+
+    def workers_check(self):
+        return check_workers(self.root, self.profiles)
+
+    def test_an_absent_file_declares_none(self):
+        self.commit(self.PRODUCT)
+        self.assertEqual(self.workers_check()[1], [])
+
+    def test_an_empty_list_declares_none(self):
+        self.commit(self.PRODUCT)
+        self.declare()
+        self.assertEqual(self.workers_check()[1], [])
+
+    def test_a_model_added_to_the_product_and_an_absent_worker_filled_pass_and_are_reported(self):
+        product = self.commit(self.PRODUCT)
+        self.declare(self.entry(product), self.entry(self.root_commit, 'Human'))
+        head, attributed = self.workers_check()
+        self.assertEqual(attributed, [(product, 'OpenAI Codex', self.WORKER), (self.root_commit, None, 'Human')])
+        profiles = self.root / rp.PROFILES; profiles.parent.mkdir(parents=True)
+        profiles.write_text(json.dumps(self.profiles), encoding='utf-8')
+        output = StringIO()
+        with patch.object(rp, 'ROOT', self.root), redirect_stdout(output):
+            CommitHistoryConformanceTest().test_every_declared_worker_attribution_holds()
+        self.assertIn('2 declared attribution(s) checked against HEAD ' + head[:12], output.getvalue())
+        self.assertIn('attributed %s: %s (the trailer says OpenAI Codex)' % (product[:12], self.WORKER),
+                      output.getvalue())
+        self.assertIn('attributed %s: Human (the trailer says nothing)' % self.root_commit[:12], output.getvalue())
+
+    def test_an_attribution_that_contradicts_or_repeats_the_trailer_fails(self):
+        product, full = self.commit(self.PRODUCT), self.commit(self.FULL)
+        cases = ((product, 'Anthropic Claude Code [Claude Fixture]',
+                  'contradicts the trailer OpenAI Codex: an attribution may only add [model/configuration] to its product'),
+                 (product, 'OpenAI Codex CLI', 'contradicts the trailer OpenAI Codex: an attribution may only add'),
+                 (product, 'OpenAI Codex', 'stale: the trailer already says OpenAI Codex'),
+                 (full, 'OpenAI Codex [GPT Fixture]', 'stale: the trailer already says OpenAI Codex [GPT Fixture]'),
+                 (full, self.WORKER, 'contradicts the trailer OpenAI Codex [GPT Fixture], which already names'))
+        for commit, worker, message in cases:
+            with self.subTest(worker=worker):
+                self.declare(self.entry(commit, worker))
+                with self.assertRaisesRegex(ValueError, re.escape('attribution for ' + commit + ': ' + message)):
+                    self.workers_check()
+
+    def test_unknown_nonancestor_and_tree_ids_are_refused(self):
+        self.commit(self.PRODUCT)
+        tree = self.run_git('rev-parse', 'HEAD^{tree}')
+        side = self.run_git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                            'commit-tree', tree, '-m', 'Side')
+        for commit, message in (('f' * 40, 'object is not a commit'), (tree, 'object is not a commit'),
+                                (side, 'commit is not an ancestor of captured HEAD')):
+            with self.subTest(message=message, commit=commit):
+                self.declare(self.entry(commit))
+                with self.assertRaisesRegex(ValueError, 'attribution for ' + commit + ': ' + message):
+                    self.workers_check()
+
+    def test_a_commit_whose_trailers_cannot_be_read_is_refused(self):
+        broken = self.commit('Old change\n\nClass: tooling\nWorker: A\nWorker: B\n')
+        self.settings(broken)  # the boundary exempts it from the history test, not from being read
+        self.declare(self.entry(broken, 'A [Fixture]'))
+        with self.assertRaisesRegex(ValueError, re.escape('attribution for ' + broken + ": the commit's trailers"
+                                                          ' cannot be read: More than one Worker trailer')):
+            self.workers_check()
+
+    def test_the_trailer_is_read_with_the_commits_declared_exception(self):
+        excepted = self.commit('Hand-made upgrade\n\nClass: tooling\nSubclass: continuity\nWorker: OpenAI Codex\n')
+        self.declare(self.entry(excepted))
+        with self.assertRaisesRegex(ValueError, 'trailers cannot be read: Subclass invalid under selected Class'):
+            self.workers_check()
+        self.path.write_text(json.dumps({'version': 1, 'convention_after': self.root_commit, 'exceptions': [
+            {'commit': excepted, 'rules': ['subclass'], 'reason': 'kept as pushed'}]}), encoding='utf-8')
+        self.assertEqual(self.workers_check()[1], [(excepted, 'OpenAI Codex', self.WORKER)])
+
+    def test_malformed_files_and_entries_are_refused(self):
+        commit = self.commit(self.PRODUCT)
+        name = ac.COMMIT_WORKERS
+        for text, message in (('{', name + ': unreadable or invalid JSON'),
+                              (json.dumps({'version': 2, 'attributions': []}), name + ': expected exactly version 1'),
+                              (json.dumps({'version': True, 'attributions': []}), name + ': expected exactly version 1'),
+                              (json.dumps({'version': 1}), name + ': expected exactly version 1'),
+                              (json.dumps({'version': 1, 'attributions': [], 'extra': 1}),
+                               name + ': expected exactly version 1'),
+                              (json.dumps({'version': 1, 'attributions': {}}), name + ': attributions must be a list')):
+            with self.subTest(text=text):
+                self.workers.write_text(text, encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, re.escape(message)):
+                    self.workers_check()
+        entry = self.entry(commit)
+        where = name + ': attribution 1: '
+        for bad, message in (({k: v for k, v in entry.items() if k != 'source'}, 'expected exactly commit, worker'),
+                             ({**entry, 'extra': 1}, 'expected exactly commit, worker'),
+                             ({**entry, 'commit': commit[:12]}, 'commit must be a full lowercase 40-hex'),
+                             ({**entry, 'commit': commit.upper()}, 'commit must be a full lowercase 40-hex'),
+                             ({**entry, 'worker': 'OpenAI Codex []'}, "worker must be in the Worker trailer's form"),
+                             ({**entry, 'worker': 'OpenAI Codex [ GPT]'}, "worker must be in the Worker trailer's form"),
+                             ({**entry, 'worker': ' OpenAI'}, "worker must be in the Worker trailer's form"),
+                             ({**entry, 'worker': None}, "worker must be in the Worker trailer's form"),
+                             ({**entry, 'source': '  '}, 'source must be nonempty text'),
+                             ({**entry, 'source': 1}, 'source must be nonempty text')):
+            with self.subTest(bad=bad):
+                self.declare(bad)
+                with self.assertRaisesRegex(ValueError, re.escape(where + message)):
+                    self.workers_check()
+        self.declare(entry, entry)
+        with self.assertRaisesRegex(ValueError, re.escape(name + ': attribution 2: duplicate attribution for ' + commit)):
+            self.workers_check()
+
+    def test_a_repeated_member_and_text_that_cannot_be_written_as_utf8_are_refused(self):
+        commit = self.commit(self.PRODUCT)
+        entry = json.dumps(self.entry(commit))
+        repeated = entry[:-1] + ', "worker": "OpenAI Codex [GPT Fixture Medium]"}'
+        self.workers.write_text('{"version": 1, "attributions": [' + repeated + ']}', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, re.escape(ac.COMMIT_WORKERS + ': unreadable or invalid JSON: repeated'
+                                                          ' member worker')):
+            self.workers_check()
+        self.workers.write_text('{"version": 1, "version": 1, "attributions": []}', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'repeated member version'):
+            self.workers_check()
+        where = ac.COMMIT_WORKERS + ': attribution 1: '
+        for field, message in (('source', 'source must be nonempty text'),
+                               ('worker', "worker must be in the Worker trailer's form")):
+            with self.subTest(field=field):
+                self.workers.write_text(json.dumps({'version': 1, 'attributions': [
+                    {**self.entry(self.root_commit, 'Human'), field: 'Human \ud800'}]}), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, re.escape(where + message)):
+                    self.workers_check()
+
+    def test_a_worker_with_surrounding_whitespace_is_refused_as_the_trailer_block_refuses_it(self):
+        self.commit(self.PRODUCT)
+        for worker in ('Human ', ' Human', 'Human [Fixture] '):
+            with self.subTest(worker=worker):
+                self.declare(self.entry(self.root_commit, worker))
+                with self.assertRaisesRegex(ValueError, "worker must be in the Worker trailer's form"):
+                    self.workers_check()
+
+    def test_the_commit_is_read_without_replace_objects(self):
+        product = self.commit(self.PRODUCT)
+        identity = ('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid')
+        tree = self.run_git('rev-parse', 'HEAD^{tree}')
+        other = self.run_git(*identity, 'commit-tree', tree, '-p', self.root_commit, '-m',
+                             'Fixture change\n\nClass: tooling\nWorker: Anthropic Claude Code\n')
+        self.run_git('replace', product, other)
+        self.assertIn('Anthropic Claude Code', self.run_git('show', '-s', '--format=%B', product))
+        self.declare(self.entry(product))
+        self.assertEqual(self.workers_check()[1], [(product, 'OpenAI Codex', self.WORKER)])
+
+    def test_recorded_takes_only_the_utc_minute_with_z(self):
+        commit = self.commit(self.PRODUCT)
+        for value in ('2026-11-28', '2026-11-27T21:06-05:00', '2026-11-28T02:06:00Z', '2026-11-28T02:06',
+                      '2026-11-28 02:06Z', '2026-02-30T00:00Z', '2026-11-28T24:00Z', '2026-1-28T02:06Z', 20261128):
+            with self.subTest(value=value):
+                self.declare(self.entry(commit, recorded=value))
+                with self.assertRaisesRegex(ValueError, re.escape(ac.COMMIT_WORKERS + ': attribution 1: recorded must'
+                                                                  ' be a UTC time in the form YYYY-MM-DDTHH:MMZ')):
+                    self.workers_check()
+        self.declare(self.entry(commit, recorded='2026-02-28T23:59Z'))
+        self.assertEqual(len(self.workers_check()[1]), 1)
+
+    def test_a_faulty_file_fails_before_history_availability(self):
+        archive = Path(self.temp.name) / 'archive'; archive.mkdir()
+        path = archive / ac.COMMIT_WORKERS; path.parent.mkdir(parents=True); path.write_text('{')
+        with self.assertRaisesRegex(ValueError, 'invalid JSON'):
+            check_workers(archive, self.profiles)
+        path.unlink()
+        with self.assertRaisesRegex(HistoryUnavailable, 'not a Git checkout'):
+            check_workers(archive, self.profiles)
 
 
 class StatusPlacementTest(unittest.TestCase):

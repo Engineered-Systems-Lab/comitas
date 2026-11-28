@@ -137,23 +137,36 @@ export function groupImplementations(records, declared) {
 }
 
 // Commit metadata reflects the projection only: absent values stay unknown or omitted, and inferred
-// markers come from the record's inferredFields, never from browser-side inference.
+// markers come from the record's inferredFields, never from browser-side inference. A Worker the project
+// declared (workerAttribution) is marked as attributed, not inferred, and names the trailer's own value.
 export function commitMetadata(i) {
   const inferred = new Set(i.inferredFields ?? []);
+  const attribution = i.workerAttribution && typeof i.workerAttribution === 'object' ? i.workerAttribution : null;
   const fields = [
     {label:'Class', key:'classes', values:i.classes ?? [], optional:false},
     {label:'Subclass', key:'subclasses', values:i.subclasses ?? [], optional:true},
     {label:'Worker', key:'worker', values:i.worker ? [i.worker] : [], optional:false}
   ];
-  return fields.filter(f => f.values.length || !f.optional).map(f => ({
-    label: f.label,
-    value: f.values.length ? f.values.join(', ') : 'unknown',
-    inferred: f.values.length > 0 && inferred.has(f.key)
-  }));
+  return fields.filter(f => f.values.length || !f.optional).map(f => {
+    const attributed = f.key === 'worker' && f.values.length > 0 && attribution !== null;
+    return {
+      label: f.label,
+      value: f.values.length ? f.values.join(', ') : 'unknown',
+      inferred: f.values.length > 0 && inferred.has(f.key) && !attributed,
+      ...(attributed ? {attributed: trailerSays(attribution)} : {})
+    };
+  });
 }
-export const INFERRED_MARK = '†', DERIVED_MARK = '*';
+const trailerSays = a => typeof a.trailer === 'string' && a.trailer ? `the trailer says: ${a.trailer}` : 'the commit has no Worker trailer';
+export const INFERRED_MARK = '†', DERIVED_MARK = '*', ATTRIBUTED_MARK = '‡';
 export function commitMetadataHtml(i) {
-  return commitMetadata(i).map(f => `${f.label}: ${escape(f.value)}${f.inferred ? `<span class="inferred" title="Inferred from historical evidence">${INFERRED_MARK}</span>` : ''}`).join(' · ');
+  return commitMetadata(i).map(f => `${f.label}: ${escape(f.value)}${f.inferred ? `<span class="inferred" title="Inferred from historical evidence">${INFERRED_MARK}</span>` : ''}${f.attributed ? `<span class="attributed" title="${escape('Attributed by the project; ' + f.attributed)}">${ATTRIBUTED_MARK}</span>` : ''}`).join(' · ');
+}
+// A Worker the project declared for a commit whose trailer lacks the model: the declared value, the trailer's
+// own value beside it, when it was recorded and on whose word.
+export function workerAttributionText(i) {
+  const a = i.workerAttribution;
+  return a && typeof a === 'object' && i.worker ? `Worker attribution: ${i.worker}; ${trailerSays(a)}; recorded ${a.recorded ?? ''}; source: ${a.source ?? ''}` : '';
 }
 // A commit the project's declared history excepts says so, with the rules waived and the declared reason; the
 // waived fields above show the commit's tokens as written.

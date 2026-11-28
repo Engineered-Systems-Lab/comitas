@@ -3,7 +3,12 @@
 The history test and Mission Control read the declaration through this module, so both apply the same exceptions
 and refuse a faulty file, its shape or its boundaries and exception commits, with the same messages. Only the history
 test reads each commit strictly as well, which tells whether an exception is stale or broader than it needs.
+
+The project's declared workers of historical commits (commit-workers.json) are read here too, and every rule of an
+attribution is applied here, so the history test and Mission Control accept and refuse exactly the same file. A
+commit's trailer never changes, so an attribution that holds once holds for good.
 """
+import datetime
 import json
 import os
 from pathlib import Path
@@ -21,23 +26,29 @@ class HistoryUnavailable(Exception):
 
 def history_settings(root):
     """Validate a present declaration before inspecting history; only absence returns None."""
-    path = Path(root) / ac.COMMIT_HISTORY
+    text = configuration_text(root, ac.COMMIT_HISTORY)
+    return None if text is None else parse_settings(text)
+
+
+def configuration_text(root, name):
+    """The text of a project configuration file in the working tree, or None when it is absent; a file that is
+    indirect, nonregular or unreadable refuses."""
+    path = Path(root) / name
     for part in (path, *list(path.parents)[:2]):
         if part.is_symlink() or part.is_junction():
-            raise ValueError(ac.COMMIT_HISTORY + ': indirect configuration path')
+            raise ValueError(name + ': indirect configuration path')
     try:
         mode = path.lstat().st_mode
     except FileNotFoundError:
         return None
     except OSError as error:
-        raise ValueError(ac.COMMIT_HISTORY + ': unreadable configuration: ' + str(error)) from error
+        raise ValueError(name + ': unreadable configuration: ' + str(error)) from error
     if not stat.S_ISREG(mode):
-        raise ValueError(ac.COMMIT_HISTORY + ': nonregular configuration file')
+        raise ValueError(name + ': nonregular configuration file')
     try:
-        text = path.read_text(encoding='utf-8')
+        return path.read_text(encoding='utf-8')
     except (OSError, UnicodeError) as error:
-        raise ValueError(ac.COMMIT_HISTORY + ': unreadable or invalid JSON: ' + str(error)) from error
-    return parse_settings(text)
+        raise ValueError(name + ': unreadable or invalid JSON: ' + str(error)) from error
 
 
 def parse_settings(text):
@@ -154,3 +165,119 @@ def declared_range(root, settings, head, run=None):
         if commit not in checked:
             raise ValueError(where + ': convention_after already exempts it')
     return ids, old, exceptions
+
+
+# The one form of an attribution's `recorded` time: UTC to the minute, with the Z that says so (the devlog's form).
+RECORDED_FORMAT = '%Y-%m-%dT%H:%MZ'
+
+
+def workers_settings(root):
+    """The working tree's declared workers as {commit: (worker, source, recorded)}, or None when the file is absent."""
+    text = configuration_text(root, ac.COMMIT_WORKERS)
+    return None if text is None else parse_workers(text)
+
+
+def parse_workers(text):
+    """The declared workers' text as {commit: (worker, source, recorded)}; any fault refuses the whole file."""
+    try:
+        data = json.loads(text, object_pairs_hook=unique_members)
+    except ValueError as error:
+        raise ValueError(ac.COMMIT_WORKERS + ': unreadable or invalid JSON: ' + str(error)) from error
+    if (not isinstance(data, dict) or set(data) != {'version', 'attributions'}
+            or type(data['version']) is not int or data['version'] != 1):
+        raise ValueError(ac.COMMIT_WORKERS + ': expected exactly version 1 and attributions')
+    if not isinstance(data['attributions'], list):
+        raise ValueError(ac.COMMIT_WORKERS + ': attributions must be a list')
+    attributions = {}
+    for index, entry in enumerate(data['attributions']):
+        where = ac.COMMIT_WORKERS + ': attribution ' + str(index + 1)
+        if not isinstance(entry, dict) or set(entry) != {'commit', 'worker', 'source', 'recorded'}:
+            raise ValueError(where + ': expected exactly commit, worker, source and recorded')
+        commit, worker, source, recorded = entry['commit'], entry['worker'], entry['source'], entry['recorded']
+        if not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit):
+            raise ValueError(where + ': commit must be a full lowercase 40-hex commit ID')
+        if commit in attributions:
+            raise ValueError(where + ': duplicate attribution for ' + commit)
+        if not m.worker_identity(worker):
+            raise ValueError(where + ': worker must be in the Worker trailer\'s form, a product and optionally'
+                             ' [model/configuration]')
+        if not isinstance(source, str) or not source.strip() or not utf8_text(source):
+            raise ValueError(where + ': source must be nonempty text')
+        if not recorded_time(recorded):
+            raise ValueError(where + ': recorded must be a UTC time in the form YYYY-MM-DDTHH:MMZ')
+        attributions[commit] = (worker, source, recorded)
+    return attributions
+
+
+def unique_members(pairs):
+    """A JSON object whose members are all distinct; JSON keeps the last of a repeated one, which would hide a fault."""
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    if repeated:
+        raise ValueError('repeated member ' + ', '.join(repeated))
+    return dict(pairs)
+
+
+def utf8_text(value):
+    """Whether `value` can be written as UTF-8, as every reader of the records writes it (no unpaired surrogate)."""
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def recorded_time(value):
+    """Whether `value` is a real UTC minute written exactly as RECORDED_FORMAT."""
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z', value):
+        return False
+    try:
+        datetime.datetime.strptime(value, RECORDED_FORMAT)
+    except ValueError:
+        return False
+    return True
+
+
+def attribution_problem(worker, trailer):
+    """Why `worker` may not stand for a commit whose Worker trailer reads `trailer` (None when it has none), or None.
+    An attribution fills an absent Worker or adds the missing [model/configuration] to the trailer's own product."""
+    if trailer is None:
+        return None
+    if worker == trailer:
+        return 'stale: the trailer already says ' + trailer
+    if trailer.endswith(']'):
+        return 'contradicts the trailer ' + trailer + ', which already names its model/configuration'
+    if not worker.endswith(']') or worker[:worker.index(' [')] != trailer:
+        return 'contradicts the trailer ' + trailer + ': an attribution may only add [model/configuration] to its product'
+    return None
+
+
+def trailer_worker(message, profiles, waived=frozenset()):
+    """A historical commit's Worker trailer as Mission Control reads it, with its declared exception, or None."""
+    return m.parse_metadata(message, profiles, required=False, legacy_aggregate=True, waived=waived)['worker']
+
+
+def declared_workers(root, attributions, head, profiles, exceptions, run=None):
+    """Check every attribution against `head` and the commit's own trailer, read with its declared exception from
+    `exceptions`; return {commit: (worker, source, recorded, trailer)}. Every read here skips replace objects, so the
+    history test and Mission Control, which calls it with the revision it shows and its own isolated Git as `run`,
+    judge the same commit objects."""
+    run = run or git
+    checked = {}
+    for commit, (worker, source, recorded) in attributions.items():
+        where = 'attribution for ' + commit
+        if run(root, '--no-replace-objects', 'cat-file', '-t', commit, accepted=(0, 128)).stdout.strip() != b'commit':
+            raise ValueError(where + ': object is not a commit')
+        if run(root, '--no-replace-objects', 'merge-base', '--is-ancestor', commit, head, accepted=(0, 1)).returncode:
+            raise ValueError(where + ': commit is not an ancestor of captured HEAD')
+        raw = run(root, '--no-replace-objects', 'cat-file', 'commit', commit).stdout
+        try:
+            message = raw.split(b'\n\n', 1)[1].decode('utf-8') if b'\n\n' in raw else ''
+            trailer = trailer_worker(message, profiles, exceptions.get(commit, (frozenset(), None))[0])
+        except ValueError as error:
+            raise ValueError(where + ': the commit\'s trailers cannot be read: ' + str(error)) from error
+        problem = attribution_problem(worker, trailer)
+        if problem:
+            raise ValueError(where + ': ' + problem)
+        checked[commit] = (worker, source, recorded, trailer)
+    return checked

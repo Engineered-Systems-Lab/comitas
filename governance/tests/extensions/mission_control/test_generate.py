@@ -57,8 +57,8 @@ class GeneratorTest(unittest.TestCase):
         self.write('devlog/2026-10-02T0843Z-event.md', '# Operational log\n\nStatus: Historical / non-normative\nDate: 2026-10-02T08:43Z\n\nContemporary uncertainty preserved.\n')
         self.write('devlog/2026-10-03T0001Z-thought.md', '# Second entry\n\nStatus: Historical / non-normative\nDate: 2026-10-03T00:01Z\n\nAn entry in the other date format.\n')
         repository = rp.ROOT
-        # This checkout's declared history names its own commits, which the fixture's history does not hold.
-        for name in set(g.COMMIT_INPUTS) - {g.artifact_classification.COMMIT_HISTORY}:
+        # This checkout's declared history and workers name its own commits, which the fixture's history does not hold.
+        for name in set(g.COMMIT_INPUTS) - {g.artifact_classification.COMMIT_HISTORY, g.artifact_classification.COMMIT_WORKERS}:
             if (repository / name).is_file():  # the project's files are optional
                 self.write(name, (repository / name).read_text(encoding='utf-8'))
         self.run_git('init', '-b', 'fixture')
@@ -341,6 +341,86 @@ class GeneratorTest(unittest.TestCase):
         self.generate()
         self.assertTrue(self.items('commits'))
         self.assertFalse([item for item in self.items('commits') if 'historyException' in item])
+
+    def workers(self, *entries):
+        return json.dumps({'version': 1, 'attributions': list(entries)})
+
+    def attribution(self, commit, worker='OpenAI Codex [GPT Fixture Medium]'):
+        return {'commit': commit, 'worker': worker, 'source': 'the lead developer, from the session',
+                'recorded': '2026-11-28T02:06Z'}
+
+    def test_a_declared_worker_is_shown_beside_the_trailer_in_full_and_normal_mode(self):
+        name = g.artifact_classification.COMMIT_WORKERS
+        attributed = self.metadata_commit(rp.CHECKPOINT, 'Historical\n\nClass: tooling\nWorker: OpenAI Codex')['sha']
+        self.write(name, self.workers(self.attribution(attributed)))
+        self.commit()
+        self.revision = self.run_git('rev-parse', 'HEAD').strip()
+        self.generate()
+        commits = {item['sha']: item for item in self.items('commits')}
+        record = commits[attributed]
+        self.assertEqual(record['worker'], 'OpenAI Codex [GPT Fixture Medium]')
+        self.assertEqual(record['inferredFields'], ['worker'])
+        self.assertEqual(record['workerAttribution'], {'trailer': 'OpenAI Codex',
+                                                       'source': 'the lead developer, from the session',
+                                                       'recorded': '2026-11-28T02:06Z'})
+        self.assertEqual([sha for sha, item in commits.items() if 'workerAttribution' in item], [attributed])
+        # After one more commit the incremental update keeps the attribution and equals a full rebuild.
+        self.write('docs/target.md', '# Target\n\nChanged target content.\n')
+        self.commit()
+        self.revision = self.run_git('rev-parse', 'HEAD').strip()
+        self.assertIn('commits', self.generate('normal', changed=['docs/target.md'])['updated'])
+        later = Path(self.temp.name) / 'workers-later-full'
+        self.generate(output=later)
+        self.assertEqual(self.bytes(), self.bytes(later))
+        # A change to the declared workers alone rebuilds the commits, and the incremental result equals a full one.
+        proposal = self.proposal(name, self.workers({**self.attribution(attributed), 'source': 'A reworded source.'}))
+        self.assertEqual(self.generate('normal', changed=[name], proposal=proposal)['updated'], ['commits'])
+        self.assertEqual(next(i for i in self.items('commits') if i['sha'] == attributed)['workerAttribution']['source'],
+                         'A reworded source.')
+        full = Path(self.temp.name) / 'workers-full'
+        self.generate(output=full, proposal=proposal)
+        self.assertEqual(self.bytes(), self.bytes(full))
+
+    def test_a_declared_worker_fills_an_absent_worker_trailer(self):
+        root = self.run_git('rev-list', '--max-parents=0', 'HEAD').split()[0]
+        self.generate(proposal=self.proposal(g.artifact_classification.COMMIT_WORKERS,
+                                             self.workers(self.attribution(root, 'Human'))))
+        record = next(i for i in self.items('commits') if i['sha'] == root)
+        self.assertEqual((record['worker'], record['workerAttribution']['trailer']), ('Human', None))
+        self.assertIn('worker', record['inferredFields'])
+
+    def test_a_faulty_or_contradicting_declaration_is_refused_with_the_history_tests_message(self):
+        name = g.artifact_classification.COMMIT_WORKERS
+        attributed = self.metadata_commit(rp.CHECKPOINT, 'Historical\n\nClass: tooling\nWorker: OpenAI Codex')['sha']
+        entry = {**self.attribution(attributed), 'recorded': '2026-11-28'}
+        with self.assertRaises(ValueError) as caught:
+            self.generate(proposal=self.proposal(name, self.workers(entry)))
+        with self.assertRaises(ValueError) as expected:
+            g.commit_history.parse_workers(self.workers(entry))
+        self.assertEqual(str(caught.exception), str(expected.exception))
+        self.assertIn(name + ': attribution 1: recorded must be a UTC time', str(caught.exception))
+        with self.assertRaisesRegex(ValueError, name + ': unreadable or invalid JSON'):
+            self.generate(proposal=self.proposal(name, '{'))
+        contradicting = self.attribution(attributed, 'Anthropic Claude Code [Claude Fixture]')
+        with self.assertRaises(ValueError) as caught:
+            self.generate(proposal=self.proposal(name, self.workers(contradicting)))
+        self.assertEqual(str(caught.exception), 'attribution for ' + attributed + ': contradicts the trailer'
+                         ' OpenAI Codex: an attribution may only add [model/configuration] to its product')
+        side = self.run_git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit-tree',
+                            self.run_git('rev-parse', 'HEAD^{tree}').strip(), '-m', 'Side').strip()
+        valid = self.proposal(name, self.workers(self.attribution(side)))
+        with self.assertRaises(ValueError) as caught, \
+                patch.object(g, 'history_git', wraps=g.history_git) as isolated, \
+                patch.object(g.commit_history, 'git', side_effect=AssertionError('plain Git')):
+            self.generate(proposal=valid)
+        self.assertEqual(str(caught.exception), 'attribution for ' + side + ': commit is not an ancestor of captured HEAD')
+        self.assertIn(('--no-replace-objects', 'cat-file', '-t', side), [call.args[1:] for call in isolated.call_args_list])
+
+    def test_an_absent_worker_declaration_declares_none(self):
+        self.assertFalse((self.root / g.artifact_classification.COMMIT_WORKERS).exists())
+        self.generate()
+        self.assertFalse([item for item in self.items('commits') if 'workerAttribution' in item])
+        self.assertFalse([item for item in self.items('commits') if 'worker' in item.get('inferredFields', [])])
 
     def test_independent_full_equal_inputs_byte_identical_across_checkouts(self):
         self.generate()

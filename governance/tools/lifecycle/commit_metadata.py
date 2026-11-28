@@ -106,12 +106,17 @@ def parse_metadata(message, profiles, required=True, *, legacy_aggregate=False, 
             subclasses = [token for token in allowed if token in subclasses]
     worker = fields.get('Worker')
     if worker is not None:
-        require(re.fullmatch(r'[^\[\]\s][^\[\]\r\n]*?(?: \[[^\[\]\r\n]+\])?', worker)
-                and all(ord(c) >= 32 for c in worker)
-                and (not worker.endswith(']') or worker[worker.index('[') + 1:-1].strip()
-                     == worker[worker.index('[') + 1:-1] != ''),
-                'Malformed Worker identity')
+        require(worker_identity(worker), 'Malformed Worker identity')
     return {'classes': classes, 'subclasses': subclasses, 'worker': worker, 'inferredFields': []}
+
+
+def worker_identity(worker):
+    """Whether `worker` is in the Worker trailer's grammar: a product, then optionally ` [model/configuration]`."""
+    return bool(isinstance(worker, str) and worker == worker.strip()
+                and re.fullmatch(r'[^\[\]\s][^\[\]\r\n]*?(?: \[[^\[\]\r\n]+\])?', worker)
+                and all(ord(c) >= 32 and not 0xD800 <= ord(c) <= 0xDFFF for c in worker)
+                and (not worker.endswith(']') or worker[worker.index('[') + 1:-1].strip()
+                     == worker[worker.index('[') + 1:-1] != ''))
 
 
 WORKER_FIELDS = ('provider', 'product', 'model', 'configuration', 'isAI')

@@ -22,9 +22,10 @@ from governance.tools.lifecycle import commit_metadata
 TYPES = ('devlog', 'commits', 'decisions', 'documents', 'rationale')
 # The commit dataset reconstructs class and subclass from these; changing any of them rebuilds it. The project's optional
 # counterparts are read together with the framework's like every other tool does, and its declared commit history supplies
-# the exceptions the history test grants.
+# the exceptions the history test grants and its declared workers the attributions.
 COMMIT_INPUTS = (artifact_classification.POLICY, artifact_classification.PROFILES, artifact_classification.TABLE,
-                 *artifact_classification.OVERLAY_FILES, artifact_classification.COMMIT_HISTORY)
+                 *artifact_classification.OVERLAY_FILES, artifact_classification.COMMIT_HISTORY,
+                 artifact_classification.COMMIT_WORKERS)
 # The project's homes for its decisions and their rationale: declared by its inputs part, and an absent one means none.
 OPTIONAL_HOMES = (artifact_classification.PROJECT_DECISIONS, artifact_classification.PROJECT_RATIONALE)
 SHA = re.compile(r'[0-9a-f]{40}\Z')
@@ -545,6 +546,14 @@ class Generator:
             # The checks read the history through the generator's own isolated Git, so they see what the dataset lists.
             exceptions = commit_history.declared_range(self.selection.root, commit_history.parse_settings(history),
                                                        self.selection.revision, run=history_git)[2]
+        # The project's declared workers, checked by every rule against the shown revision and each commit's own
+        # trailer, read with its exception, by the history test's reader and messages; an absent file declares none.
+        declared = read(artifact_classification.COMMIT_WORKERS)
+        attributions = {}
+        if declared is not None:
+            attributions = commit_history.declared_workers(self.selection.root, commit_history.parse_workers(declared),
+                                                           self.selection.revision, profiles, exceptions,
+                                                           run=history_git)
         for sha in sorted(git(self.selection.root, 'rev-list', self.selection.revision).decode().splitlines()):
             raw = git(self.selection.root, 'cat-file', 'commit', sha)
             headers, message = raw.split(b'\n\n', 1)
@@ -562,6 +571,12 @@ class Generator:
             paths = [path for path in paths if path] if len(parents) <= 1 else []
             rules, reason = exceptions.get(sha, (frozenset(), None))
             fields = reconstruct(content, paths, policy, profiles, table, waived=rules)
+            if sha in attributions:
+                # The declared worker stands in `worker`; the trailer's own value stays beside it, with the source.
+                worker, source, recorded, trailer = attributions[sha]
+                fields['workerAttribution'] = {'trailer': trailer, 'source': source, 'recorded': recorded}
+                fields['worker'] = worker
+                fields['inferredFields'].append('worker')
             if not fields['inferredFields']:
                 del fields['inferredFields']
             if reason is not None:
@@ -697,6 +712,16 @@ def generate(root, revision, inventory, output, mode='full', changed=(), proposa
                         'Invalid commit subclasses')
                 require(item['worker'] is None or isinstance(item['worker'], str), 'Invalid commit worker')
                 inferred = item.get('inferredFields')
+                # A declared worker comes with the trailer's own value, which it may only complete, and its source.
+                attribution = item.get('workerAttribution')
+                require((attribution is None) == ('worker' not in (inferred or [])) and (attribution is None or (
+                            isinstance(attribution, dict) and set(attribution) == {'trailer', 'source', 'recorded'} and
+                            (attribution['trailer'] is None or isinstance(attribution['trailer'], str)) and
+                            isinstance(attribution['source'], str) and attribution['source'].strip() and
+                            commit_history.recorded_time(attribution['recorded']) and
+                            commit_metadata.worker_identity(item['worker']) and
+                            commit_history.attribution_problem(item['worker'], attribution['trailer']) is None)),
+                        'Invalid commit worker attribution')
                 require(inferred is None or (isinstance(inferred, list) and inferred and
                                              len(inferred) == len(set(inferred)) and
                                              set(inferred) <= {'classes', 'subclasses', 'worker'}),

@@ -25,8 +25,8 @@
 /* Repository identity line. */
 .tagline{margin:.2rem 0 0;color:var(--muted);font-size:.88rem;letter-spacing:.02em}
 
-/* Display markers: inferred metadata (projection inferredFields) and commit-derived timestamps; one legend. */
-.inferred,.derived{color:var(--accent);margin-left:.1rem}.legend{margin:0;font:.7rem var(--mono);color:var(--muted)}
+/* Display markers: inferred metadata (projection inferredFields), a worker the project attributed and commit-derived timestamps; one legend. */
+.inferred,.attributed,.derived{color:var(--accent);margin-left:.1rem}.legend{margin:0;font:.7rem var(--mono);color:var(--muted)}
 
 /* Result count on the left, pagination on the right, above the results. */
 .result-bar{display:flex;justify-content:space-between;align-items:center;gap:.5rem 1rem;flex-wrap:wrap;margin-bottom:.65rem}.result-bar #result-count{margin:0}.result-bar .pagination{margin-top:0;gap:.6rem}
