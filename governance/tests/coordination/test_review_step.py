@@ -732,7 +732,7 @@ class RunTest(ReviewFixture):
 class DocumentTest(unittest.TestCase):
     def test_the_review_step_document_names_the_offer_the_paths_and_the_command_lines(self):
         text = ' '.join((rp.ROOT / 'governance/REVIEW-STEP.md').read_text(encoding='utf-8').split())
-        for needle in ('`Review first`', 'a message of its own', '--with-diff', 'never cuts the diff', '--reviewer codex',
+        for needle in ('`Review with Codex`', '`Review with Claude`', '--with-diff', 'never cuts the diff', '--reviewer codex',
                        '--reviewer claude', 'codex exec -s read-only', 'claude -p --permission-mode plan',
                        'COMITAS_CODEX', 'REVIEW NOT SAVED', 'A review never approves', '## When a review stops',
                        '--extra-round', 'postponed by default', 'CHANGED SINCE THE LAST ROUND', rs.SAVED_BY.strip(),

@@ -15,7 +15,7 @@ Each command writes one file into the mission's review folder (`../_review/<miss
 
 ## Where the link goes
 
-While the folder `governance/extensions/diff_viewer/` exists, every message in which a worker presents a preview or a sealed review ENDS with exactly one line, placed last, immediately before the go or Approve question, so the link sits next to the answer the lead developer gives:
+While the folder `governance/extensions/diff_viewer/` exists, every message in which a worker presents a preview or a sealed review holds exactly one line, the last line of the worker's `Review focus`, so that the link sits near the question and the question stays last, next to the dialog or the reply that answers it. In a preview the Review focus has its own section, just before `Go file values` and `Go`; in a sealed review the worker places its Review focus, with the line, immediately before `### Decision` ([G058 diff page placement extension](../../DECISIONS.md#g058-diff-page-placement-extension-2026-11-28)):
 
 ```text
 Diff page: [<file:// URI>](<file:// URI>)
